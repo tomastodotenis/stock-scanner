@@ -256,6 +256,7 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<div id="flashOverlay" style="position:fixed;inset:0;pointer-events:none;z-index:998;opacity:0;transition:opacity 0.15s;"></div>
 
 <script>
 // ── STATE ──
@@ -392,6 +393,9 @@ function processCode(rawCode, fromCamera) {
       </div>
     `;
     flashBorder(resultEl, 'var(--accent)');
+    playBeep(true);
+    vibrateDevice(true);
+    flashScreen(true);
     showToast(`+1 → ${entry.name}${entry.talle ? ' ('+entry.talle+')' : ''}`, 'ok');
   } else {
     resultEl.style.display = 'block';
@@ -403,6 +407,9 @@ function processCode(rawCode, fromCamera) {
       notFoundLog.unshift({ code, time: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) });
       renderNotFound();
     }
+    playBeep(false);
+    vibrateDevice(false);
+    flashScreen(false);
     showToast('Código no encontrado', 'err');
   }
 }
@@ -448,15 +455,42 @@ function startCamera() {
   btnCam.textContent = 'Detener cámara';
   camStatus.classList.add('on');
   Quagga.init({
-    inputStream: { type: 'LiveStream', target: viewport, constraints: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } },
-    decoder: { readers: ['ean_reader','ean_8_reader','code_128_reader','code_39_reader','upc_reader'] },
-    locate: true, frequency: 10
+    inputStream: {
+      type: 'LiveStream',
+      target: viewport,
+      constraints: {
+        facingMode: 'environment',
+        width: { min: 640, ideal: 1920, max: 1920 },
+        height: { min: 480, ideal: 1080, max: 1080 },
+        aspectRatio: { ideal: 1.7777777778 }
+      }
+    },
+    decoder: {
+      readers: ['ean_reader','ean_8_reader','code_128_reader','code_39_reader','upc_reader','upc_e_reader'],
+      multiple: false
+    },
+    locate: true,
+    frequency: 15,
+    locator: {
+      patchSize: 'medium',
+      halfSample: true
+    }
   }, (err) => {
     if (err) { showToast('No se pudo acceder a la cámara', 'err'); stopCamera(); return; }
     Quagga.start();
     cameraActive = true;
   });
-  Quagga.onDetected((result) => processCode(result.codeResult.code, true));
+
+  // Only accept high-confidence detections
+  Quagga.onDetected((result) => {
+    const code = result.codeResult.code;
+    const err = result.codeResult.decodedCodes
+      .filter(x => x.error !== undefined)
+      .reduce((sum, x) => sum + x.error, 0);
+    const count = result.codeResult.decodedCodes.filter(x => x.error !== undefined).length;
+    const avgErr = count > 0 ? err / count : 1;
+    if (avgErr < 0.25) processCode(code, true);
+  });
 }
 
 function stopCamera() {
@@ -634,6 +668,45 @@ function renderNotFound() {
 function clearNotFound() {
   notFoundLog = [];
   renderNotFound();
+}
+
+// ── FEEDBACK ──
+function playBeep(success) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    if (success) {
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.2);
+    } else {
+      osc.frequency.setValueAtTime(300, ctx.currentTime);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    }
+  } catch(e) {}
+}
+
+function vibrateDevice(success) {
+  if (!navigator.vibrate) return;
+  if (success) navigator.vibrate([60]);
+  else navigator.vibrate([80, 60, 80]);
+}
+
+function flashScreen(success) {
+  const overlay = document.getElementById('flashOverlay');
+  if (!overlay) return;
+  overlay.style.background = success ? 'rgba(0,212,170,0.25)' : 'rgba(239,68,68,0.25)';
+  overlay.style.opacity = '1';
+  setTimeout(() => overlay.style.opacity = '0', 150);
 }
 
 // ── INIT ──
