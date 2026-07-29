@@ -6,8 +6,6 @@
   <meta name="theme-color" content="#1a1a2e" />
   <title>Stock Scanner</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" type="image/png" href="favicon.png" />
-  <link rel="apple-touch-icon" href="favicon.png" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
   <style>
@@ -122,8 +120,8 @@
     .search-bar .search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 1rem; pointer-events: none; }
     .stock-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .stock-table-wrap { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
-    .stock-table-header { padding: 10px 14px; display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); border-bottom: 1px solid var(--border); }
-    .stock-item { padding: 11px 14px; display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; border-bottom: 1px solid var(--border); font-size: 0.83rem; transition: background 0.15s; }
+    .stock-table-header { padding: 10px 14px; display: grid; grid-template-columns: 1fr 60px auto auto auto; gap: 6px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); border-bottom: 1px solid var(--border); }
+    .stock-item { padding: 11px 14px; display: grid; grid-template-columns: 1fr 60px auto auto auto; gap: 6px; align-items: center; border-bottom: 1px solid var(--border); font-size: 0.83rem; transition: background 0.15s; }
     .stock-item:last-child { border-bottom: none; }
     .stock-item:hover { background: var(--surface2); }
     .stock-item .name { font-weight: 600; line-height: 1.3; }
@@ -172,6 +170,7 @@
   <div class="tab active" data-tab="import">⬆️ Importar</div>
   <div class="tab" data-tab="scanner">📷 Escanear</div>
   <div class="tab" data-tab="stock">📋 Stock</div>
+  <div class="tab" data-tab="sectores">📍 Sectores</div>
 </div>
 
 <!-- IMPORT -->
@@ -209,6 +208,10 @@
     </div>
 
     <div class="manual-section">
+      <div id="sectorScannerBadge" style="display:none;background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.3);border-radius:10px;padding:8px 14px;font-size:0.82rem;font-weight:600;color:var(--accent);display:flex;align-items:center;gap:8px;">
+        <span>📍</span><span id="sectorScannerNombre">Sin sector</span>
+        <span style="margin-left:auto;cursor:pointer;color:var(--muted);font-size:0.75rem;" onclick="switchTab('sectores')">Cambiar →</span>
+      </div>
       <h3>🔢 Pistola / Manual</h3>
       <div class="input-row">
         <input type="text" id="manualInput" placeholder="Código de barras o SKU..." autocomplete="off" />
@@ -243,9 +246,13 @@
       <button class="btn btn-ghost btn-sm" id="btnExportCSV">⬇️ Exportar CSV</button>
       <button class="btn btn-danger btn-sm" id="btnClearStock">🗑 Limpiar conteo</button>
     </div>
+    <select id="sectorFilter" onchange="filterSector=this.value;renderStock()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:9px 14px;color:var(--text);font-size:0.875rem;outline:none;width:100%;">
+      <option value="">Todos los sectores</option>
+    </select>
     <div class="stock-table-wrap">
       <div class="stock-table-header">
         <span>Producto</span>
+        <span>Sector</span>
         <span>Talle</span>
         <span>Cant.</span>
         <span>Código</span>
@@ -258,6 +265,43 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- SECTORES PAGE -->
+<div class="page" id="page-sectores">
+  <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;">
+
+    <!-- Crear sector -->
+    <div style="background:var(--surface);border-radius:var(--radius);padding:16px;border:1px solid var(--border);">
+      <h3 style="font-size:0.85rem;font-weight:600;margin-bottom:12px;">➕ Nuevo sector</h3>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <input id="sectorNombre" type="text" placeholder="Nombre (ej: 1-A)" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:0.875rem;outline:none;" />
+        <button class="btn btn-primary btn-sm" onclick="crearSector()">Crear</button>
+      </div>
+      <p style="font-size:0.75rem;color:var(--muted);">Se generará un código QR/barras automático para el cartel del pasillo.</p>
+    </div>
+
+    <!-- Sector activo al escanear -->
+    <div style="background:var(--surface);border-radius:var(--radius);padding:14px 16px;border:1px solid var(--border);">
+      <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin-bottom:8px;">Sector activo al escanear</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <select id="sectorActivoSelect" onchange="cambiarSectorActivo(this.value)" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:0.875rem;outline:none;">
+          <option value="">— Sin sector —</option>
+        </select>
+        <div id="sectorActivoBadge" style="display:none;background:rgba(0,212,170,0.15);color:var(--accent);border:1px solid rgba(0,212,170,0.3);border-radius:8px;padding:6px 12px;font-size:0.8rem;font-weight:700;white-space:nowrap;"></div>
+      </div>
+    </div>
+
+    <!-- Lista de sectores -->
+    <div style="background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;">
+      <div style="padding:10px 14px;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <span>Sectores creados</span>
+        <span id="sectoresCount" style="color:var(--accent);">0</span>
+      </div>
+      <div id="sectoresList"><div style="padding:24px;text-align:center;color:var(--muted);font-size:0.83rem;">Todavía no creaste ningún sector.</div></div>
+    </div>
+
+  </div>
+</div>
 <div id="flashOverlay" style="position:fixed;inset:0;pointer-events:none;z-index:998;opacity:0;transition:opacity 0.15s;"></div>
 
 <script>
@@ -266,6 +310,8 @@ let catalog = {}; // canonicalKey -> { name, sku, barcode, talle }
 let stock = {};   // canonicalKey -> count  (UNA sola clave por producto)
 let cameraActive = false;
 let notFoundLog = []; // { code, time }
+let sectores = {};    // id -> { id, nombre, codigo }  ej: { 's1': { id:'s1', nombre:'1-A', codigo:'SEC-1A' } }
+let sectorActivo = null; // id del sector activo al escanear
 let lastScanned = null;
 let lastScannedTime = 0;
 const CAM_DEBOUNCE_MS = 400; // solo evita doble-lectura instantánea de cámara
@@ -275,26 +321,35 @@ function saveState() {
   try {
     localStorage.setItem('ss_catalog', JSON.stringify(catalog));
     localStorage.setItem('ss_stock', JSON.stringify(stock));
+    localStorage.setItem('ss_sectores', JSON.stringify(sectores));
+    localStorage.setItem('ss_sector_map', JSON.stringify(sectorMap()));
   } catch(e) {}
 }
 function loadState() {
   try {
     const c = localStorage.getItem('ss_catalog');
     const s = localStorage.getItem('ss_stock');
+    const sec = localStorage.getItem('ss_sectores');
+    const sm = localStorage.getItem('ss_sector_map');
     if (c) catalog = JSON.parse(c);
     if (s) stock = JSON.parse(s);
+    if (sec) sectores = JSON.parse(sec);
+    if (sm) _sectorMap = JSON.parse(sm);
   } catch(e) {}
+}
+// canonicalKey -> sectorId
+let _sectorMap = {};
+function sectorMap() { return _sectorMap; }
+function setSectorForProduct(canonicalKey, sectorId) {
+  _sectorMap[canonicalKey] = sectorId;
+}
+function getSectorForProduct(canonicalKey) {
+  return _sectorMap[canonicalKey] || null;
 }
 
 // ── TABS ──
 document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('page-' + tab.dataset.tab).classList.add('active');
-    if (tab.dataset.tab === 'stock') renderStock();
-  });
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
 
 // ── IMPORT ──
@@ -370,6 +425,26 @@ function processCode(rawCode, fromCamera) {
     lastScannedTime = now;
   }
 
+  // Check if scanned code is a SECTOR code
+  const scannedSector = Object.values(sectores).find(s => s.codigo === code);
+  if (scannedSector) {
+    sectorActivo = scannedSector.id;
+    const sel = document.getElementById('sectorActivoSelect');
+    if (sel) sel.value = scannedSector.id;
+    updateSectorActivoBadge();
+    playBeep(true);
+    vibrateDevice(true);
+    showToast(`📍 Sector: ${scannedSector.nombre}`, 'ok');
+    const resultEl = document.getElementById('scanResult');
+    const headerEl = document.getElementById('scanResultHeader');
+    const bodyEl = document.getElementById('scanResultBody');
+    resultEl.style.display = 'block';
+    resultEl.className = 'scan-result found';
+    headerEl.textContent = '📍 Sector activado';
+    bodyEl.innerHTML = `<div style="font-weight:700;font-size:1rem;">${scannedSector.nombre}</div><div style="color:var(--muted);font-size:0.82rem;margin-top:4px;">Los próximos escaneos se asignarán a este sector.</div>`;
+    return;
+  }
+
   const entry = catalog[code];
   const resultEl  = document.getElementById('scanResult');
   const headerEl  = document.getElementById('scanResultHeader');
@@ -379,15 +454,19 @@ function processCode(rawCode, fromCamera) {
     // Siempre sumar bajo la clave canónica del producto
     const key = entry.canonical;
     stock[key] = (stock[key] || 0) + 1;
+    // Asignar sector activo si hay uno seleccionado
+    if (sectorActivo) setSectorForProduct(key, sectorActivo);
     saveState();
     updateHeader();
 
     resultEl.style.display = 'block';
     resultEl.className = 'scan-result found';
     headerEl.textContent = '✅ Producto encontrado';
+    const secId = getSectorForProduct(key);
+    const secNombre = secId && sectores[secId] ? sectores[secId].nombre : null;
     bodyEl.innerHTML = `
       <div class="product-name">${entry.name}</div>
-      <div class="product-meta">${entry.talle ? 'Talle: <b>' + entry.talle + '</b> &nbsp;·&nbsp; ' : ''}SKU: <code>${entry.sku || '—'}</code></div>
+      <div class="product-meta">${entry.talle ? 'Talle: <b>' + entry.talle + '</b> &nbsp;·&nbsp; ' : ''}SKU: <code>${entry.sku || '—'}</code>${secNombre ? ' &nbsp;·&nbsp; 📍 <b>' + secNombre + '</b>' : ''}</div>
       <div class="qty-row">
         <span style="color:var(--muted);font-size:0.82rem">Cantidad contada:</span>
         <span class="qty-display">${stock[key]}</span>
@@ -505,6 +584,7 @@ function stopCamera() {
 
 // ── STOCK LIST ──
 let searchQuery = '';
+let filterSector = '';
 document.getElementById('searchInput').addEventListener('input', e => { searchQuery = e.target.value.toLowerCase(); renderStock(); });
 
 function renderStock() {
@@ -527,6 +607,7 @@ function renderStock() {
 
     const text = (entry.name + ' ' + entry.sku + ' ' + entry.talle).toLowerCase();
     if (searchQuery && !text.includes(searchQuery)) return;
+    if (filterSector && getSectorForProduct(canonical) !== filterSector) return;
     rendered.push({ entry, qty: realQty, key: canonical });
   });
 
@@ -554,14 +635,18 @@ function renderStock() {
     return talleA.localeCompare(talleB);
   });
 
-  list.innerHTML = rendered.map(({ entry, qty }) => `
+  list.innerHTML = rendered.map(({ entry, qty, key }) => {
+    const secId = getSectorForProduct(key);
+    const secNombre = secId && sectores[secId] ? sectores[secId].nombre : '—';
+    return `
     <div class="stock-item">
       <div class="name">${entry.name}</div>
+      <div class="talle" style="font-size:0.75rem;color:var(--accent);">${secNombre}</div>
       <div class="talle">${entry.talle || '—'}</div>
       <div class="qty">${qty}</div>
       <div class="barcode">${entry.barcode || entry.sku || '—'}</div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 // ── EXPORT ──
@@ -650,6 +735,118 @@ function flashBorder(el, color) {
   setTimeout(() => el.style.boxShadow = '', 600);
 }
 
+// ── SECTORES ──
+function crearSector() {
+  const nombre = document.getElementById('sectorNombre').value.trim();
+  if (!nombre) { showToast('Escribí un nombre para el sector', 'err'); return; }
+  // Check duplicate
+  if (Object.values(sectores).find(s => s.nombre.toLowerCase() === nombre.toLowerCase())) {
+    showToast('Ya existe ese sector', 'err'); return;
+  }
+  const id = 'sec_' + Date.now();
+  const codigo = 'SEC-' + nombre.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  sectores[id] = { id, nombre, codigo };
+  document.getElementById('sectorNombre').value = '';
+  saveState();
+  renderSectores();
+  updateSectorSelects();
+  showToast(`Sector ${nombre} creado`, 'ok');
+}
+
+function eliminarSector(id) {
+  const nombre = sectores[id]?.nombre;
+  if (!confirm(`¿Eliminar sector "${nombre}"? Los productos asignados quedarán sin sector.`)) return;
+  // Remove from sectorMap
+  Object.keys(_sectorMap).forEach(k => { if (_sectorMap[k] === id) delete _sectorMap[k]; });
+  delete sectores[id];
+  if (sectorActivo === id) { sectorActivo = null; updateSectorActivoBadge(); }
+  saveState();
+  renderSectores();
+  updateSectorSelects();
+  showToast(`Sector ${nombre} eliminado`, 'ok');
+}
+
+function editarSector(id) {
+  const sector = sectores[id];
+  const nuevoNombre = prompt('Nuevo nombre para el sector:', sector.nombre);
+  if (!nuevoNombre || nuevoNombre.trim() === sector.nombre) return;
+  sectores[id].nombre = nuevoNombre.trim();
+  sectores[id].codigo = 'SEC-' + nuevoNombre.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  saveState();
+  renderSectores();
+  updateSectorSelects();
+  showToast('Sector actualizado', 'ok');
+}
+
+function cambiarSectorActivo(id) {
+  sectorActivo = id || null;
+  updateSectorActivoBadge();
+}
+
+function updateSectorActivoBadge() {
+  const badge = document.getElementById('sectorActivoBadge');
+  const scanBadge = document.getElementById('sectorScannerBadge');
+  const scanNombre = document.getElementById('sectorScannerNombre');
+  if (sectorActivo && sectores[sectorActivo]) {
+    const nombre = sectores[sectorActivo].nombre;
+    if (badge) { badge.style.display = 'block'; badge.textContent = '📍 ' + nombre; }
+    if (scanBadge) { scanBadge.style.display = 'flex'; }
+    if (scanNombre) { scanNombre.textContent = 'Sector activo: ' + nombre; }
+  } else {
+    if (badge) badge.style.display = 'none';
+    if (scanBadge) scanBadge.style.display = 'none';
+  }
+}
+
+function updateSectorSelects() {
+  const opts = Object.values(sectores)
+    .sort((a,b) => a.nombre.localeCompare(b.nombre))
+    .map(s => `<option value="${s.id}" ${sectorActivo===s.id?'selected':''}>${s.nombre}</option>`)
+    .join('');
+
+  const sel = document.getElementById('sectorActivoSelect');
+  if (sel) sel.innerHTML = '<option value="">— Sin sector —</option>' + opts;
+
+  // Stock filter
+  const filt = document.getElementById('sectorFilter');
+  if (filt) filt.innerHTML = '<option value="">Todos los sectores</option>' + opts;
+}
+
+function renderSectores() {
+  const list = document.getElementById('sectoresList');
+  const count = document.getElementById('sectoresCount');
+  const keys = Object.keys(sectores);
+  if (count) count.textContent = keys.length;
+  if (!keys.length) {
+    list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:0.83rem;">Todavía no creaste ningún sector.</div>';
+    return;
+  }
+  const sorted = Object.values(sectores).sort((a,b) => a.nombre.localeCompare(b.nombre));
+  // Count products per sector
+  const counts = {};
+  Object.entries(_sectorMap).forEach(([k,sid]) => {
+    if (stock[k] > 0) counts[sid] = (counts[sid]||0) + 1;
+  });
+  list.innerHTML = sorted.map(s => `
+    <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;" id="sector-row-${s.id}">
+      <div style="flex:1;">
+        <div style="font-weight:700;font-size:0.88rem;">📍 ${s.nombre}</div>
+        <div style="font-size:0.72rem;color:var(--muted);font-family:monospace;">${s.codigo} · ${counts[s.id]||0} productos</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="verSector('${s.id}')">Ver</button>
+      <button class="btn btn-ghost btn-sm" onclick="editarSector('${s.id}')">✏️</button>
+      <button class="btn btn-danger btn-sm" onclick="eliminarSector('${s.id}')">🗑</button>
+    </div>
+  `).join('') + '<div style="border-bottom:none"></div>';
+}
+
+function verSector(id) {
+  // Switch to stock tab and filter by sector
+  switchTab('stock');
+  const filt = document.getElementById('sectorFilter');
+  if (filt) { filt.value = id; filterSector = id; renderStock(); }
+}
+
 // ── NOT FOUND LIST ──
 function renderNotFound() {
   const list = document.getElementById('notfoundList');
@@ -712,8 +909,20 @@ function flashScreen(success) {
 }
 
 // ── INIT ──
+function switchTab(tabName) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[data-tab="${tabName}"]`).classList.add('active');
+  document.getElementById('page-' + tabName).classList.add('active');
+  if (tabName === 'stock') renderStock();
+  if (tabName === 'sectores') { renderSectores(); updateSectorSelects(); }
+}
+
 loadState();
 updateHeader();
+renderSectores();
+updateSectorSelects();
+updateSectorActivoBadge();
 </script>
 </body>
 </html>
