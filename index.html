@@ -6,8 +6,6 @@
   <meta name="theme-color" content="#1a1a2e" />
   <title>Stock Scanner</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" type="image/png" href="favicon.png" />
-  <link rel="apple-touch-icon" href="favicon.png" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
   <style>
@@ -214,6 +212,14 @@
         <span>📍</span><span id="sectorScannerNombre">Sin sector</span>
         <span style="margin-left:auto;cursor:pointer;color:var(--muted);font-size:0.75rem;" onclick="switchTab('sectores')">Cambiar →</span>
       </div>
+      <!-- Modo entrada/salida toggle -->
+      <div style="background:var(--surface);border-radius:var(--radius);padding:12px 16px;border:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.85rem;font-weight:700;" id="modoLabel">📥 Modo: <span style="color:var(--accent);">ENTRADA</span></div>
+          <div style="font-size:0.75rem;color:var(--muted);">Cada scan suma +1 al stock</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="btnModoToggle" onclick="toggleModo()">Cambiar a Salida</button>
+      </div>
       <h3>🔢 Pistola / Manual</h3>
       <div class="input-row">
         <input type="text" id="manualInput" placeholder="Código de barras o SKU..." autocomplete="off" />
@@ -244,14 +250,22 @@
       <input type="text" id="searchInput" placeholder="Buscar producto o SKU..." />
     </div>
     <div class="stock-actions">
-      <button class="btn btn-primary btn-sm" id="btnExportXLSX">⬇️ Exportar Excel</button>
-      <button class="btn btn-ghost btn-sm" id="btnExportCSV">⬇️ Exportar CSV</button>
-      <button class="btn btn-danger btn-sm" id="btnClearStock">🗑 Limpiar conteo</button>
+      <button class="btn btn-primary btn-sm" id="btnExportXLSX">⬇️ Excel completo</button>
+      <button class="btn btn-ghost btn-sm" id="btnExportSector">⬇️ Excel por sector</button>
+      <button class="btn btn-ghost btn-sm" id="btnExportCSV">⬇️ CSV</button>
+      <button class="btn btn-danger btn-sm" id="btnClearStock">🗑 Limpiar</button>
     </div>
     <select id="sectorFilter" onchange="filterSector=this.value;renderStock()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:9px 14px;color:var(--text);font-size:0.875rem;outline:none;width:100%;">
       <option value="">Todos los sectores</option>
     </select>
-    <div class="stock-table-wrap">
+    <!-- Stock / Historial subtabs -->
+    <div style="display:flex;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;">
+      <div class="subtab active" data-subtab="saldo" onclick="switchSubtab('saldo')" style="flex:1;padding:9px;text-align:center;font-size:0.8rem;font-weight:600;cursor:pointer;border-bottom:2px solid var(--accent);color:var(--accent);">📦 Saldo actual</div>
+      <div class="subtab" data-subtab="historial" onclick="switchSubtab('historial')" style="flex:1;padding:9px;text-align:center;font-size:0.8rem;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;color:var(--muted);">📋 Historial</div>
+    </div>
+
+    <!-- Saldo -->
+    <div id="subpage-saldo" class="stock-table-wrap">
       <div class="stock-table-header">
         <span>Producto</span>
         <span>Sector</span>
@@ -262,6 +276,15 @@
       <div id="stockList">
         <div class="empty-state"><div class="icon">📭</div><p>Todavía no escaneaste nada.<br>Importá el archivo de Odoo y empezá a escanear.</p></div>
       </div>
+    </div>
+
+    <!-- Historial -->
+    <div id="subpage-historial" style="display:none;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;">
+      <div style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+        <span style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);">Últimos movimientos</span>
+        <button class="btn btn-danger btn-sm" onclick="limpiarHistorial()">🗑 Limpiar</button>
+      </div>
+      <div id="historialList"><div class="empty-state"><div class="icon">📋</div><p>Sin movimientos todavía.</p></div></div>
     </div>
   </div>
 </div>
@@ -325,6 +348,7 @@ function saveState() {
     localStorage.setItem('ss_stock', JSON.stringify(stock));
     localStorage.setItem('ss_sectores', JSON.stringify(sectores));
     localStorage.setItem('ss_sector_map', JSON.stringify(sectorMap()));
+    localStorage.setItem('ss_movimientos', JSON.stringify(movimientos));
   } catch(e) {}
 }
 function loadState() {
@@ -337,10 +361,13 @@ function loadState() {
     if (s) stock = JSON.parse(s);
     if (sec) sectores = JSON.parse(sec);
     if (sm) _sectorMap = JSON.parse(sm);
+    const mov = localStorage.getItem('ss_movimientos');
+    if (mov) movimientos = JSON.parse(mov);
   } catch(e) {}
 }
 // canonicalKey -> sectorId
 let _sectorMap = {};
+let movimientos = []; // { id, fecha, hora, canonicalKey, nombre, talle, tipo: 'entrada'|'salida', qty, motivo }
 function sectorMap() { return _sectorMap; }
 function setSectorForProduct(canonicalKey, sectorId) {
   _sectorMap[canonicalKey] = sectorId;
@@ -458,6 +485,8 @@ function processCode(rawCode, fromCamera) {
     stock[key] = (stock[key] || 0) + 1;
     // Asignar sector activo si hay uno seleccionado
     if (sectorActivo) setSectorForProduct(key, sectorActivo);
+    // Registrar movimiento de entrada
+    registrarMovimiento(key, entry, 'entrada', 1, 'Escaneo');
     saveState();
     updateHeader();
 
@@ -497,21 +526,30 @@ function processCode(rawCode, fromCamera) {
   }
 }
 
-function undoScan(key) {
-  if (stock[key] > 0) {
-    stock[key]--;
-    if (stock[key] === 0) delete stock[key];
-    saveState();
-    updateHeader();
-    // Refrescar display
-    const entry = catalog[key];
-    const bodyEl = document.getElementById('scanResultBody');
-    if (entry && bodyEl) {
-      const qty = stock[key] || 0;
-      bodyEl.querySelector('.qty-display').textContent = qty;
+function undoScan(key, tipo) {
+  if (tipo === 'salida') {
+    // Undo salida: devolver 1 al stock
+    stock[key] = (stock[key] || 0) + 1;
+    // Remove last movement
+    const idx = movimientos.findIndex(m => m.canonicalKey === key && m.tipo === 'salida');
+    if (idx !== -1) movimientos.splice(idx, 1);
+  } else {
+    // Undo entrada: quitar 1
+    if ((stock[key] || 0) > 0) {
+      stock[key]--;
+      if (stock[key] === 0) delete stock[key];
+      const idx = movimientos.findIndex(m => m.canonicalKey === key && m.tipo === 'entrada');
+      if (idx !== -1) movimientos.splice(idx, 1);
     }
-    showToast('Deshecho', 'ok');
   }
+  saveState();
+  updateHeader();
+  const bodyEl = document.getElementById('scanResultBody');
+  if (bodyEl) {
+    const qdEl = bodyEl.querySelector('.qty-display');
+    if (qdEl) qdEl.textContent = stock[key] || 0;
+  }
+  showToast('Deshecho', 'ok');
 }
 
 // ── MANUAL INPUT ──
@@ -587,6 +625,7 @@ function stopCamera() {
 // ── STOCK LIST ──
 let searchQuery = '';
 let filterSector = '';
+let modoScan = 'entrada'; // 'entrada' | 'salida'
 document.getElementById('searchInput').addEventListener('input', e => { searchQuery = e.target.value.toLowerCase(); renderStock(); });
 
 function renderStock() {
@@ -654,8 +693,9 @@ function renderStock() {
 // ── EXPORT ──
 document.getElementById('btnExportXLSX').addEventListener('click', exportXLSX);
 document.getElementById('btnExportCSV').addEventListener('click', exportCSV);
+document.getElementById('btnExportSector').addEventListener('click', exportXLSXPorSector);
 
-function buildExportRows() {
+function buildExportRows(sectorIdFiltro) {
   const seen = new Set();
   const rows = [];
   Object.entries(stock).forEach(([key, qty]) => {
@@ -666,15 +706,24 @@ function buildExportRows() {
     seen.add(canonical);
     const realQty = stock[canonical] || 0;
     if (realQty === 0) return;
+    const secId = getSectorForProduct(canonical);
+    // Filter by sector if specified
+    if (sectorIdFiltro && secId !== sectorIdFiltro) return;
+    const secNombre = secId && sectores[secId] ? sectores[secId].nombre : '';
     rows.push({
+      'Sector': secNombre || '—',
       'Referencia interna': entry.sku || '',
       'Código de barras': entry.barcode || '',
       'Nombre': entry.name,
       'Talle': entry.talle || '',
-      'Cantidad contada': realQty
+      'Cantidad': realQty
     });
   });
-  return rows.sort((a, b) => a['Nombre'].localeCompare(b['Nombre']));
+  return rows.sort((a, b) => {
+    const sec = a['Sector'].localeCompare(b['Sector']);
+    if (sec !== 0) return sec;
+    return a['Nombre'].localeCompare(b['Nombre']);
+  });
 }
 
 function exportXLSX() {
@@ -682,10 +731,51 @@ function exportXLSX() {
   if (!rows.length) { showToast('No hay stock para exportar', 'err'); return; }
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 40 }, { wch: 10 }, { wch: 14 }];
-  XLSX.utils.book_append_sheet(wb, ws, 'Stock');
-  XLSX.writeFile(wb, `stock_conteo_${new Date().toISOString().slice(0,10)}.xlsx`);
-  showToast('Archivo descargado ✅', 'ok');
+  ws['!cols'] = [{ wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 40 }, { wch: 10 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock completo');
+  const date = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `stock_completo_${date}.xlsx`);
+  showToast('Excel completo descargado ✅', 'ok');
+}
+
+function exportXLSXPorSector() {
+  const sectoresConStock = Object.values(sectores).filter(s => {
+    return Object.entries(_sectorMap).some(([k, sid]) => sid === s.id && (stock[k] || 0) > 0);
+  });
+  // Also include products without sector
+  const sinSector = buildExportRows().filter(r => r['Sector'] === '—');
+
+  if (!sectoresConStock.length && !sinSector.length) {
+    showToast('No hay stock para exportar', 'err'); return;
+  }
+
+  const wb = XLSX.utils.book_new();
+  const date = new Date().toISOString().slice(0,10);
+  const colWidths = [{ wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 40 }, { wch: 10 }, { wch: 10 }];
+
+  // One sheet per sector
+  sectoresConStock
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+    .forEach(s => {
+      const rows = buildExportRows(s.id);
+      if (!rows.length) return;
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = colWidths;
+      // Sheet name max 31 chars
+      const sheetName = s.nombre.slice(0, 31);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+
+  // Sheet for products without sector
+  if (sinSector.length) {
+    const ws = XLSX.utils.json_to_sheet(sinSector);
+    ws['!cols'] = colWidths;
+    XLSX.utils.book_append_sheet(wb, ws, 'Sin sector');
+  }
+
+  if (!wb.SheetNames.length) { showToast('No hay stock para exportar', 'err'); return; }
+  XLSX.writeFile(wb, `stock_por_sector_${date}.xlsx`);
+  showToast(`Excel con ${wb.SheetNames.length} sectores descargado ✅`, 'ok');
 }
 
 function exportCSV() {
@@ -735,6 +825,39 @@ function showToast(msg, type = 'ok') {
 function flashBorder(el, color) {
   el.style.boxShadow = `0 0 0 2px ${color}`;
   setTimeout(() => el.style.boxShadow = '', 600);
+}
+
+// ── MODO SCAN ──
+function toggleModo() {
+  modoScan = modoScan === 'entrada' ? 'salida' : 'entrada';
+  const label = document.getElementById('modoLabel');
+  const btn = document.getElementById('btnModoToggle');
+  const modeDesc = document.querySelector('#modoLabel + div') || document.querySelector('[style*="Cada scan"]');
+  if (modoScan === 'entrada') {
+    label.innerHTML = '📥 Modo: <span style="color:var(--accent);">ENTRADA</span>';
+    if (btn) { btn.textContent = 'Cambiar a Salida'; btn.classList.remove('btn-danger'); btn.classList.add('btn-ghost'); }
+  } else {
+    label.innerHTML = '📤 Modo: <span style="color:var(--danger);">SALIDA</span>';
+    if (btn) { btn.textContent = 'Cambiar a Entrada'; btn.classList.remove('btn-ghost'); btn.classList.add('btn-danger'); }
+  }
+}
+
+function registrarMovimiento(key, entry, tipo, qty, motivo) {
+  const now = new Date();
+  movimientos.unshift({
+    id: Date.now(),
+    fecha: now.toLocaleDateString('es-AR'),
+    hora: now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+    canonicalKey: key,
+    nombre: entry.name,
+    talle: entry.talle || '',
+    sku: entry.sku || entry.barcode || '',
+    tipo,
+    qty,
+    motivo
+  });
+  // Keep last 500 movements
+  if (movimientos.length > 500) movimientos = movimientos.slice(0, 500);
 }
 
 // ── SECTORES ──
@@ -908,6 +1031,44 @@ function flashScreen(success) {
   overlay.style.background = success ? 'rgba(0,212,170,0.25)' : 'rgba(239,68,68,0.25)';
   overlay.style.opacity = '1';
   setTimeout(() => overlay.style.opacity = '0', 150);
+}
+
+// ── HISTORIAL ──
+function switchSubtab(name) {
+  document.querySelectorAll('.subtab').forEach(t => {
+    const isActive = t.dataset.subtab === name;
+    t.style.borderBottomColor = isActive ? 'var(--accent)' : 'transparent';
+    t.style.color = isActive ? 'var(--accent)' : 'var(--muted)';
+  });
+  document.getElementById('subpage-saldo').style.display = name === 'saldo' ? '' : 'none';
+  document.getElementById('subpage-historial').style.display = name === 'historial' ? '' : 'none';
+  if (name === 'historial') renderHistorial();
+}
+
+function renderHistorial() {
+  const list = document.getElementById('historialList');
+  if (!movimientos.length) {
+    list.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Sin movimientos todavía.</p></div>';
+    return;
+  }
+  list.innerHTML = movimientos.map(m => `
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;">
+      <div style="font-size:1.1rem;">${m.tipo === 'entrada' ? '📥' : '📤'}</div>
+      <div>
+        <div style="font-weight:600;font-size:0.83rem;">${m.nombre}${m.talle ? ' · '+m.talle : ''}</div>
+        <div style="font-size:0.72rem;color:var(--muted);">${m.fecha} ${m.hora} · ${m.motivo}</div>
+      </div>
+      <div style="font-weight:700;font-size:0.95rem;color:${m.tipo==='entrada'?'var(--accent)':'var(--danger)'};">${m.tipo==='entrada'?'+':'-'}${m.qty}</div>
+    </div>
+  `).join('');
+}
+
+function limpiarHistorial() {
+  if (!confirm('¿Limpiar todo el historial de movimientos?')) return;
+  movimientos = [];
+  saveState();
+  renderHistorial();
+  showToast('Historial limpiado', 'ok');
 }
 
 // ── INIT ──
