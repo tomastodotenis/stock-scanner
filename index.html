@@ -359,13 +359,12 @@
       <div class="card">
         <div class="slabel" style="margin-bottom:7px;">Responsable del traslado</div>
         <div style="display:flex;gap:7px;">
-          <input type="text" id="tResp" class="inp" placeholder="Escaneá el código de barras..." autocomplete="off" />
+          <input type="text" id="tResp" class="inp" placeholder="Nombre y apellido o código de barras" />
           <button class="btn btn-ghost btn-sm" onclick="confirmarResp()">✓</button>
         </div>
-        <div style="font-size:.7rem;color:var(--muted);margin-top:5px;">🔒 Escaneá tu código de barras para habilitar los pasos siguientes</div>
         <div id="respConf" style="display:none;margin-top:7px;font-size:.8rem;color:var(--accent);font-weight:600;"></div>
       </div>
-      <div class="tst" id="tStep1" style="opacity:.4;pointer-events:none;">
+      <div class="tst active-step" id="tStep1">
         <div class="tst-label">Paso 1 — Sector origen</div>
         <div id="tOrigenVal" style="color:var(--muted);font-size:.83rem;">Escaneá el cartel o seleccioná:</div>
         <select id="tSelOrigen" class="inp" style="margin-top:7px;" onchange="setOrigen(this.value)"><option value="">— Seleccionar —</option></select>
@@ -892,19 +891,13 @@ function updateTrasladoSels(){
   ['tSelOrigen','tSelDestino'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='<option value="">— Seleccionar —</option>'+opts;});
 }
 window.confirmarResp=function(){
-  const input=document.getElementById('tResp');
-  const v=input.value.trim();
-  if(!v){showToast('Escaneá el código de barras del responsable','err');return;}
-  if(!/^\d{4,}$/.test(v)){showToast('Eso no es un código de barras válido. Escaneá el código.','err');return;}
+  const v=document.getElementById('tResp').value.trim();if(!v){showToast('Ingresá el responsable','err');return;}
   traslado.responsable=v;
   const now=new Date();
   const c=document.getElementById('respConf');c.style.display='block';
-  c.innerHTML=`✅ Responsable registrado: ${v} · ${now.toLocaleDateString('es-AR')} ${now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}`;
-  input.disabled=true;
-  const s1=document.getElementById('tStep1');s1.style.opacity='1';s1.style.pointerEvents='';s1.classList.add('active-step');
-  showToast(`Responsable registrado`,'ok');
+  c.innerHTML=`✅ ${v} · ${now.toLocaleDateString('es-AR')} ${now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}`;
+  showToast(`Responsable: ${v}`,'ok');
 };
-document.getElementById('tResp').addEventListener('keydown',e=>{if(e.key==='Enter')confirmarResp();});
 window.setOrigen=function(id){
   if(!id)return;
   traslado.origen=id;traslado.productos=[];
@@ -972,13 +965,13 @@ window.confirmarTraslado=async function(){
 };
 window.resetTraslado=function(){
   traslado={responsable:null,origen:null,destino:null,productos:[]};
-  const respInput=document.getElementById('tResp');respInput.value='';respInput.disabled=false;
+  document.getElementById('tResp').value='';
   document.getElementById('respConf').style.display='none';
   document.getElementById('tOrigenVal').textContent='Escaneá el cartel o seleccioná:';
   document.getElementById('tDestinoVal').textContent='Escaneá el cartel o seleccioná:';
   document.getElementById('tSelOrigen').value='';document.getElementById('tSelDestino').value='';
-  document.getElementById('tStep1').classList.remove('done','active-step');
-  ['tStep1','tStep2','tStep3'].forEach(id=>{const el=document.getElementById(id);el.style.opacity='.4';el.style.pointerEvents='none';el.classList.remove('done');});
+  document.getElementById('tStep1').classList.remove('done');
+  ['tStep2','tStep3'].forEach(id=>{const el=document.getElementById(id);el.style.opacity='.4';el.style.pointerEvents='none';el.classList.remove('done');});
   const btn=document.getElementById('btnConfT');btn.style.opacity='.4';btn.style.pointerEvents='none';
   renderTProdList();
 };
