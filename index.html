@@ -6,8 +6,6 @@
   <meta name="theme-color" content="#1a1a2e" />
   <title>Stock Scanner</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" type="image/png" href="favicon.png" />
-  <link rel="apple-touch-icon" href="favicon.png" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
   <script type="module">
@@ -42,7 +40,7 @@
     .login-err{color:var(--danger);font-size:.82rem;text-align:center;display:none;}
     /* HEADER */
     header{background:#0a1520;border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
-    .logo img{height:70px;width:auto;filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 2px #fff);}
+    .logo img{height:50px;width:auto;filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 2px #fff);}
     .hright{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}
     .hstats{display:flex;gap:10px;font-size:.7rem;color:#ccc;}
     .hstats b{color:var(--accent);}
@@ -208,7 +206,7 @@
     <div class="tab" data-tab="stock">📋 Stock</div>
     <div class="tab" data-tab="historial">📜 Historial</div>
     <div class="tab" data-tab="sectores">📍 Sectores</div>
-    <div class="tab" data-tab="empleados">👤 Empleados</div>
+    <div class="tab" data-tab="empleados" id="tabEmpleados" style="display:none;">👤 Empleados</div>
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
   </div>
 
@@ -573,6 +571,7 @@ window.doLogout=async function(){
 // ── TABS ──
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
 window.switchTab=function(name){
+  if(name==='empleados'&&!isAdmin){showToast('Solo el administrador puede ver Empleados','err');return;}
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+name));
   if(name==='stock')renderStock();
@@ -1203,6 +1202,7 @@ window.pinPress = function(key){
         isAdmin=true;
         document.getElementById('adminModal').classList.remove('show');
         document.getElementById('adminBadge').style.display='block';
+        document.getElementById('tabEmpleados').style.display='flex';
         showToast('Modo administrador activado 🔴','ok');
         openAdminPanel();
       }else{
@@ -1235,6 +1235,9 @@ window.requireAdmin = function(fn){
 window.salirAdmin = function(){
   isAdmin=false;
   document.getElementById('adminBadge').style.display='none';
+  document.getElementById('tabEmpleados').style.display='none';
+  const active=document.querySelector('.tab.active');
+  if(active&&active.dataset.tab==='empleados')switchTab('import');
   closeAdminPanel();
   showToast('Saliste del modo administrador','ok');
 };
