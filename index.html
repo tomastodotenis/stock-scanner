@@ -765,19 +765,28 @@ window.setModo=function(modo){
 window.manScan=function(){const v=document.getElementById('manInput').value.trim();if(v){processCode(v,false);document.getElementById('manInput').value='';}};
 document.getElementById('manInput').addEventListener('keydown',e=>{if(e.key==='Enter')manScan();});
 document.getElementById('btnCam').addEventListener('click',()=>cameraActive?stopCam():startCam());
+let quaggaBound=false;
+function onBarcodeDetected(r){
+  const errs=r.codeResult.decodedCodes.filter(x=>x.error!==undefined);
+  const avg=errs.length?errs.reduce((s,x)=>s+x.error,0)/errs.length:1;
+  if(avg<0.25)processCode(r.codeResult.code,true);
+}
 function startCam(){
+  ensureAudioCtx();
   const vp=document.getElementById('viewport');vp.style.display='block';
   document.getElementById('btnCam').textContent='Detener cámara';
   document.getElementById('camDot').classList.add('on');
   Quagga.init({
-    inputStream:{type:'LiveStream',target:vp,constraints:{facingMode:'environment',width:{min:640,ideal:1920},height:{min:480,ideal:1080}}},
+    inputStream:{type:'LiveStream',target:vp,constraints:{facingMode:'environment',width:{min:640,ideal:1920},height:{min:480,ideal:1080},advanced:[{focusMode:'continuous'}]}},
     decoder:{readers:['ean_reader','ean_8_reader','code_128_reader','code_39_reader','upc_reader','upc_e_reader']},
-    locate:true,frequency:15,locator:{patchSize:'medium',halfSample:true}
-  },err=>{if(err){showToast('No se pudo acceder a la cámara','err');stopCam();return;}Quagga.start();cameraActive=true;});
-  Quagga.onDetected(r=>{
-    const errs=r.codeResult.decodedCodes.filter(x=>x.error!==undefined);
-    const avg=errs.length?errs.reduce((s,x)=>s+x.error,0)/errs.length:1;
-    if(avg<0.25)processCode(r.codeResult.code,true);
+    locate:true,frequency:10,numOfWorkers:navigator.hardwareConcurrency?Math.min(4,navigator.hardwareConcurrency):2,
+    locator:{patchSize:'medium',halfSample:true}
+  },err=>{
+    if(err){showToast('No se pudo acceder a la cámara','err');stopCam();return;}
+    Quagga.start();cameraActive=true;
+    if(!quaggaBound){Quagga.onDetected(onBarcodeDetected);quaggaBound=true;}
+    const v=vp.querySelector('video');
+    if(v){v.setAttribute('playsinline','true');v.setAttribute('muted','true');v.muted=true;v.play().catch(()=>{});}
   });
 }
 function stopCam(){try{Quagga.stop();}catch(e){}cameraActive=false;document.getElementById('viewport').style.display='none';document.getElementById('btnCam').textContent='Activar cámara';document.getElementById('camDot').classList.remove('on');}
@@ -1130,13 +1139,25 @@ function flashScr(ok){
 }
 function playBeep(ok){
   try{
-    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const ctx=ensureAudioCtx();
+    if(!ctx)return;
     const osc=ctx.createOscillator();const g=ctx.createGain();
     osc.connect(g);g.connect(ctx.destination);
     if(ok){osc.frequency.setValueAtTime(880,ctx.currentTime);osc.frequency.setValueAtTime(1100,ctx.currentTime+.08);g.gain.setValueAtTime(.3,ctx.currentTime);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.2);osc.start(ctx.currentTime);osc.stop(ctx.currentTime+.2);}
     else{osc.frequency.setValueAtTime(300,ctx.currentTime);g.gain.setValueAtTime(.3,ctx.currentTime);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.3);osc.start(ctx.currentTime);osc.stop(ctx.currentTime+.3);}
   }catch(e){}
 }
+let audioCtx=null;
+function ensureAudioCtx(){
+  try{
+    if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended')audioCtx.resume();
+    return audioCtx;
+  }catch(e){return null;}
+}
+// Desbloquea el audio en iOS con el primer toque en la pantalla (requisito de Safari)
+['touchend','click'].forEach(ev=>document.addEventListener(ev,()=>ensureAudioCtx(),{once:true,passive:true}));
+
 function vibrateDevice(ok){if(navigator.vibrate)navigator.vibrate(ok?[60]:[80,60,80]);}
 
 // ── DISPLAY NAME ──
