@@ -14,6 +14,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     import { getFirestore, doc, setDoc, getDoc, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
     const app = initializeApp({
       apiKey: "AIzaSyC4rhZK1tuhJChMrChr01ukMeGs6tM3x_8",
       authDomain: "stock-scanner-d7c67.firebaseapp.com",
@@ -22,7 +23,7 @@
       messagingSenderId: "267705854754",
       appId: "1:267705854754:web:15c9408a27846e3954137b"
     });
-    window._fb = { auth: getAuth(app), db: getFirestore(app), signInWithEmailAndPassword, signOut, onAuthStateChanged, doc, setDoc, getDoc, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp };
+    window._fb = { auth: getAuth(app), db: getFirestore(app), storage: getStorage(app), signInWithEmailAndPassword, signOut, onAuthStateChanged, doc, setDoc, getDoc, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, ref, uploadString, getDownloadURL };
   </script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -515,8 +516,14 @@ async function fbLoad(){
     if(sc.exists())sectores=sc.data().sectores||{};
     const ec=await getDoc(doc(db,'config','empleados'));
     if(ec.exists())empleados=ec.data().empleados||{};
-    const c=localStorage.getItem('ss_catalog');
-    if(c)catalog=JSON.parse(c);
+    try{
+      let c=await idbGet('ss_catalog');
+      if(!c){
+        const lc=localStorage.getItem('ss_catalog');
+        if(lc){c=JSON.parse(lc);await idbSet('ss_catalog',c);localStorage.removeItem('ss_catalog');}
+      }
+      if(c)catalog=c;
+    }catch(e){console.error(e);}
     updateHeader();renderSectores();updateSecSelects();renderStock();renderEmpleados();
   }catch(e){console.error(e);}
 }
@@ -529,6 +536,42 @@ function fbListenMov(){
       movimientos=snap.docs.map(d=>({id:d.id,...d.data()}));
       renderHG();
       document.getElementById('hSync').textContent='🟢 En vivo';
+    });
+  }catch(e){console.error(e);}
+}
+
+// ── CATÁLOGO EN LA NUBE (subida desde un dispositivo, se sincroniza en todos) ──
+let unsubCatalog=null;
+async function uploadCatalogToCloud(cnt,upd){
+  try{
+    const{storage,ref,uploadString,db,doc,setDoc}=fb();
+    const r=ref(storage,'catalogo/catalog.json');
+    await uploadString(r,JSON.stringify(catalog),'raw',{contentType:'application/json'});
+    await setDoc(doc(db,'config','catalogo_meta'),{upd,count:cnt,por:getDisplayName?.()||currentUser?.email||''});
+    return true;
+  }catch(e){console.error(e);return false;}
+}
+async function syncCatalogFromCloud(remoteMeta){
+  try{
+    const localMeta=await idbGet('ss_catalog_meta');
+    if(localMeta&&localMeta.upd===remoteMeta.upd)return;
+    const{storage,ref,getDownloadURL}=fb();
+    const url=await getDownloadURL(ref(storage,'catalogo/catalog.json'));
+    const resp=await fetch(url);
+    const data=await resp.json();
+    catalog=data;
+    await idbSet('ss_catalog',catalog);
+    await idbSet('ss_catalog_meta',{upd:remoteMeta.upd});
+    updateHeader();renderStock();
+    if(localMeta)showToast('Catálogo actualizado desde otro dispositivo','ok');
+  }catch(e){console.error(e);}
+}
+function fbListenCatalog(){
+  if(unsubCatalog)unsubCatalog();
+  try{
+    const{db,doc,onSnapshot}=fb();
+    unsubCatalog=onSnapshot(doc(db,'config','catalogo_meta'),snap=>{
+      if(snap.exists())syncCatalogFromCloud(snap.data());
     });
   }catch(e){console.error(e);}
 }
@@ -546,7 +589,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         document.getElementById('loginScreen').style.display='none';
         const sh=document.getElementById('appShell');sh.style.display='flex';
         updateDisplayName();
-        await fbLoad();fbListenMov();
+        await fbLoad();fbListenMov();fbListenCatalog();
       }else{
         currentUser=null;
         document.getElementById('loginScreen').style.display='flex';
@@ -568,6 +611,7 @@ window.doLogout=async function(){
   if(!confirm('¿Cerrar sesión?'))return;
   const{auth,signOut}=fb();await signOut(auth);
   if(unsubMov)unsubMov();
+  if(unsubCatalog)unsubCatalog();
 };
 
 // ── TABS ──
@@ -589,6 +633,33 @@ function switchSub(name){
   if(name==='movs')renderMovList();
 }
 
+// ── IndexedDB (catálogo grande; localStorage tiene poco espacio) ──
+const IDB_NAME='ss_db', IDB_STORE='kv';
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    const req=indexedDB.open(IDB_NAME,1);
+    req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(IDB_STORE))req.result.createObjectStore(IDB_STORE);};
+    req.onsuccess=()=>res(req.result);
+    req.onerror=()=>rej(req.error);
+  });
+}
+async function idbSet(key,val){
+  const db=await idbOpen();
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(IDB_STORE,'readwrite');
+    tx.objectStore(IDB_STORE).put(val,key);
+    tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);
+  });
+}
+async function idbGet(key){
+  const db=await idbOpen();
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(IDB_STORE,'readonly');
+    const req=tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess=()=>res(req.result);req.onerror=()=>rej(req.error);
+  });
+}
+
 // ── IMPORT ──
 const iz=document.getElementById('importZone'),fi=document.getElementById('fileInput');
 iz.addEventListener('click',()=>fi.click());
@@ -598,12 +669,12 @@ iz.addEventListener('drop',e=>{e.preventDefault();iz.style.borderColor='';if(e.d
 fi.addEventListener('change',()=>{if(fi.files[0])processFile(fi.files[0]);});
 function processFile(file){
   const r=new FileReader();
-  r.onload=e=>{
+  r.onload=async e=>{
     try{
       const wb=XLSX.read(e.target.result,{type:'array'});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
-      catalog={};let cnt=0;
+      catalog={};let cnt=0;const nowIso=new Date().toISOString();
       rows.forEach(row=>{
         const name=String(row['Nombre']||row['nombre']||'').trim();
         const bc=String(row['Código de barras']||row['Codigo de barras']||row['barcode']||'').trim();
@@ -616,12 +687,23 @@ function processFile(file){
         if(bc&&sku&&bc!==sku)catalog[sku]=entry;
         cnt++;
       });
-      localStorage.setItem('ss_catalog',JSON.stringify(catalog));
+      try{
+        await idbSet('ss_catalog',catalog);
+        await idbSet('ss_catalog_meta',{upd:nowIso});
+        localStorage.removeItem('ss_catalog');
+      }catch(storeErr){
+        console.error(storeErr);
+        showToast('El catálogo quedó cargado en esta sesión, pero no se pudo guardar para la próxima vez','err');
+      }
       updateHeader();
       const st=document.getElementById('importStatus');
       st.style.display='block';st.className='ist ok';
-      st.innerHTML=`✅ <b>${cnt} variantes</b> importadas`;
+      st.innerHTML=`✅ <b>${cnt} variantes</b> importadas · ☁️ Sincronizando con los demás dispositivos...`;
       showToast(`${cnt} productos importados`,'ok');
+      const cloudOk=await uploadCatalogToCloud(cnt,nowIso);
+      st.innerHTML=cloudOk
+        ? `✅ <b>${cnt} variantes</b> importadas y sincronizadas en todos los dispositivos`
+        : `⚠️ <b>${cnt} variantes</b> importadas en este dispositivo, pero no se pudo sincronizar a los demás (revisá la conexión)`;
     }catch(err){
       const st=document.getElementById('importStatus');st.style.display='block';st.className='ist err';
       st.innerHTML=`❌ ${err.message}`;
