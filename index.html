@@ -13,8 +13,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-    import { getFirestore, doc, setDoc, getDoc, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-    import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+    import { getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     const app = initializeApp({
       apiKey: "AIzaSyC4rhZK1tuhJChMrChr01ukMeGs6tM3x_8",
       authDomain: "stock-scanner-d7c67.firebaseapp.com",
@@ -23,7 +22,7 @@
       messagingSenderId: "267705854754",
       appId: "1:267705854754:web:15c9408a27846e3954137b"
     });
-    window._fb = { auth: getAuth(app), db: getFirestore(app), storage: getStorage(app), signInWithEmailAndPassword, signOut, onAuthStateChanged, doc, setDoc, getDoc, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, ref, uploadString, getDownloadURL };
+    window._fb = { auth: getAuth(app), db: getFirestore(app), signInWithEmailAndPassword, signOut, onAuthStateChanged, doc, setDoc, getDoc, getDocs, deleteDoc, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, writeBatch };
   </script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -540,14 +539,29 @@ function fbListenMov(){
   }catch(e){console.error(e);}
 }
 
-// ── CATÁLOGO EN LA NUBE (subida desde un dispositivo, se sincroniza en todos) ──
+// ── CATÁLOGO EN LA NUBE (Firestore, sin Storage → sin costo, no requiere tarjeta) ──
+// El catálogo se trocea en varios documentos porque Firestore limita cada doc a ~1MB.
+const CATALOG_CHUNK_SIZE=500000;
 let unsubCatalog=null;
 async function uploadCatalogToCloud(cnt,upd){
   try{
-    const{storage,ref,uploadString,db,doc,setDoc}=fb();
-    const r=ref(storage,'catalogo/catalog.json');
-    await uploadString(r,JSON.stringify(catalog),'raw',{contentType:'application/json'});
-    await setDoc(doc(db,'config','catalogo_meta'),{upd,count:cnt,por:getDisplayName?.()||currentUser?.email||''});
+    const{db,doc,setDoc,getDocs,deleteDoc,collection,writeBatch}=fb();
+    const json=JSON.stringify(catalog);
+    const chunks=[];
+    for(let i=0;i<json.length;i+=CATALOG_CHUNK_SIZE)chunks.push(json.slice(i,i+CATALOG_CHUNK_SIZE));
+    // Borra los chunks viejos (por si el catálogo nuevo tiene menos partes que el anterior)
+    const oldSnap=await getDocs(collection(db,'catalogo_chunks'));
+    let batch=writeBatch(db);let ops=0;
+    for(const d of oldSnap.docs){batch.delete(d.ref);ops++;if(ops>=450){await batch.commit();batch=writeBatch(db);ops=0;}}
+    if(ops>0)await batch.commit();
+    // Sube los chunks nuevos
+    batch=writeBatch(db);ops=0;
+    for(let i=0;i<chunks.length;i++){
+      batch.set(doc(db,'catalogo_chunks','chunk_'+i),{data:chunks[i]});ops++;
+      if(ops>=450){await batch.commit();batch=writeBatch(db);ops=0;}
+    }
+    if(ops>0)await batch.commit();
+    await setDoc(doc(db,'config','catalogo_meta'),{upd,count:cnt,chunks:chunks.length,por:getDisplayName?.()||currentUser?.email||''});
     return true;
   }catch(e){console.error(e);return false;}
 }
@@ -555,11 +569,14 @@ async function syncCatalogFromCloud(remoteMeta){
   try{
     const localMeta=await idbGet('ss_catalog_meta');
     if(localMeta&&localMeta.upd===remoteMeta.upd)return;
-    const{storage,ref,getDownloadURL}=fb();
-    const url=await getDownloadURL(ref(storage,'catalogo/catalog.json'));
-    const resp=await fetch(url);
-    const data=await resp.json();
-    catalog=data;
+    const{db,doc,getDoc}=fb();
+    let json='';
+    for(let i=0;i<(remoteMeta.chunks||0);i++){
+      const cs=await getDoc(doc(db,'catalogo_chunks','chunk_'+i));
+      if(cs.exists())json+=cs.data().data;
+    }
+    if(!json)return;
+    catalog=JSON.parse(json);
     await idbSet('ss_catalog',catalog);
     await idbSet('ss_catalog_meta',{upd:remoteMeta.upd});
     updateHeader();renderStock();
