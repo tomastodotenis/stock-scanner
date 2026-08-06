@@ -323,6 +323,7 @@
           <option value="traslado">🔄 Traslados</option>
         </select>
       </div>
+      <button id="btnBorrarHist" class="btn btn-danger btn-sm" style="display:none;" onclick="borrarHistorial()">🗑 Borrar todo el historial</button>
       <div class="stbl">
         <div style="padding:9px 13px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
           <span class="slabel">Últimos 100 movimientos</span>
@@ -1025,6 +1026,24 @@ function renderSectores(){
 }
 window.verSector=function(id){switchTab('stock');const f=document.getElementById('secFilter');if(f){f.value=id;filterSec=id;renderStock();}};
 
+// ── HISTORIAL (borrado admin) ──
+window.borrarHistorial=async function(){
+  if(!isAdmin){showToast('Solo el administrador puede borrar el historial','err');return;}
+  if(!confirm('¿Borrar TODO el historial de movimientos? Esta acción no se puede deshacer.'))return;
+  if(!confirm('Confirmá de nuevo: se van a borrar TODOS los movimientos registrados, no solo los últimos 100 visibles.'))return;
+  try{
+    const{db,collection,getDocs,writeBatch}=fb();
+    const snap=await getDocs(collection(db,'movimientos'));
+    let batch=writeBatch(db);let ops=0;
+    for(const d of snap.docs){
+      batch.delete(d.ref);ops++;
+      if(ops>=450){await batch.commit();batch=writeBatch(db);ops=0;}
+    }
+    if(ops>0)await batch.commit();
+    showToast('Historial borrado','ok');
+  }catch(e){console.error(e);showToast('No se pudo borrar el historial','err');}
+};
+
 // ── EMPLEADOS ──
 window.crearEmpleado=async function(){
   const n=document.getElementById('empNombre').value.trim();
@@ -1326,6 +1345,7 @@ window.pinPress = function(key){
         document.getElementById('adminModal').classList.remove('show');
         document.getElementById('adminBadge').style.display='block';
         document.getElementById('tabEmpleados').style.display='flex';
+        document.getElementById('btnBorrarHist').style.display='block';
         showToast('Modo administrador activado 🔴','ok');
         openAdminPanel();
       }else{
@@ -1359,6 +1379,7 @@ window.salirAdmin = function(){
   isAdmin=false;
   document.getElementById('adminBadge').style.display='none';
   document.getElementById('tabEmpleados').style.display='none';
+  document.getElementById('btnBorrarHist').style.display='none';
   const active=document.querySelector('.tab.active');
   if(active&&active.dataset.tab==='empleados')switchTab('import');
   closeAdminPanel();
