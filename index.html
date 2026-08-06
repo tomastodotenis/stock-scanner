@@ -544,15 +544,16 @@ function fbListenMov(){
 // El catálogo se trocea en varios documentos porque Firestore limita cada doc a ~1MB.
 const CATALOG_CHUNK_SIZE=280000; // caracteres por chunk; margen amplio bajo el límite de ~1MB/doc de Firestore, aun con muchos acentos/ñ (UTF-8 multibyte)
 const CATALOG_CHUNK_MAX_BYTES=900000; // tope duro en bytes reales, por si el texto tiene muchísimos caracteres multibyte
+const BATCH_MAX_BYTES=8000000; // Firestore limita cada batch a ~10MB de payload total; dejamos margen de sobra
 let unsubCatalog=null;
+const _enc=new TextEncoder();
 function chunkCatalogJson(json){
-  const enc=new TextEncoder();
   const chunks=[];
   let start=0;
   while(start<json.length){
     let end=Math.min(start+CATALOG_CHUNK_SIZE,json.length);
     // si el fragmento pesa más de lo permitido en bytes (posible con muchos acentos), lo recorta
-    while(end>start && enc.encode(json.slice(start,end)).length>CATALOG_CHUNK_MAX_BYTES)end-=2000;
+    while(end>start && _enc.encode(json.slice(start,end)).length>CATALOG_CHUNK_MAX_BYTES)end-=2000;
     if(end<=start)end=start+1; // salvaguarda para no quedar trabado
     chunks.push(json.slice(start,end));
     start=end;
@@ -566,10 +567,15 @@ async function uploadCatalogToCloud(cnt,upd){
     const chunks=chunkCatalogJson(json);
     // 1) Sube los chunks NUEVOS primero. Si algo falla acá, la nube todavía tiene el catálogo viejo intacto
     //    (antes se borraba primero y se subía después, así que un fallo a mitad de camino dejaba la nube vacía/corrupta).
-    let batch=writeBatch(db);let ops=0;
+    // Firestore limita cada batch a ~10MB de payload total (además del límite de 1MB por documento),
+    // así que además de topear la cantidad de operaciones, controlamos el peso acumulado del lote.
+    let batch=writeBatch(db);let ops=0;let batchBytes=0;
     for(let i=0;i<chunks.length;i++){
-      batch.set(doc(db,'catalogo_chunks','chunk_'+i),{data:chunks[i]});ops++;
-      if(ops>=450){await batch.commit();batch=writeBatch(db);ops=0;}
+      const chunkBytes=_enc.encode(chunks[i]).length;
+      if(ops>0&&(ops>=450||batchBytes+chunkBytes>BATCH_MAX_BYTES)){
+        await batch.commit();batch=writeBatch(db);ops=0;batchBytes=0;
+      }
+      batch.set(doc(db,'catalogo_chunks','chunk_'+i),{data:chunks[i]});ops++;batchBytes+=chunkBytes;
     }
     if(ops>0)await batch.commit();
     // 2) Borra los chunks viejos que sobran (si el catálogo nuevo tiene menos partes que el anterior)
@@ -649,6 +655,13 @@ window.doLogin=async function(){
   catch(ex){err.style.display='block';}
 };
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')doLogin();});
+document.addEventListener('keydown',function(e){
+  const modal=document.getElementById('adminModal');
+  if(!modal||!modal.classList.contains('show'))return;
+  if(e.key>='0'&&e.key<='9'){pinPress(e.key);}
+  else if(e.key==='Backspace'){e.preventDefault();pinPress('←');}
+  else if(e.key==='Escape'){closeAdminModal();}
+});
 window.doLogout=async function(){
   if(!confirm('¿Cerrar sesión?'))return;
   await markOffline();
