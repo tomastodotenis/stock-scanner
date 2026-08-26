@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" href="favicon.png" />
   <link rel="apple-touch-icon" href="favicon.png" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+  <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -210,6 +210,7 @@
     <div class="tab" data-tab="sectores">📍 Sectores</div>
     <div class="tab" data-tab="empleados" id="tabEmpleados" style="display:none;">👤 Empleados</div>
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
+    <div class="tab" data-tab="alertas">🔔 Alertas</div>
   </div>
 
   <!-- IMPORT -->
@@ -413,6 +414,55 @@
   </div>
 </div>
 
+  <!-- ALERTAS PAGE -->
+  <div class="page" id="page-alertas">
+    <div style="padding:13px 15px;display:flex;flex-direction:column;gap:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="card" style="padding:12px;text-align:center;">
+          <div style="font-size:1.6rem;font-weight:700;color:var(--danger);" id="alertStockBajoCnt">0</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:3px;">Stock bajo</div>
+        </div>
+        <div class="card" style="padding:12px;text-align:center;">
+          <div style="font-size:1.6rem;font-weight:700;color:#f59e0b;" id="alertFrenadoCnt">0</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:3px;">Productos frenados</div>
+        </div>
+      </div>
+      <div class="card" id="alertasConfigCard" style="display:none;">
+        <div style="font-size:.83rem;font-weight:700;margin-bottom:11px;">⚙️ Configuración <span style="font-size:.7rem;color:var(--danger);">· Solo admin</span></div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div>
+            <div class="slabel" style="margin-bottom:5px;">Umbral global de stock bajo (unidades)</div>
+            <div style="display:flex;gap:8px;">
+              <input type="number" id="cfgUmbral" class="inp" min="1" max="999" style="width:90px;" />
+              <button class="btn btn-primary btn-sm" onclick="saveAlertasConfig()">Guardar</button>
+            </div>
+          </div>
+          <div>
+            <div class="slabel" style="margin-bottom:5px;">Días sin movimiento para "frenado"</div>
+            <div style="display:flex;gap:8px;">
+              <input type="number" id="cfgDiasFrenado" class="inp" min="1" max="365" style="width:90px;" />
+              <button class="btn btn-primary btn-sm" onclick="saveAlertasConfig()">Guardar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="stbl">
+        <div style="padding:9px 13px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+          <span class="slabel">⚠️ Stock bajo</span>
+          <span style="font-size:.72rem;color:var(--muted);" id="alertUmbralLabel">Umbral: &lt;3 unidades</span>
+        </div>
+        <div id="alertStockBajoList"><div class="empty"><div class="icon">✅</div><p>Sin alertas.</p></div></div>
+      </div>
+      <div class="stbl">
+        <div style="padding:9px 13px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+          <span class="slabel">🧊 Productos frenados</span>
+          <span style="font-size:.72rem;color:var(--muted);" id="alertDiasLabel">Sin movimiento +30 días</span>
+        </div>
+        <div id="alertFrenadoList"><div class="empty"><div class="icon">✅</div><p>Sin productos frenados.</p></div></div>
+      </div>
+    </div>
+  </div>
+
 <!-- ADMIN PIN MODAL -->
 <div class="admin-modal" id="adminModal">
   <div class="admin-card">
@@ -468,6 +518,7 @@
       <button class="btn btn-ghost btn-sm" onclick="adminVerUsuarios()" style="justify-content:flex-start;">👥 Ver usuarios activos</button>
       <button class="btn btn-danger btn-sm" onclick="adminLimpiarStock()" style="justify-content:flex-start;">🗑 Limpiar todo el conteo</button>
       <button class="btn btn-danger btn-sm" onclick="adminExportarTodo()" style="justify-content:flex-start;background:rgba(124,58,237,.2);color:#a78bfa;border:1px solid #7c3aed;">📊 Exportar todo (admin)</button>
+      <button class="btn btn-ghost btn-sm" onclick="adminConfigAlertas()" style="justify-content:flex-start;">🔔 Configurar alertas</button>
       <button class="btn btn-danger btn-sm" onclick="salirAdmin()" style="justify-content:flex-start;background:none;border:1px solid var(--border);color:var(--muted);">🔓 Salir de modo admin</button>
     </div>
     <div id="adminPanelContent" style="font-size:.8rem;color:var(--muted);"></div>
@@ -486,6 +537,7 @@ let lastScan=null, lastScanTime=0;
 const CAM_DB=400;
 let currentUser=null, unsubMov=null;
 let traslado={responsable:null,origen:null,destino:null,productos:[]};
+let alertasConfig={umbralGlobal:3,diasFrenado:30,excepciones:{}};
 const TALLE_ORD=['XS','S','M','L','XL','XXL','2XL','3XL','4XL','5XL'];
 
 // ── FIREBASE ──
@@ -494,6 +546,10 @@ function fb(){return window._fb;}
 async function fbSaveStock(){
   if(!currentUser)return;
   try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'stock','main'),{stock,sectorMap,upd:new Date().toISOString()});}catch(e){console.error(e);}
+}
+async function fbSaveAlertasConfig(){
+  if(!currentUser)return;
+  try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','alertas'),alertasConfig);}catch(e){console.error(e);}
 }
 async function fbSaveSectores(){
   if(!currentUser)return;
@@ -524,6 +580,8 @@ async function fbLoad(){
       }
       if(c)catalog=c;
     }catch(e){console.error(e);}
+    const ac=await getDoc(doc(db,'config','alertas'));
+    if(ac.exists())alertasConfig={...alertasConfig,...ac.data()};
     updateHeader();renderSectores();updateSecSelects();renderStock();renderEmpleados();
   }catch(e){console.error(e);}
 }
@@ -534,6 +592,7 @@ function fbListenMov(){
     const q=query(collection(db,'movimientos'),orderBy('createdAt','desc'),limit(100));
     unsubMov=onSnapshot(q,snap=>{
       movimientos=snap.docs.map(d=>({id:d.id,...d.data()}));
+      updateAlertTab();
       renderHG();
       document.getElementById('hSync').textContent='🟢 En vivo';
     });
@@ -733,6 +792,7 @@ window.switchTab=function(name){
   if(name==='sectores'){renderSectores();updateSecSelects();}
   if(name==='empleados'){renderEmpleados();}
   if(name==='traslados')updateTrasladoSels();
+  if(name==='alertas')renderAlertas();
 };
 function switchSub(name){
   document.querySelectorAll('.stab').forEach(t=>t.classList.toggle('active',t.textContent.includes(name==='saldo'?'Saldo':'Mov')));
@@ -955,31 +1015,43 @@ window.setModo=function(modo){
 window.manScan=function(){const v=document.getElementById('manInput').value.trim();if(v){processCode(v,false);document.getElementById('manInput').value='';}};
 document.getElementById('manInput').addEventListener('keydown',e=>{if(e.key==='Enter')manScan();});
 document.getElementById('btnCam').addEventListener('click',()=>cameraActive?stopCam():startCam());
-let quaggaBound=false;
-function onBarcodeDetected(r){
-  const errs=r.codeResult.decodedCodes.filter(x=>x.error!==undefined);
-  const avg=errs.length?errs.reduce((s,x)=>s+x.error,0)/errs.length:1;
-  if(avg<0.25)processCode(r.codeResult.code,true);
-}
-function startCam(){
+let zxingReader=null;
+async function startCam(){
   ensureAudioCtx();
   const vp=document.getElementById('viewport');vp.style.display='block';
   document.getElementById('btnCam').textContent='Detener cámara';
   document.getElementById('camDot').classList.add('on');
-  Quagga.init({
-    inputStream:{type:'LiveStream',target:vp,constraints:{facingMode:'environment',width:{min:640,ideal:1920},height:{min:480,ideal:1080},advanced:[{focusMode:'continuous'}]}},
-    decoder:{readers:['ean_reader','ean_8_reader','code_128_reader','code_39_reader','upc_reader','upc_e_reader']},
-    locate:true,frequency:10,numOfWorkers:navigator.hardwareConcurrency?Math.min(4,navigator.hardwareConcurrency):2,
-    locator:{patchSize:'medium',halfSample:true}
-  },err=>{
-    if(err){showToast('No se pudo acceder a la cámara','err');stopCam();return;}
-    Quagga.start();cameraActive=true;
-    if(!quaggaBound){Quagga.onDetected(onBarcodeDetected);quaggaBound=true;}
-    const v=vp.querySelector('video');
-    if(v){v.setAttribute('playsinline','true');v.setAttribute('muted','true');v.muted=true;v.play().catch(()=>{});}
-  });
+  cameraActive=true;
+  try{
+    let video=vp.querySelector('video');
+    if(!video){
+      video=document.createElement('video');
+      video.style.cssText='width:100%;height:100%;object-fit:cover;';
+      video.setAttribute('playsinline','true');
+      video.muted=true;
+      vp.insertBefore(video,vp.firstChild);
+    }
+    zxingReader=new ZXing.BrowserMultiFormatReader();
+    const devices=await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
+    const backCam=devices.find(d=>
+      d.label.toLowerCase().includes('back')||
+      d.label.toLowerCase().includes('trasera')||
+      d.label.toLowerCase().includes('rear')||
+      d.label.toLowerCase().includes('environment')
+    );
+    const deviceId=backCam?backCam.deviceId:(devices[devices.length-1]?.deviceId);
+    await zxingReader.decodeFromVideoDevice(deviceId,video,(result,err)=>{
+      if(result) processCode(result.getText(),true);
+    });
+  }catch(e){showToast('No se pudo acceder a la cámara','err');stopCam();}
 }
-function stopCam(){try{Quagga.stop();}catch(e){}cameraActive=false;document.getElementById('viewport').style.display='none';document.getElementById('btnCam').textContent='Activar cámara';document.getElementById('camDot').classList.remove('on');}
+function stopCam(){
+  try{if(zxingReader){zxingReader.reset();zxingReader=null;}}catch(e){}
+  cameraActive=false;
+  document.getElementById('viewport').style.display='none';
+  document.getElementById('btnCam').textContent='Activar cámara';
+  document.getElementById('camDot').classList.remove('on');
+}
 
 // ── NF ──
 function renderNF(){
@@ -1532,6 +1604,103 @@ function makeMov(key,entry,tipo,qty,motivo,extra){
 
 // Init display name after auth
 const _origOnAuth = window._onAuthCallback;
+
+
+// ── ALERTAS ──
+function getUmbralForProduct(can){
+  return alertasConfig.excepciones?.[can]??alertasConfig.umbralGlobal;
+}
+function getLastMovDate(can){
+  const movs=movimientos.filter(m=>m.canonicalKey===can);
+  if(!movs.length)return null;
+  const dates=movs.map(m=>{
+    if(m.createdAt?.toDate)return m.createdAt.toDate();
+    if(m.fecha){const p=m.fecha.split('/');if(p.length===3)return new Date(p[2],p[1]-1,p[0]);}
+    return null;
+  }).filter(Boolean);
+  if(!dates.length)return null;
+  return new Date(Math.max(...dates.map(d=>d.getTime())));
+}
+function renderAlertas(){
+  const cfg=document.getElementById('alertasConfigCard');
+  if(cfg)cfg.style.display=isAdmin?'':'none';
+  const u=document.getElementById('cfgUmbral');
+  const d=document.getElementById('cfgDiasFrenado');
+  if(u)u.value=alertasConfig.umbralGlobal;
+  if(d)d.value=alertasConfig.diasFrenado;
+  document.getElementById('alertUmbralLabel').textContent=`Umbral: <${alertasConfig.umbralGlobal} unidades`;
+  document.getElementById('alertDiasLabel').textContent=`Sin movimiento +${alertasConfig.diasFrenado} días`;
+  const now=new Date();
+  const seen=new Set();
+  const stockBajo=[],frenados=[];
+  Object.entries(stock).forEach(([key,qty])=>{
+    const entry=catalog[key];if(!entry)return;
+    const can=entry.canonical;if(seen.has(can))return;seen.add(can);
+    const rq=stock[can]||0;if(rq===0)return;
+    const secId=sectorMap[can];
+    const secN=secId&&sectores[secId]?sectores[secId].nombre:'—';
+    const umbral=getUmbralForProduct(can);
+    if(rq<=umbral)stockBajo.push({entry,qty:rq,umbral,secN,key:can});
+    const last=getLastMovDate(can);
+    const dias=last?Math.floor((now-last)/(1000*60*60*24)):999;
+    if(dias>=alertasConfig.diasFrenado)frenados.push({entry,qty:rq,dias,secN,key:can});
+  });
+  document.getElementById('alertStockBajoCnt').textContent=stockBajo.length;
+  document.getElementById('alertFrenadoCnt').textContent=frenados.length;
+  const sbList=document.getElementById('alertStockBajoList');
+  if(!stockBajo.length){sbList.innerHTML='<div class="empty"><div class="icon">✅</div><p>Sin alertas de stock bajo.</p></div>';}
+  else{
+    stockBajo.sort((a,b)=>a.qty-b.qty);
+    sbList.innerHTML=stockBajo.map(({entry,qty,umbral,secN,key})=>`
+      <div class="stbl-row" style="grid-template-columns:1fr auto auto${isAdmin?' auto':''};">
+        <div><div class="rname">${entry.name}</div><div class="rsku">📍 ${secN} · ${entry.talle||'—'}</div></div>
+        <div class="rqty zero">${qty}</div>
+        <div style="font-size:.7rem;color:var(--muted);">umbral:${umbral}</div>
+        ${isAdmin?`<button class="btn btn-ghost btn-sm" style="font-size:.68rem;padding:4px 8px;" onclick="setExcepcion('${key}')">✏️</button>`:''}
+      </div>`).join('');
+  }
+  const frList=document.getElementById('alertFrenadoList');
+  if(!frenados.length){frList.innerHTML='<div class="empty"><div class="icon">✅</div><p>Sin productos frenados.</p></div>';}
+  else{
+    frenados.sort((a,b)=>b.dias-a.dias);
+    frList.innerHTML=frenados.map(({entry,qty,dias,secN})=>`
+      <div class="stbl-row" style="grid-template-columns:1fr auto auto;">
+        <div><div class="rname">${entry.name}</div><div class="rsku">📍 ${secN} · ${entry.talle||'—'}</div></div>
+        <div class="rqty">${qty}</div>
+        <div style="font-size:.72rem;color:#f59e0b;font-weight:700;">${dias>=999?'Sin reg.':dias+'d'}</div>
+      </div>`).join('');
+  }
+}
+window.saveAlertasConfig=async function(){
+  const u=parseInt(document.getElementById('cfgUmbral').value);
+  const d=parseInt(document.getElementById('cfgDiasFrenado').value);
+  if(isNaN(u)||u<1){showToast('Umbral inválido','err');return;}
+  if(isNaN(d)||d<1){showToast('Días inválido','err');return;}
+  alertasConfig.umbralGlobal=u;alertasConfig.diasFrenado=d;
+  await fbSaveAlertasConfig();renderAlertas();showToast('Configuración guardada ✅','ok');
+};
+window.setExcepcion=function(key){
+  const entry=catalog[key];
+  const actual=alertasConfig.excepciones?.[key]??alertasConfig.umbralGlobal;
+  const nuevo=prompt(`Umbral personalizado para:\n${entry?.name||key}\n(vacío = usar global de ${alertasConfig.umbralGlobal}):`,actual);
+  if(nuevo===null)return;
+  if(!alertasConfig.excepciones)alertasConfig.excepciones={};
+  if(nuevo.trim()===''||parseInt(nuevo)===alertasConfig.umbralGlobal){delete alertasConfig.excepciones[key];}
+  else{const v=parseInt(nuevo);if(isNaN(v)||v<0){showToast('Valor inválido','err');return;}alertasConfig.excepciones[key]=v;}
+  fbSaveAlertasConfig();renderAlertas();showToast('Excepción guardada ✅','ok');
+};
+window.adminConfigAlertas=function(){closeAdminPanel();switchTab('alertas');};
+function updateAlertTab(){
+  const seen=new Set();let cnt=0;
+  Object.entries(stock).forEach(([key])=>{
+    const entry=catalog[key];if(!entry)return;
+    const can=entry.canonical;if(seen.has(can))return;seen.add(can);
+    const rq=stock[can]||0;
+    if(rq>0&&rq<=getUmbralForProduct(can))cnt++;
+  });
+  const tab=document.querySelector('.tab[data-tab="alertas"]');
+  if(tab)tab.textContent=cnt>0?`🔔 Alertas (${cnt})`:'🔔 Alertas';
+}
 
 </script>
 </body>
