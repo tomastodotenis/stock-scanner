@@ -402,6 +402,17 @@
   <!-- TRASLADOS -->
   <div class="page" id="page-traslados">
     <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
+
+      <!-- Tipo de traslado -->
+      <div class="card" style="padding:11px 13px;">
+        <div class="slabel" style="margin-bottom:8px;">Tipo de traslado</div>
+        <div style="display:flex;gap:6px;">
+          <button class="modo-btn active entrada" id="btnTInterno" onclick="setTipoTraslado('interno')" style="flex:1;justify-content:center;">🔄 Interno</button>
+          <button class="modo-btn" id="btnTExterno" onclick="setTipoTraslado('externo')" style="flex:1;justify-content:center;">🚚 Entre depósitos</button>
+        </div>
+      </div>
+
+      <!-- Responsable -->
       <div class="card">
         <div class="slabel" style="margin-bottom:7px;">Responsable del traslado</div>
         <div style="display:flex;gap:7px;">
@@ -411,11 +422,20 @@
         <div style="font-size:.7rem;color:var(--muted);margin-top:5px;">🔒 Escaneá tu código de barras (cargado en Empleados) para habilitar los pasos siguientes</div>
         <div id="respConf" style="display:none;margin-top:7px;font-size:.8rem;color:var(--accent);font-weight:600;"></div>
       </div>
+
+      <!-- Paso 1: Origen -->
       <div class="tst" id="tStep1" style="opacity:.4;pointer-events:none;">
-        <div class="tst-label">Paso 1 — Sector origen</div>
-        <div id="tOrigenVal" style="color:var(--muted);font-size:.83rem;">Escaneá el cartel o seleccioná:</div>
-        <select id="tSelOrigen" class="inp" style="margin-top:7px;" onchange="setOrigen(this.value)"><option value="">— Seleccionar —</option></select>
+        <div class="tst-label">Paso 1 — Origen</div>
+        <div id="tOrigenVal" style="color:var(--muted);font-size:.83rem;">Seleccioná depósito y sector de origen:</div>
+        <select id="tSelOrigenDep" class="inp" style="margin-top:7px;" onchange="setOrigenDep(this.value)">
+          <option value="">— Depósito origen —</option>
+        </select>
+        <select id="tSelOrigen" class="inp" style="margin-top:6px;display:none;" onchange="setOrigen(this.value)">
+          <option value="">— Sector origen —</option>
+        </select>
       </div>
+
+      <!-- Paso 2: Productos -->
       <div class="tst" id="tStep2" style="opacity:.4;pointer-events:none;">
         <div class="tst-label">Paso 2 — Productos a trasladar</div>
         <div class="tprod" id="tProdList"><div style="padding:11px;text-align:center;color:var(--muted);font-size:.8rem;">Sin productos</div></div>
@@ -424,10 +444,17 @@
           <button class="btn btn-ghost btn-sm" onclick="tManScan()">+</button>
         </div>
       </div>
+
+      <!-- Paso 3: Destino -->
       <div class="tst" id="tStep3" style="opacity:.4;pointer-events:none;">
-        <div class="tst-label">Paso 3 — Sector destino</div>
-        <div id="tDestinoVal" style="color:var(--muted);font-size:.83rem;">Escaneá el cartel o seleccioná:</div>
-        <select id="tSelDestino" class="inp" style="margin-top:7px;" onchange="setDestino(this.value)"><option value="">— Seleccionar —</option></select>
+        <div class="tst-label">Paso 3 — Destino</div>
+        <div id="tDestinoVal" style="color:var(--muted);font-size:.83rem;">Seleccioná depósito y sector destino:</div>
+        <select id="tSelDestinoDep" class="inp" style="margin-top:7px;" onchange="setDestinoDep(this.value)">
+          <option value="">— Depósito destino —</option>
+        </select>
+        <select id="tSelDestino" class="inp" style="margin-top:6px;display:none;" onchange="setDestino(this.value)">
+          <option value="">— Sector destino —</option>
+        </select>
       </div>
       <button class="btn btn-primary" id="btnConfT" onclick="confirmarTraslado()" style="justify-content:center;opacity:.4;pointer-events:none;">🔄 Confirmar traslado</button>
       <button class="btn btn-ghost btn-sm" onclick="resetTraslado()" style="justify-content:center;">Cancelar</button>
