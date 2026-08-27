@@ -50,8 +50,8 @@
     .huser b{color:var(--accent);}
     .btn-logout{background:none;border:1px solid #444;border-radius:6px;color:#aaa;padding:2px 8px;font-size:.68rem;cursor:pointer;}
     /* TABS */
-    .tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto;}
-    .tab{flex:1;min-width:58px;padding:10px 4px;text-align:center;font-size:.72rem;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
+    .tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}  .tabs::-webkit-scrollbar{display:none;}
+    .tab{flex:0 0 auto;min-width:70px;padding:10px 10px;text-align:center;font-size:.72rem;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
     .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
     /* PAGES */
     .page{display:none;flex:1;overflow-y:auto;}
@@ -254,16 +254,25 @@
         <div style="font-size:.72rem;color:var(--muted);margin-top:7px;" id="modoDesc">Cada scan suma +1 al stock</div>
       </div>
       <!-- Sector badge -->
-      <div id="secBadge" style="display:none;background:rgba(200,245,0,.1);border:1px solid rgba(200,245,0,.3);border-radius:10px;padding:7px 13px;font-size:.8rem;font-weight:600;color:var(--accent);">
+      <!-- Sector selector always visible in scanner -->
+      <div class="card" style="padding:10px 13px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;" id="secBadgeRow">
+          <div style="font-size:.8rem;font-weight:600;color:var(--accent);">
+            📍 <span id="secBadgeName">Sin sector activo</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="toggleSecDropdown()" style="font-size:.72rem;">Cambiar ▾</button>
+        </div>
+        <div id="secBadge" style="background:rgba(200,245,0,.1);border:1px solid rgba(200,245,0,.3);border-radius:10px;padding:7px 13px;font-size:.8rem;font-weight:600;color:var(--accent);display:none;">
         <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">
           <span>📍</span><span id="secBadgeName">Sin sector</span>
           <span style="margin-left:auto;cursor:pointer;color:var(--muted);font-size:.72rem;" onclick="toggleSecDropdown()">Cambiar ▾</span>
         </div>
-        <div id="secDropdown" style="display:none;">
+        <div id="secDropdown" style="display:none;margin-top:7px;">
           <select id="secBadgeSelect" class="inp" style="font-size:.8rem;padding:7px 10px;" onchange="cambiarSectorDesdeScanner(this.value)">
             <option value="">— Sin sector —</option>
           </select>
         </div>
+      </div>
       </div>
       <!-- Camera -->
       <div class="cam-section">
@@ -1299,26 +1308,28 @@ window.editarSector=async function(id){
 };
 window.setSectorActivo=function(id){sectorActivo=id||null;updateSecBadge();};
 function updateSecBadge(){
-  const b=document.getElementById('secBadge'),n=document.getElementById('secBadgeName');
-  if(sectorActivo&&sectores[sectorActivo]){
-    b.style.display='block';
-    n.textContent='Sector activo: '+sectores[sectorActivo].nombre;
-    // Sync dropdown
-    const sel=document.getElementById('secBadgeSelect');
-    if(sel) sel.value=sectorActivo;
-  } else {
-    b.style.display='none';
+  const n=document.getElementById('secBadgeName');
+  const secs=getSectores();
+  if(n){
+    if(sectorActivo&&secs[sectorActivo]){
+      n.textContent='Sector activo: '+secs[sectorActivo].nombre;
+    } else {
+      n.textContent='Sin sector activo — tocá Cambiar para seleccionar';
+      if(n) n.style.color='var(--muted)';
+    }
   }
+  const sel=document.getElementById('secBadgeSelect');
+  if(sel&&sectorActivo) sel.value=sectorActivo;
 }
 window.toggleSecDropdown=function(){
   const dd=document.getElementById('secDropdown');
   if(!dd)return;
   const isOpen=dd.style.display!=='none';
   if(!isOpen){
-    // Populate options
     const sel=document.getElementById('secBadgeSelect');
     if(sel){
-      const opts=Object.values(sectores).sort((a,b)=>a.nombre.localeCompare(b.nombre))
+      const secs=getSectores();
+      const opts=Object.values(secs).sort((a,b)=>a.nombre.localeCompare(b.nombre))
         .map(s=>`<option value="${s.id}"${sectorActivo===s.id?' selected':''}>${s.nombre}</option>`).join('');
       sel.innerHTML='<option value="">— Sin sector —</option>'+opts;
     }
