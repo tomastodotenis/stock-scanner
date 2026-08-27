@@ -121,6 +121,27 @@
     .profile-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;}
     .profile-modal.show{display:flex;}
     .profile-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 18px;width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px;}
+    /* PROMOS */
+    .promo-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(200,245,0,.15);border:1px solid rgba(200,245,0,.4);border-radius:6px;padding:2px 7px;font-size:.68rem;font-weight:700;color:var(--accent);cursor:pointer;}
+    .promo-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;margin-bottom:8px;}
+    .promo-card.has-promo{border-color:rgba(200,245,0,.4);}
+    .promo-header{padding:8px 12px;background:rgba(200,245,0,.08);border-bottom:1px solid rgba(200,245,0,.2);display:flex;align-items:center;justify-content:space-between;}
+    .promo-body{padding:10px 12px;display:flex;flex-direction:column;gap:6px;}
+    .promo-row{display:flex;align-items:center;justify-content:space-between;font-size:.82rem;}
+    .promo-label{color:var(--muted);}
+    .promo-value{font-weight:700;}
+    .promo-desc{font-size:.78rem;color:var(--muted);margin-top:2px;}
+    .promo-filter-bar{display:flex;gap:8px;flex-wrap:wrap;}
+    .promo-list-item{padding:10px 13px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:4px;}
+    .promo-list-item:last-child{border-bottom:none;}
+    .promo-list-item:hover{background:var(--surface2);}
+    .promo-name{font-weight:600;font-size:.83rem;}
+    .promo-prices{display:flex;gap:10px;align-items:center;font-size:.8rem;}
+    .promo-original{color:var(--muted);text-decoration:line-through;}
+    .promo-discount{background:rgba(200,245,0,.2);color:var(--accent);border-radius:4px;padding:1px 6px;font-weight:700;font-size:.75rem;}
+    .promo-final{font-weight:700;color:var(--accent);}
+    .promo-recibis{color:var(--muted);font-size:.72rem;}
+    .promo-vence{font-size:.7rem;color:var(--muted);}
     .nfl{background:var(--surface);border-radius:var(--radius);border:1px solid rgba(239,68,68,.35);overflow:hidden;}
     .nfl-hdr{padding:9px 13px;display:flex;align-items:center;justify-content:space-between;background:rgba(239,68,68,.08);border-bottom:1px solid rgba(239,68,68,.2);}
     .nfl-hdr h3{font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--danger);display:flex;align-items:center;gap:5px;}
@@ -219,6 +240,7 @@
     <div class="tab" data-tab="empleados" id="tabEmpleados" style="display:none;">👤 Empleados</div>
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
     <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">🔔 Alertas</div>
+    <div class="tab" data-tab="promos">🏷️ Promos</div>
   </div>
 
   <!-- IMPORT -->
@@ -520,6 +542,49 @@
     </div>
   </div>
 
+  <!-- PROMOS PAGE -->
+  <div class="page" id="page-promos">
+    <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
+
+      <!-- Header -->
+      <div class="card" style="padding:11px 13px;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:.85rem;font-weight:700;">🏷️ Promociones activas</div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:2px;" id="promoSyncStatus">Sin sincronizar</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="fetchPromos(true)">🔄 Actualizar</button>
+      </div>
+
+      <!-- Filtros -->
+      <div style="position:relative;">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);">🔍</span>
+        <input type="text" id="promoSearch" class="inp" placeholder="Buscar producto en promoción..." style="padding-left:36px;" oninput="renderPromos()" />
+      </div>
+
+      <!-- Stats -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:1.4rem;font-weight:700;color:var(--accent);" id="promoCnt">0</div>
+          <div style="font-size:.7rem;color:var(--muted);">Promos</div>
+        </div>
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:1.4rem;font-weight:700;color:#f59e0b;" id="promoVenceCnt">0</div>
+          <div style="font-size:.7rem;color:var(--muted);">Vencen pronto</div>
+        </div>
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:1.4rem;font-weight:700;color:var(--danger);" id="promoVencidaCnt">0</div>
+          <div style="font-size:.7rem;color:var(--muted);">Vencidas</div>
+        </div>
+      </div>
+
+      <!-- Lista -->
+      <div class="stbl" id="promoList">
+        <div class="empty"><div class="icon">🏷️</div><p>Tocá Actualizar para cargar las promociones.</p></div>
+      </div>
+
+    </div>
+  </div>
+
 <!-- DEPOSITOS MODAL -->
 <div class="admin-modal" id="depModal">
   <div class="admin-card" style="max-width:380px;">
@@ -634,6 +699,9 @@ const CAM_DB=400;
 let currentUser=null, unsubMov=null;
 let traslado={responsable:null,origenDep:null,origenSec:null,destinoDep:null,destinoSec:null,productos:[]};
 let alertasConfig={umbralGlobal:3,diasFrenado:30,excepciones:{}};
+let promociones=[]; // Array de {descripcion, nroPub, fechaInicio, fechaCad, precioLista, descuento, precioFinal, recibis}
+let promoLastFetch=0;
+const PROMO_CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vTMwDSOgRoX2iJn2Xnpn6IMxScpIqp4ZujlbKlxgPPRWxjJFQ3Be4a8_NQE5o2rkDFy2H-eRubr_QF_/pub?gid=1093616578&single=true&output=csv';
 const TALLE_ORD=['XS','S','M','L','XL','XXL','2XL','3XL','4XL','5XL'];
 
 // ── FIREBASE ──
@@ -914,6 +982,7 @@ window.switchTab=function(name){
   if(name==='traslados')updateTrasladoSels();
   if(name==='alertas')renderAlertas();
   if(name==='traslados'){updateTrasladoSels();resetTraslado();}
+  if(name==='promos')renderPromos();
 };
 function switchSub(name){
   document.querySelectorAll('.stab').forEach(t=>t.classList.toggle('active',t.textContent.includes(name==='saldo'?'Saldo':'Mov')));
@@ -1223,13 +1292,17 @@ function renderStock(){
     const depToShow=filterDep||null;
     const secs=depToShow?(sectoresDB[depToShow]||{}):getSectores();
     const sn=secId&&secs[secId]?secs[secId].nombre:'—';
-    // Per-depot qty if showing all
     const depDetail=!depToShow?Object.entries(depositos).map(([did,dep])=>{
       const q=getStockInDep(did,key);
       return q>0?`<span style="font-size:.65rem;color:var(--muted);">${dep.nombre.replace('Depósito ','Dep.')}: ${q}</span>`:'';
     }).filter(Boolean).join(' · '):'';
-    return`<div class="stbl-row">
-      <div><div class="rname">${entry.name}</div><div class="rsku">${entry.sku||''}${depDetail?' · '+depDetail:''}</div></div>
+    const promoBadge=getPromoBadge(entry.name);
+    return`<div class="stbl-row" style="grid-template-columns:1fr 50px 50px auto auto;">
+      <div>
+        <div class="rname">${entry.name}</div>
+        <div class="rsku">${entry.sku||''}${depDetail?' · '+depDetail:''}</div>
+        ${promoBadge?`<div style="margin-top:3px;">${promoBadge}</div>`:''}
+      </div>
       <div class="rsec">${sn}</div>
       <div class="rtalle">${entry.talle||'—'}</div>
       <div class="rqty${qty===0?' zero':''}">${qty}</div>
@@ -2150,6 +2223,177 @@ function renderHG(){
     </div>`;
   }).join('');
 }
+
+
+// ── PROMOCIONES ──
+function parsePrecio(str){
+  if(!str)return 0;
+  return parseFloat(String(str).replace(/[$.,]/g,'').replace(',','.'))||0;
+}
+function parseDescuento(str){
+  if(!str)return 0;
+  return parseFloat(String(str).replace('%','').trim())||0;
+}
+function parseCSV(text){
+  const lines=text.split('\n');
+  const rows=[];
+  for(const line of lines){
+    if(!line.trim())continue;
+    // Simple CSV parse (handles quoted fields)
+    const cols=[];let cur='';let inQ=false;
+    for(let i=0;i<line.length;i++){
+      const c=line[i];
+      if(c==='"'&&!inQ){inQ=true;}
+      else if(c==='"'&&inQ){if(line[i+1]==='"'){cur+='"';i++;}else inQ=false;}
+      else if(c===','&&!inQ){cols.push(cur);cur='';}
+      else cur+=c;
+    }
+    cols.push(cur);
+    rows.push(cols);
+  }
+  return rows;
+}
+
+async function fetchPromos(force){
+  const now=Date.now();
+  if(!force&&promoLastFetch&&now-promoLastFetch<5*60*1000)return; // cache 5min
+  document.getElementById('promoSyncStatus').textContent='⏳ Actualizando...';
+  try{
+    const resp=await fetch(PROMO_CSV_URL+'&t='+now);
+    const text=await resp.text();
+    const rows=parseCSV(text);
+    promociones=[];
+    for(const row of rows){
+      const desc=row[2]?.trim();
+      const nroPub=row[3]?.trim();
+      const precioLista=row[7]?.trim();
+      const descuento=row[8]?.trim();
+      const precioFinal=row[9]?.trim();
+      const recibis=row[10]?.trim();
+      const fechaInicio=row[4]?.trim();
+      const fechaCad=row[5]?.trim();
+      if(!desc||!precioLista)continue;
+      if(desc==='Descripcion')continue; // skip headers
+      promociones.push({
+        descripcion:desc,
+        nroPub:nroPub||'',
+        fechaInicio:fechaInicio||'',
+        fechaCad:fechaCad||'',
+        precioLista:parsePrecio(precioLista),
+        descuentoPct:parseDescuento(descuento),
+        precioFinal:parsePrecio(precioFinal)||Math.round(parsePrecio(precioLista)*(1-parseDescuento(descuento)/100)),
+        recibis:parsePrecio(recibis),
+        raw:{precioLista,descuento,precioFinal,recibis}
+      });
+    }
+    promoLastFetch=now;
+    const d=new Date();
+    document.getElementById('promoSyncStatus').textContent=`✅ Actualizado ${d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${promociones.length} promos`;
+    renderPromos();
+  }catch(e){
+    document.getElementById('promoSyncStatus').textContent='❌ Error al cargar';
+    console.error('fetchPromos:',e);
+  }
+}
+
+function isVencida(fechaCad){
+  if(!fechaCad||fechaCad.toLowerCase().includes('pausad'))return null;
+  // Parse "27 de Julio" style dates
+  const meses={enero:0,febrero:1,marzo:2,abril:3,mayo:4,junio:5,julio:6,agosto:7,septiembre:8,octubre:9,noviembre:10,diciembre:11};
+  const clean=fechaCad.toLowerCase().trim();
+  const match=clean.match(/(\d+)\s+de\s+(\w+)(?:\s+de\s+(\d+))?/);
+  if(!match)return null;
+  const dia=parseInt(match[1]);
+  const mes=meses[match[2]];
+  const anio=match[3]?parseInt(match[3]):new Date().getFullYear();
+  if(mes===undefined)return null;
+  const fecha=new Date(anio,mes,dia);
+  const hoy=new Date();hoy.setHours(0,0,0,0);
+  const diff=Math.floor((fecha-hoy)/(1000*60*60*24));
+  return diff; // negative = vencida, 0-7 = vence pronto
+}
+
+function findPromo(nombre){
+  if(!nombre||!promociones.length)return null;
+  const nombreLower=nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  let best=null;let bestScore=0;
+  for(const p of promociones){
+    const descLower=p.descripcion.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    // Score: count matching words
+    const words=nombreLower.split(/\s+/).filter(w=>w.length>3);
+    const matches=words.filter(w=>descLower.includes(w)).length;
+    const score=matches/Math.max(words.length,1);
+    if(score>bestScore&&score>0.4){bestScore=score;best=p;}
+  }
+  return best;
+}
+
+function renderPromos(){
+  const list=document.getElementById('promoList');
+  const search=(document.getElementById('promoSearch')?.value||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+
+  if(!promociones.length){
+    list.innerHTML='<div class="empty"><div class="icon">🏷️</div><p>Tocá Actualizar para cargar las promociones de Sheets.</p></div>';
+    return;
+  }
+
+  let cnt=0,vencePronto=0,vencida=0;
+  const filtered=promociones.filter(p=>{
+    if(search){
+      const d=p.descripcion.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+      if(!d.includes(search))return false;
+    }
+    return true;
+  });
+
+  filtered.forEach(p=>{
+    cnt++;
+    const dias=isVencida(p.fechaCad);
+    if(dias!==null){if(dias<0)vencida++;else if(dias<=7)vencePronto++;}
+  });
+
+  document.getElementById('promoCnt').textContent=cnt;
+  document.getElementById('promoVenceCnt').textContent=vencePronto;
+  document.getElementById('promoVencidaCnt').textContent=vencida;
+
+  if(!filtered.length){
+    list.innerHTML='<div class="empty"><div class="icon">🔍</div><p>Sin resultados.</p></div>';return;
+  }
+
+  list.innerHTML=filtered.map(p=>{
+    const dias=isVencida(p.fechaCad);
+    let venceStr='',venceColor='var(--muted)';
+    if(dias===null)venceStr=p.fechaCad||'';
+    else if(dias<0){venceStr=`Venció hace ${Math.abs(dias)}d`;venceColor='var(--danger)';}
+    else if(dias===0){venceStr='Vence hoy';venceColor='var(--danger)';}
+    else if(dias<=7){venceStr=`Vence en ${dias}d`;venceColor='#f59e0b';}
+    else venceStr=`Vence: ${p.fechaCad}`;
+    const pl=p.precioLista?`$${Math.round(p.precioLista).toLocaleString('es-AR')}`:'';
+    const pf=p.precioFinal?`$${Math.round(p.precioFinal).toLocaleString('es-AR')}`:'';
+    const rec=p.recibis?`$${Math.round(p.recibis).toLocaleString('es-AR')}`:'';
+    return`<div class="promo-list-item">
+      <div class="promo-name">${p.descripcion}</div>
+      <div class="promo-prices">
+        ${pl?`<span class="promo-original">${pl}</span>`:''}
+        ${p.descuentoPct?`<span class="promo-discount">-${p.descuentoPct}%</span>`:''}
+        ${pf?`<span class="promo-final">${pf}</span>`:''}
+      </div>
+      ${rec?`<div class="promo-recibis">Recibís: ${rec}</div>`:''}
+      <div class="promo-vence" style="color:${venceColor}">${venceStr}</div>
+    </div>`;
+  }).join('');
+}
+
+// Show promo badge in stock list
+function getPromoBadge(nombre){
+  const p=findPromo(nombre);
+  if(!p)return '';
+  const pf=p.precioFinal?`$${Math.round(p.precioFinal).toLocaleString('es-AR')}`:'';
+  return `<span class="promo-badge" title="${p.descripcion}" onclick="switchTab('promos')">🏷️ -${p.descuentoPct}% ${pf?'→ '+pf:''}</span>`;
+}
+
+// Fetch promos on load
+window.addEventListener('load',()=>setTimeout(fetchPromos,2000));
 
 </script>
 </body>
