@@ -484,6 +484,24 @@
     </div>
   </div>
 
+<!-- DEPOSITOS MODAL -->
+<div class="admin-modal" id="depModal">
+  <div class="admin-card" style="max-width:380px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <h2 style="margin:0;">🏭 Gestionar depósitos</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeDepModal()">✕</button>
+    </div>
+    <div id="depModalList"></div>
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+      <div class="slabel" style="margin-bottom:6px;">Agregar nuevo depósito</div>
+      <div style="display:flex;gap:7px;">
+        <input type="text" id="nuevoDepNombre" class="inp" placeholder="Nombre del depósito..." />
+        <button class="btn btn-primary btn-sm" onclick="crearDeposito()">Agregar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ADMIN PIN MODAL -->
 <div class="admin-modal" id="adminModal">
   <div class="admin-card">
@@ -1956,16 +1974,58 @@ window.cambiarDepActivo=function(depId){
 
 window.adminGestionDepositos=function(){
   closeAdminPanel();
-  const nombres=Object.values(depositos).map(d=>d.nombre).join('\n');
-  const nuevo=prompt(`Depósitos actuales:\n${nombres}\n\n¿Nombre para nuevo depósito? (vacío para no crear)`,'');
+  document.getElementById('depModal').classList.add('show');
+  renderDepModal();
+};
+function renderDepModal(){
+  const list=document.getElementById('depModalList');
+  list.innerHTML=Object.values(depositos).map(d=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);">
+      <div style="flex:1;font-weight:600;font-size:.88rem;">🏭 ${d.nombre}</div>
+      <button class="btn btn-ghost btn-sm" onclick="renombrarDeposito('${d.id}')">✏️</button>
+      <button class="btn btn-danger btn-sm" onclick="eliminarDeposito('${d.id}')" ${Object.keys(depositos).length<=1?'disabled style="opacity:.4"':''}>🗑</button>
+    </div>`).join('');
+}
+window.renombrarDeposito=function(id){
+  const nuevo=prompt('Nuevo nombre:',depositos[id]?.nombre||'');
   if(!nuevo||!nuevo.trim())return;
+  depositos[id].nombre=nuevo.trim();
+  fbSaveDepositos();renderDepositos();renderDepModal();updateSecSelects();
+  showToast('Depósito renombrado ✅','ok');
+};
+window.eliminarDeposito=async function(id){
+  if(Object.keys(depositos).length<=1){showToast('Debe quedar al menos un depósito','err');return;}
+  const stock=Object.values(stockDB[id]||{}).reduce((s,v)=>s+v,0);
+  const msg=stock>0?`⚠️ Este depósito tiene ${stock} unidades en stock.
+
+El stock se perderá. ¿Confirmar eliminación?`:`¿Eliminar "${depositos[id]?.nombre}"?`;
+  if(!confirm(msg))return;
+  delete depositos[id];
+  delete stockDB[id];
+  delete sectorMapDB[id];
+  delete sectoresDB[id];
+  if(depActivo===id){
+    depActivo=Object.keys(depositos)[0];
+    localStorage.setItem('ss_depActivo',depActivo);
+  }
+  await fbSaveDepositos();
+  renderDepositos();renderDepModal();updateSecSelects();renderStock();
+  showToast('Depósito eliminado','ok');
+};
+window.crearDeposito=function(){
+  const inp=document.getElementById('nuevoDepNombre');
+  const nombre=inp?.value?.trim();
+  if(!nombre){showToast('Escribí un nombre','err');return;}
+  if(Object.values(depositos).find(d=>d.nombre.toLowerCase()===nombre.toLowerCase())){showToast('Ya existe ese nombre','err');return;}
   const id='dep_'+Date.now();
-  depositos[id]={id,nombre:nuevo.trim()};
+  depositos[id]={id,nombre};
   stockDB[id]={};sectorMapDB[id]={};sectoresDB[id]={};
-  fbSaveDepositos();
-  renderDepositos();
-  updateSecSelects();
-  showToast(`Depósito "${nuevo.trim()}" creado`,'ok');
+  if(inp)inp.value='';
+  fbSaveDepositos();renderDepositos();renderDepModal();updateSecSelects();
+  showToast(`Depósito "${nombre}" creado ✅`,'ok');
+};
+window.closeDepModal=function(){
+  document.getElementById('depModal').classList.remove('show');
 };
 
 // Update alertas to work with multi-depot
