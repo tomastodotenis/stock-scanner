@@ -202,6 +202,14 @@
     </div>
   </header>
 
+  <!-- Deposito selector bar -->
+  <div id="depBar" style="background:#0a1520;border-bottom:1px solid var(--border);padding:6px 14px;display:flex;align-items:center;gap:10px;">
+    <span style="font-size:.72rem;color:var(--muted);font-weight:600;">🏭 Depósito activo:</span>
+    <select id="depActivoSelect" class="inp" style="font-size:.78rem;padding:5px 10px;flex:1;max-width:200px;" onchange="cambiarDepActivo(this.value)">
+      <option value="">Cargando...</option>
+    </select>
+    <span id="depActivoLabel" style="font-size:.75rem;color:var(--accent);font-weight:700;"></span>
+  </div>
   <div class="tabs">
     <div class="tab active" data-tab="import">⬆️ Importar</div>
     <div class="tab" data-tab="scanner">📷 Escanear</div>
@@ -302,9 +310,15 @@
         <button class="btn btn-ghost btn-sm" id="btnCSV" onclick="requireAdmin(exportCSV)">⬇️ CSV</button>
         <button class="btn btn-danger btn-sm" id="btnClear" onclick="requireAdmin(limpiarStock)">🗑 Limpiar</button>
       </div>
-      <select id="secFilter" class="inp" onchange="filterSec=this.value;renderStock()">
+      <div style="display:flex;gap:8px;">
+        <select id="depFilter" class="inp" style="flex:1;" onchange="filterDep=this.value;filterSec='';updateSecSelects();renderStock()">
+          <option value="">Todos los depósitos</option>
+        </select>
+        <select id="secFilter" class="inp" style="flex:1;" onchange="filterSec=this.value;renderStock()">
         <option value="">Todos los sectores</option>
       </select>
+        </select>
+      </div>
       <div class="stabs">
         <div class="stab active" onclick="switchSub('saldo')">📦 Saldo actual</div>
         <div class="stab" onclick="switchSub('movs')">📋 Movimientos</div>
@@ -525,6 +539,7 @@
       <button class="btn btn-ghost btn-sm" onclick="adminVerUsuarios()" style="justify-content:flex-start;">👥 Ver usuarios activos</button>
       <button class="btn btn-danger btn-sm" onclick="adminLimpiarStock()" style="justify-content:flex-start;">🗑 Limpiar todo el conteo</button>
       <button class="btn btn-danger btn-sm" onclick="adminExportarTodo()" style="justify-content:flex-start;background:rgba(124,58,237,.2);color:#a78bfa;border:1px solid #7c3aed;">📊 Exportar todo (admin)</button>
+      <button class="btn btn-ghost btn-sm" onclick="adminGestionDepositos()" style="justify-content:flex-start;">🏭 Gestionar depósitos</button>
       <button class="btn btn-ghost btn-sm" onclick="adminConfigAlertas()" style="justify-content:flex-start;">🔔 Configurar alertas</button>
       <button class="btn btn-danger btn-sm" onclick="salirAdmin()" style="justify-content:flex-start;background:none;border:1px solid var(--border);color:var(--muted);">🔓 Salir de modo admin</button>
     </div>
@@ -537,13 +552,33 @@
 
 <script>
 // ── STATE ──
-let catalog={}, stock={}, sectores={}, sectorMap={}, movimientos=[], empleados={};
+let catalog={}, movimientos=[], empleados={};
+// stock[depId][canonicalKey] = cantidad
+// sectores[depId] = { secId: {id,nombre,codigo} }
+// sectorMap[depId][canonicalKey] = secId
+let stockDB={}, sectoresDB={}, sectorMapDB={};
+let depositos={}; // depId -> { id, nombre }
+let depActivo=null; // depósito donde está operando este dispositivo
+
+// Compat helpers — trabajan sobre el depósito activo
+function getStock(){ return depActivo ? (stockDB[depActivo]||{}) : {}; }
+function getSectores(){ return depActivo ? (sectoresDB[depActivo]||{}) : {}; }
+function getSectorMap(){ return depActivo ? (sectorMapDB[depActivo]||{}) : {}; }
+function setStockVal(key,val){ if(!depActivo)return; if(!stockDB[depActivo])stockDB[depActivo]={}; if(val<=0)delete stockDB[depActivo][key]; else stockDB[depActivo][key]=val; }
+function getStockVal(key){ return depActivo ? ((stockDB[depActivo]||{})[key]||0) : 0; }
+function setSectorForProduct(key,secId){ if(!depActivo)return; if(!sectorMapDB[depActivo])sectorMapDB[depActivo]={}; sectorMapDB[depActivo][key]=secId; }
+function getSectorForProduct(key){ return depActivo ? ((sectorMapDB[depActivo]||{})[key]||null) : null; }
+// All-depots stock for a product (sum)
+function getTotalStock(key){ return Object.values(stockDB).reduce((s,d)=>s+(d[key]||0),0); }
+// Stock in a specific depot
+function getStockInDep(depId,key){ return (stockDB[depId]||{})[key]||0; }
+
 let notFoundLog=[], modoScan='entrada', sectorActivo=null;
-let filterSec='', searchQuery='', cameraActive=false;
+let filterSec='', filterDep='', searchQuery='', cameraActive=false;
 let lastScan=null, lastScanTime=0;
 const CAM_DB=400;
 let currentUser=null, unsubMov=null;
-let traslado={responsable:null,origen:null,destino:null,productos:[]};
+let traslado={responsable:null,origenDep:null,origenSec:null,destinoDep:null,destinoSec:null,productos:[]};
 let alertasConfig={umbralGlobal:3,diasFrenado:30,excepciones:{}};
 const TALLE_ORD=['XS','S','M','L','XL','XXL','2XL','3XL','4XL','5XL'];
 
@@ -551,16 +586,23 @@ const TALLE_ORD=['XS','S','M','L','XL','XXL','2XL','3XL','4XL','5XL'];
 function fb(){return window._fb;}
 
 async function fbSaveStock(){
+  if(!currentUser||!depActivo)return;
+  try{
+    const{db,doc,setDoc}=fb();
+    await setDoc(doc(db,'stock',depActivo),{stock:stockDB[depActivo]||{},sectorMap:sectorMapDB[depActivo]||{},upd:new Date().toISOString()});
+  }catch(e){console.error(e);}
+}
+async function fbSaveDepositos(){
   if(!currentUser)return;
-  try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'stock','main'),{stock,sectorMap,upd:new Date().toISOString()});}catch(e){console.error(e);}
+  try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','depositos'),{depositos,upd:new Date().toISOString()});}catch(e){console.error(e);}
 }
 async function fbSaveAlertasConfig(){
   if(!currentUser)return;
   try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','alertas'),alertasConfig);}catch(e){console.error(e);}
 }
 async function fbSaveSectores(){
-  if(!currentUser)return;
-  try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','sectores'),{sectores,upd:new Date().toISOString()});}catch(e){console.error(e);}
+  if(!currentUser||!depActivo)return;
+  try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','sectores_'+depActivo),{sectores:sectoresDB[depActivo]||{},upd:new Date().toISOString()});}catch(e){console.error(e);}
 }
 async function fbSaveEmpleados(){
   if(!currentUser)return;
@@ -573,23 +615,40 @@ async function fbAddMov(mov){
 async function fbLoad(){
   try{
     const{db,doc,getDoc}=fb();
-    const ss=await getDoc(doc(db,'stock','main'));
-    if(ss.exists()){const d=ss.data();stock=d.stock||{};sectorMap=d.sectorMap||{};}
-    const sc=await getDoc(doc(db,'config','sectores'));
-    if(sc.exists())sectores=sc.data().sectores||{};
+    // Load depositos
+    const dd=await getDoc(doc(db,'config','depositos'));
+    if(dd.exists())depositos=dd.data().depositos||{};
+    // If no depositos yet, create defaults
+    if(!Object.keys(depositos).length){
+      depositos={
+        'dep_a':{id:'dep_a',nombre:'Depósito A'},
+        'dep_b':{id:'dep_b',nombre:'Depósito B'}
+      };
+      await fbSaveDepositos();
+    }
+    // Set depActivo from localStorage or default to first
+    const savedDep=localStorage.getItem('ss_depActivo');
+    depActivo=savedDep&&depositos[savedDep]?savedDep:Object.keys(depositos)[0];
+    // Load stock for ALL depots
+    for(const depId of Object.keys(depositos)){
+      const ss=await getDoc(doc(db,'stock',depId));
+      if(ss.exists()){const d=ss.data();stockDB[depId]=d.stock||{};sectorMapDB[depId]=d.sectorMap||{};}
+      else{stockDB[depId]={};sectorMapDB[depId]={};}
+      const sc=await getDoc(doc(db,'config','sectores_'+depId));
+      if(sc.exists())sectoresDB[depId]=sc.data().sectores||{};
+      else sectoresDB[depId]={};
+    }
     const ec=await getDoc(doc(db,'config','empleados'));
     if(ec.exists())empleados=ec.data().empleados||{};
     try{
       let c=await idbGet('ss_catalog');
-      if(!c){
-        const lc=localStorage.getItem('ss_catalog');
-        if(lc){c=JSON.parse(lc);await idbSet('ss_catalog',c);localStorage.removeItem('ss_catalog');}
-      }
+      if(!c){const lc=localStorage.getItem('ss_catalog');if(lc){c=JSON.parse(lc);await idbSet('ss_catalog',c);localStorage.removeItem('ss_catalog');}}
       if(c)catalog=c;
     }catch(e){console.error(e);}
     const ac=await getDoc(doc(db,'config','alertas'));
     if(ac.exists())alertasConfig={...alertasConfig,...ac.data()};
-    updateHeader();renderSectores();updateSecSelects();renderStock();renderEmpleados();
+    updateHeader();renderDepositos();renderSectores();updateSecSelects();renderStock();renderEmpleados();
+    updateDepActivoBadge();
   }catch(e){console.error(e);}
 }
 function fbListenMov(){
@@ -800,6 +859,7 @@ window.switchTab=function(name){
   if(name==='empleados'){renderEmpleados();}
   if(name==='traslados')updateTrasladoSels();
   if(name==='alertas')renderAlertas();
+  if(name==='traslados'){updateTrasladoSels();resetTraslado();}
 };
 function switchSub(name){
   document.querySelectorAll('.stab').forEach(t=>t.classList.toggle('active',t.textContent.includes(name==='saldo'?'Saldo':'Mov')));
@@ -936,9 +996,18 @@ function processCode(rawCode,fromCam){
 
     if(esConsulta){
       // CONSULTA: solo muestra info, no modifica stock
-      const secId=sectorMap[key];
-      const secN=secId&&sectores[secId]?sectores[secId].nombre:null;
-      const saldo=stock[key]||0;
+      const secId=getSectorForProduct(key);
+      const secs=getSectores();
+      const secN=secId&&secs[secId]?secs[secId].nombre:null;
+      const saldo=getStockVal(key);
+      // Show stock in both depots
+      const depInfo=Object.entries(depositos).map(([did,dep])=>{
+        const q=getStockInDep(did,key);
+        const sm=sectorMapDB[did]||{};
+        const sd=sectoresDB[did]||{};
+        const sn=sm[key]&&sd[sm[key]]?sd[sm[key]].nombre:'—';
+        return q>0?`<span style="font-size:.75rem;color:var(--muted);">${dep.nombre}: <b style="color:var(--text);">${q} ud.</b> (${sn})</span>`:'';
+      }).filter(Boolean).join(' &nbsp;·&nbsp; ');
       re.style.display='block';re.className='scan-result found';
       rh.textContent='🔍 Consulta de producto';
       rb.innerHTML=`
@@ -950,9 +1019,10 @@ function processCode(rawCode,fromCam){
             <span style="font-weight:700;color:#a78bfa;font-size:.95rem;">${secN||'Sin sector asignado'}</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:.8rem;color:var(--muted);">📦 Stock actual:</span>
+            <span style="font-size:.8rem;color:var(--muted);">📦 Stock ${depositos[depActivo]?.nombre||''}:</span>
             <span style="font-weight:700;color:var(--accent);font-size:.95rem;">${saldo} unidades</span>
           </div>
+          ${depInfo?`<div style="margin-top:2px;">${depInfo}</div>`:''}
           <div style="display:flex;align-items:center;gap:8px;">
             <span style="font-size:.8rem;color:var(--muted);">🏷️ Código:</span>
             <code style="font-size:.8rem;">${entry.barcode||entry.sku||'—'}</code>
@@ -964,24 +1034,25 @@ function processCode(rawCode,fromCam){
     }
 
     if(esSalida){
-      if((stock[key]||0)<=0){
+      if(getStockVal(key)<=0){
         re.style.display='block';re.className='scan-result notfound';
         rh.textContent='⚠️ Sin stock disponible';
         rb.innerHTML=`<div class="pmeta">No hay unidades para descontar: <b>${entry.name}</b></div>`;
         playBeep(false);vibrateDevice(false);flashScr(false);
         showToast('Sin stock para descontar','err');return;
       }
-      stock[key]--;if(stock[key]===0)delete stock[key];
+      const curQ=getStockVal(key);setStockVal(key,curQ-1);
       fbAddMov(makeMov(key,entry,'salida',1,'Salida manual'));
     }else{
-      stock[key]=(stock[key]||0)+1;
-      if(sectorActivo)sectorMap[key]=sectorActivo;
+      setStockVal(key,getStockVal(key)+1);
+      if(sectorActivo)setSectorForProduct(key,sectorActivo);
       fbAddMov(makeMov(key,entry,'entrada',1,'Escaneo'));
     }
     fbSaveStock();updateHeader();
-    const secId=sectorMap[key];
-    const secN=secId&&sectores[secId]?sectores[secId].nombre:null;
-    const saldo=stock[key]||0;
+    const secId=getSectorForProduct(key);
+    const secs=getSectores();
+    const secN=secId&&secs[secId]?secs[secId].nombre:null;
+    const saldo=getStockVal(key);
     const col=esSalida?'var(--danger)':'var(--accent)';
     const sig=esSalida?'−1':'+1';
     re.style.display='block';re.className='scan-result found';
@@ -1095,9 +1166,16 @@ function renderStock(){
   });
   if(!rendered.length){list.innerHTML='<div class="empty"><div class="icon">📭</div><p>Sin productos.</p></div>';return;}
   list.innerHTML=rendered.map(({entry,qty,key,secId})=>{
-    const sn=secId&&sectores[secId]?sectores[secId].nombre:'—';
+    const depToShow=filterDep||null;
+    const secs=depToShow?(sectoresDB[depToShow]||{}):getSectores();
+    const sn=secId&&secs[secId]?secs[secId].nombre:'—';
+    // Per-depot qty if showing all
+    const depDetail=!depToShow?Object.entries(depositos).map(([did,dep])=>{
+      const q=getStockInDep(did,key);
+      return q>0?`<span style="font-size:.65rem;color:var(--muted);">${dep.nombre.replace('Depósito ','Dep.')}: ${q}</span>`:'';
+    }).filter(Boolean).join(' · '):'';
     return`<div class="stbl-row">
-      <div><div class="rname">${entry.name}</div><div class="rsku">${entry.sku||''}</div></div>
+      <div><div class="rname">${entry.name}</div><div class="rsku">${entry.sku||''}${depDetail?' · '+depDetail:''}</div></div>
       <div class="rsec">${sn}</div>
       <div class="rtalle">${entry.talle||'—'}</div>
       <div class="rqty${qty===0?' zero':''}">${qty}</div>
@@ -1146,19 +1224,23 @@ function renderHG(){
 // ── SECTORES ──
 window.crearSector=async function(){
   const n=document.getElementById('secNombre').value.trim();
-  if(!n){showToast('Escribí un nombre','err');return;}
-  if(Object.values(sectores).find(s=>s.nombre.toLowerCase()===n.toLowerCase())){showToast('Ya existe','err');return;}
+  if(!n||!depActivo){showToast('Escribí un nombre','err');return;}
+  const secs=getSectores();
+  if(Object.values(secs).find(s=>s.nombre.toLowerCase()===n.toLowerCase())){showToast('Ya existe en este depósito','err');return;}
   const id='sec_'+Date.now();
-  sectores[id]={id,nombre:n,codigo:'SEC-'+n.toUpperCase().replace(/[^A-Z0-9]/g,'')};
+  if(!sectoresDB[depActivo])sectoresDB[depActivo]={};
+  sectoresDB[depActivo][id]={id,nombre:n,codigo:'SEC-'+n.toUpperCase().replace(/[^A-Z0-9]/g,'')};
   document.getElementById('secNombre').value='';
   await fbSaveSectores();renderSectores();updateSecSelects();updateTrasladoSels();
   showToast(`Sector ${n} creado`,'ok');
 };
 window.eliminarSector=async function(id){
   if(!isAdmin){showToast('Solo el administrador puede eliminar sectores','err');return;}
-  if(!confirm(`¿Eliminar "${sectores[id]?.nombre}"?`))return;
-  Object.keys(sectorMap).forEach(k=>{if(sectorMap[k]===id)delete sectorMap[k];});
-  delete sectores[id];
+  const secs=getSectores();
+  if(!confirm(`¿Eliminar "${secs[id]?.nombre}"?`))return;
+  const sm=sectorMapDB[depActivo]||{};
+  Object.keys(sm).forEach(k=>{if(sm[k]===id)delete sm[k];});
+  delete sectoresDB[depActivo][id];
   if(sectorActivo===id){sectorActivo=null;updateSecBadge();}
   await fbSaveSectores();await fbSaveStock();
   renderSectores();updateSecSelects();updateTrasladoSels();showToast('Sector eliminado','ok');
@@ -1208,15 +1290,20 @@ window.cambiarSectorDesdeScanner=function(id){
   showToast(id&&sectores[id]?`📍 Sector: ${sectores[id].nombre}`:'Sector desactivado','ok');
 };
 function updateSecSelects(){
-  const opts=Object.values(sectores).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(s=>`<option value="${s.id}"${sectorActivo===s.id?' selected':''}>${s.nombre}</option>`).join('');
+  const secs=getSectores();
+  const opts=Object.values(secs).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(s=>`<option value="${s.id}"${sectorActivo===s.id?' selected':''}>${s.nombre}</option>`).join('');
   [['secActivoSel','<option value="">— Sin sector —</option>'],['secFilter','<option value="">Todos los sectores</option>']].forEach(([id,def])=>{const el=document.getElementById(id);if(el)el.innerHTML=def+opts;});
+  // Dep filter
+  const depOpts=Object.values(depositos).map(d=>`<option value="${d.id}"${filterDep===d.id?' selected':''}>${d.nombre}</option>`).join('');
+  const df=document.getElementById('depFilter');if(df)df.innerHTML='<option value="">Todos los depósitos</option>'+depOpts;
 }
 function renderSectores(){
   const l=document.getElementById('secList'),c=document.getElementById('secCnt');
-  const keys=Object.keys(sectores);if(c)c.textContent=keys.length;
-  if(!keys.length){l.innerHTML='<div class="empty"><div class="icon">📍</div><p>Sin sectores.</p></div>';return;}
-  const cnt={};Object.entries(sectorMap).forEach(([k,sid])=>{if((stock[k]||0)>0)cnt[sid]=(cnt[sid]||0)+1;});
-  l.innerHTML=Object.values(sectores).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(s=>`
+  const secs=getSectores();const sm=getSectorMap();const stk=getStock();
+  const keys=Object.keys(secs);if(c)c.textContent=keys.length;
+  if(!keys.length){l.innerHTML='<div class="empty"><div class="icon">📍</div><p>Sin sectores en este depósito.</p></div>';return;}
+  const cnt={};Object.entries(sm).forEach(([k,sid])=>{if((stk[k]||0)>0)cnt[sid]=(cnt[sid]||0)+1;});
+  l.innerHTML=Object.values(secs).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(s=>`
     <div class="sec-row">
       <div style="flex:1;"><div class="sec-name">📍 ${s.nombre}</div><div class="sec-meta">${s.codigo} · ${cnt[s.id]||0} productos</div></div>
       <button class="btn btn-ghost btn-sm" onclick="verSector('${s.id}')">Ver</button>
@@ -1296,9 +1383,18 @@ function renderEmpleados(){
 
 // ── TRASLADOS ──
 function updateTrasladoSels(){
-  const opts=Object.values(sectores).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(s=>`<option value="${s.id}">${s.nombre}</option>`).join('');
-  ['tSelOrigen','tSelDestino'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='<option value="">— Seleccionar —</option>'+opts;});
+  const depOpts=Object.values(depositos).map(d=>`<option value="${d.id}">${d.nombre}</option>`).join('');
+  ['tSelOrigenDep','tSelDestinoDep'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='<option value="">— Depósito —</option>'+depOpts;});
 }
+let tipoTraslado='interno';
+window.setTipoTraslado=function(tipo){
+  tipoTraslado=tipo;
+  ['interno','externo'].forEach(t=>{
+    const btn=document.getElementById(t==='interno'?'btnTInterno':'btnTExterno');
+    if(btn){btn.classList.toggle('active',t===tipo);btn.classList.remove('entrada','consulta');if(t===tipo)btn.classList.add('entrada');}
+  });
+  resetTraslado();
+};
 window.confirmarResp=function(){
   const input=document.getElementById('tResp');
   const v=input.value.trim();
@@ -1315,24 +1411,67 @@ window.confirmarResp=function(){
   showToast(`Responsable: ${emp.nombre}`,'ok');
 };
 document.getElementById('tResp').addEventListener('keydown',e=>{if(e.key==='Enter')confirmarResp();});
+window.setOrigenDep=function(depId){
+  if(!depId)return;
+  traslado.origenDep=depId;
+  traslado.origenSec=null;traslado.productos=[];
+  const secSel=document.getElementById('tSelOrigen');
+  if(secSel){
+    const secs=sectoresDB[depId]||{};
+    const opts=Object.values(secs).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(s=>`<option value="${s.id}">${s.nombre}</option>`).join('');
+    secSel.innerHTML='<option value="">— Sector origen —</option>'+opts;
+    secSel.style.display='';
+  }
+  if(tipoTraslado==='interno'){
+    // For internal, auto-set destination depot same as origin
+    traslado.destinoDep=depId;
+    const dds=document.getElementById('tSelDestinoDep');
+    if(dds)dds.value=depId;
+    setDestinoDep(depId,true);
+  }
+};
 window.setOrigen=function(id){
   if(!id)return;
-  traslado.origen=id;traslado.productos=[];
-  document.getElementById('tOrigenVal').innerHTML=`<b style="color:var(--accent)">📍 ${sectores[id]?.nombre||id}</b>`;
+  traslado.origenSec=id;traslado.productos=[];
+  const secs=sectoresDB[traslado.origenDep]||{};
+  const depN=depositos[traslado.origenDep]?.nombre||'';
+  const secN=secs[id]?.nombre||id;
+  document.getElementById('tOrigenVal').innerHTML=`<b style="color:var(--accent)">🏭 ${depN} / 📍 ${secN}</b>`;
   document.getElementById('tStep1').classList.add('done');
   const s2=document.getElementById('tStep2');s2.style.opacity='1';s2.style.pointerEvents='';
-  renderTProdList();showToast(`Origen: ${sectores[id]?.nombre}`,'ok');
+  renderTProdList();showToast(`Origen: ${depN} / ${secN}`,'ok');
+};
+window.setDestinoDep=function(depId,silent){
+  if(!depId)return;
+  traslado.destinoDep=depId;
+  traslado.destinoSec=null;
+  const secSel=document.getElementById('tSelDestino');
+  if(secSel){
+    const secs=sectoresDB[depId]||{};
+    const opts=Object.values(secs).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(s=>`<option value="${s.id}">${s.nombre}</option>`).join('');
+    secSel.innerHTML='<option value="">— Sector destino —</option>'+opts;
+    secSel.style.display='';
+  }
+  if(!silent)showToast(`Destino: ${depositos[depId]?.nombre}`,'ok');
 };
 window.tManScan=function(){const v=document.getElementById('tManInput').value.trim();if(v){processTScan(v);document.getElementById('tManInput').value='';}};
 document.getElementById('tManInput').addEventListener('keydown',e=>{if(e.key==='Enter')tManScan();});
 function processTScan(code){
-  const sec=Object.values(sectores).find(s=>s.codigo===code);
-  if(sec&&traslado.origen){setDestino(sec.id);return;}
-  if(!traslado.origen){showToast('Seleccioná el origen primero','err');return;}
+  // Check sector code for destino
+  if(traslado.origenSec){
+    const allSecs=Object.entries(sectoresDB).flatMap(([did,secs])=>Object.values(secs).map(s=>({...s,depId:did})));
+    const matchSec=allSecs.find(s=>s.codigo===code);
+    if(matchSec){setDestinoDep(matchSec.depId);setTimeout(()=>setDestino(matchSec.id),100);return;}
+  }
+  if(!traslado.origenSec){showToast('Seleccioná el sector de origen primero','err');return;}
   const entry=catalog[code];
   if(!entry){showToast('Código no encontrado','err');return;}
   const key=entry.canonical;
-  if(sectorMap[key]!==traslado.origen){showToast(`Producto no está en ${sectores[traslado.origen]?.nombre||'origen'}`,'err');return;}
+  const sm=sectorMapDB[traslado.origenDep]||{};
+  if(sm[key]!==traslado.origenSec){
+    const secs=sectoresDB[traslado.origenDep]||{};
+    showToast(`Producto no está en ${secs[traslado.origenSec]?.nombre||'sector origen'}`,'err');return;
+  }
   const ex=traslado.productos.find(p=>p.key===key);
   if(ex)ex.qty++;else traslado.productos.push({key,entry,qty:1});
   renderTProdList();playBeep(true);vibrateDevice(true);
@@ -1350,34 +1489,65 @@ function renderTProdList(){
 }
 window.setDestino=function(id){
   if(!id)return;
-  if(id===traslado.origen){showToast('El destino no puede ser igual al origen','err');return;}
-  traslado.destino=id;
-  document.getElementById('tDestinoVal').innerHTML=`<b style="color:var(--accent)">📍 ${sectores[id]?.nombre||id}</b>`;
+  if(id===traslado.origenSec&&traslado.destinoDep===traslado.origenDep){showToast('El destino no puede ser igual al origen','err');return;}
+  traslado.destinoSec=id;
+  const secs=sectoresDB[traslado.destinoDep]||{};
+  const depN=depositos[traslado.destinoDep]?.nombre||'';
+  const secN=secs[id]?.nombre||id;
+  document.getElementById('tDestinoVal').innerHTML=`<b style="color:var(--accent)">🏭 ${depN} / 📍 ${secN}</b>`;
   document.getElementById('tStep3').classList.add('done');
-  document.getElementById('tSelDestino').value=id;
   const btn=document.getElementById('btnConfT');btn.style.opacity='1';btn.style.pointerEvents='';
-  showToast(`Destino: ${sectores[id]?.nombre}`,'ok');
+  showToast(`Destino: ${depN} / ${secN}`,'ok');
 };
 window.confirmarTraslado=async function(){
-  if(!traslado.responsable){showToast('Ingresá el responsable','err');return;}
-  if(!traslado.origen||!traslado.destino||!traslado.productos.length){showToast('Completá todos los pasos','err');return;}
-  const on=sectores[traslado.origen]?.nombre||traslado.origen;
-  const dn=sectores[traslado.destino]?.nombre||traslado.destino;
-  if(!confirm(`¿Trasladar ${traslado.productos.length} producto(s) de ${on} a ${dn}?`))return;
+  if(!traslado.responsable){showToast('Escaneá el código del responsable','err');return;}
+  if(!traslado.origenDep||!traslado.origenSec||!traslado.destinoDep||!traslado.destinoSec||!traslado.productos.length){showToast('Completá todos los pasos','err');return;}
+  const secOrigen=sectoresDB[traslado.origenDep]?.[traslado.origenSec];
+  const secDestino=sectoresDB[traslado.destinoDep]?.[traslado.destinoSec];
+  const depOrigen=depositos[traslado.origenDep];
+  const depDestino=depositos[traslado.destinoDep];
+  const on=`${depOrigen?.nombre||''} / ${secOrigen?.nombre||''}`;
+  const dn=`${depDestino?.nombre||''} / ${secDestino?.nombre||''}`;
+  const esExterno=traslado.origenDep!==traslado.destinoDep;
+  if(!confirm(`¿${esExterno?'Traslado entre depósitos':'Traslado interno'}: ${traslado.productos.length} producto(s)
+De: ${on}
+A: ${dn}?`))return;
   const now=new Date();
   for(const p of traslado.productos){
-    sectorMap[p.key]=traslado.destino;
+    // Remove from origin depot
+    const origQ=getStockInDep(traslado.origenDep,p.key);
+    const newOrigQ=Math.max(0,origQ-p.qty);
+    if(!stockDB[traslado.origenDep])stockDB[traslado.origenDep]={};
+    if(newOrigQ===0)delete stockDB[traslado.origenDep][p.key];
+    else stockDB[traslado.origenDep][p.key]=newOrigQ;
+    // Remove sector assignment from origin
+    if(sectorMapDB[traslado.origenDep])delete sectorMapDB[traslado.origenDep][p.key];
+    // Add to destination depot
+    if(!stockDB[traslado.destinoDep])stockDB[traslado.destinoDep]={};
+    stockDB[traslado.destinoDep][p.key]=(getStockInDep(traslado.destinoDep,p.key))+p.qty;
+    // Assign to destination sector
+    if(!sectorMapDB[traslado.destinoDep])sectorMapDB[traslado.destinoDep]={};
+    sectorMapDB[traslado.destinoDep][p.key]=traslado.destinoSec;
+    // Log movement
     await fbAddMov({
       fecha:now.toLocaleDateString('es-AR'),
       hora:now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
       canonicalKey:p.key,nombre:p.entry.name,talle:p.entry.talle||'',
       sku:p.entry.sku||'',tipo:'traslado',qty:p.qty,
-      motivo:'Traslado de sector',usuario:traslado.responsable,
-      sectorOrigen:on,sectorDestino:dn,sectorNombre:dn
+      motivo:esExterno?'Traslado entre depósitos':'Traslado interno',
+      usuario:traslado.responsable,
+      depositoOrigen:depOrigen?.nombre||'',depositoDestino:depDestino?.nombre||'',
+      sectorOrigen:on,sectorDestino:dn,sectorNombre:dn,
+      esExterno
     });
   }
-  await fbSaveStock();
-  showToast(`Traslado completado: ${traslado.productos.length} productos`,'ok');
+  // Save both depots
+  const oldDep=depActivo;
+  depActivo=traslado.origenDep;await fbSaveStock();
+  depActivo=traslado.destinoDep;await fbSaveStock();
+  depActivo=oldDep;
+  updateHeader();renderStock();
+  showToast(`${esExterno?'Traslado entre depósitos':'Traslado interno'} completado ✅`,'ok');
   resetTraslado();
 };
 window.resetTraslado=function(){
@@ -1399,19 +1569,32 @@ document.getElementById('btnXLSXSec').addEventListener('click',exportXLSXSec);
 document.getElementById('btnCSV').addEventListener('click',exportCSV);
 async function limpiarStock(){
   if(!confirm('¿Limpiar todo el conteo?'))return;
-  stock={};sectorMap={};await fbSaveStock();updateHeader();renderStock();showToast('Conteo limpiado','ok');
+  if(depActivo){stockDB[depActivo]={};sectorMapDB[depActivo]={};}await fbSaveStock();updateHeader();renderStock();showToast('Conteo limpiado','ok');
 }
-function buildRows(secFiltro){
+function buildRows(secFiltro,depFiltro){
   const seen=new Set(),rows=[];
-  Object.entries(stock).forEach(([key,qty])=>{
+  const allKeys=new Set();
+  Object.values(stockDB).forEach(ds=>Object.keys(ds).forEach(k=>allKeys.add(k)));
+  allKeys.forEach(key=>{
     const entry=catalog[key];if(!entry)return;
     const can=entry.canonical;if(seen.has(can))return;seen.add(can);
-    const rq=stock[can]||0;if(rq===0)return;
-    const sid=sectorMap[can];if(secFiltro&&sid!==secFiltro)return;
-    const sn=sid&&sectores[sid]?sectores[sid].nombre:'—';
-    rows.push({'Sector':sn,'Referencia interna':entry.sku||'','Código de barras':entry.barcode||'','Nombre':entry.name,'Talle':entry.talle||'','Cantidad':rq});
+    if(depFiltro){
+      const rq=getStockInDep(depFiltro,can);if(rq===0)return;
+      const sid=(sectorMapDB[depFiltro]||{})[can];if(secFiltro&&sid!==secFiltro)return;
+      const sn=sid&&(sectoresDB[depFiltro]||{})[sid]?(sectoresDB[depFiltro]||{})[sid].nombre:'—';
+      const dep=depositos[depFiltro]?.nombre||depFiltro;
+      rows.push({'Depósito':dep,'Sector':sn,'Referencia interna':entry.sku||'','Código de barras':entry.barcode||'','Nombre':entry.name,'Talle':entry.talle||'','Cantidad':rq});
+    } else {
+      // All depots
+      Object.entries(depositos).forEach(([did,dep])=>{
+        const rq=getStockInDep(did,can);if(rq===0)return;
+        const sid=(sectorMapDB[did]||{})[can];if(secFiltro&&sid!==secFiltro)return;
+        const sn=sid&&(sectoresDB[did]||{})[sid]?(sectoresDB[did]||{})[sid].nombre:'—';
+        rows.push({'Depósito':dep.nombre,'Sector':sn,'Referencia interna':entry.sku||'','Código de barras':entry.barcode||'','Nombre':entry.name,'Talle':entry.talle||'','Cantidad':rq});
+      });
+    }
   });
-  return rows.sort((a,b)=>a['Sector'].localeCompare(b['Sector'])||a['Nombre'].localeCompare(b['Nombre']));
+  return rows.sort((a,b)=>a['Depósito'].localeCompare(b['Depósito'])||a['Sector'].localeCompare(b['Sector'])||a['Nombre'].localeCompare(b['Nombre']));
 }
 function exportXLSX(){
   const rows=buildRows();if(!rows.length){showToast('Sin stock','err');return;}
@@ -1447,9 +1630,10 @@ function exportCSV(){
 // ── UTILS ──
 function updateHeader(){
   document.getElementById('hP').textContent=Object.keys(catalog).length;
-  const u=new Set(Object.entries(stock).filter(([,v])=>v>0).map(([k])=>catalog[k]?.canonical||k));
+  const allStk=Object.values(stockDB).reduce((acc,ds)=>{Object.entries(ds).forEach(([k,v])=>{acc[k]=(acc[k]||0)+v;});return acc;},{});
+  const u=new Set(Object.entries(allStk).filter(([,v])=>v>0).map(([k])=>catalog[k]?.canonical||k));
   document.getElementById('hE').textContent=u.size;
-  document.getElementById('hU').textContent=Object.values(stock).reduce((s,v)=>s+v,0);
+  document.getElementById('hU').textContent=Object.values(stockDB).reduce((tot,ds)=>tot+Object.values(ds).reduce((s,v)=>s+v,0),0);
 }
 function showToast(msg,type='ok'){
   const t=document.getElementById('toast');t.textContent=msg;t.className=`toast ${type} show`;
@@ -1738,6 +1922,135 @@ function updateAlertTab(){
   });
   const tab=document.querySelector('.tab[data-tab="alertas"]');
   if(tab)tab.textContent=cnt>0?`🔔 Alertas (${cnt})`:'🔔 Alertas';
+}
+
+
+// ── DEPOSITOS ──
+function renderDepositos(){
+  // Update depot selector
+  const sel=document.getElementById('depActivoSelect');
+  if(sel){
+    const opts=Object.values(depositos).map(d=>`<option value="${d.id}"${depActivo===d.id?' selected':''}>${d.nombre}</option>`).join('');
+    sel.innerHTML=opts;
+  }
+  const lbl=document.getElementById('depActivoLabel');
+  if(lbl) lbl.textContent=depositos[depActivo]?.nombre||'';
+}
+
+function updateDepActivoBadge(){
+  renderDepositos();
+  renderSectores();
+  updateSecSelects();
+  updateSecBadge();
+}
+
+window.cambiarDepActivo=function(depId){
+  if(!depId||!depositos[depId])return;
+  depActivo=depId;
+  localStorage.setItem('ss_depActivo',depId);
+  sectorActivo=null;
+  updateDepActivoBadge();
+  renderStock();
+  showToast(`Depósito: ${depositos[depId].nombre}`,'ok');
+};
+
+window.adminGestionDepositos=function(){
+  closeAdminPanel();
+  const nombres=Object.values(depositos).map(d=>d.nombre).join('\n');
+  const nuevo=prompt(`Depósitos actuales:\n${nombres}\n\n¿Nombre para nuevo depósito? (vacío para no crear)`,'');
+  if(!nuevo||!nuevo.trim())return;
+  const id='dep_'+Date.now();
+  depositos[id]={id,nombre:nuevo.trim()};
+  stockDB[id]={};sectorMapDB[id]={};sectoresDB[id]={};
+  fbSaveDepositos();
+  renderDepositos();
+  updateSecSelects();
+  showToast(`Depósito "${nuevo.trim()}" creado`,'ok');
+};
+
+// Update alertas to work with multi-depot
+const _origGetUmbral=window.getUmbralForProduct||null;
+function getUmbralForProduct(can){
+  return alertasConfig.excepciones?.[can]??alertasConfig.umbralGlobal;
+}
+function renderAlertas(){
+  const cfg=document.getElementById('alertasConfigCard');
+  if(cfg)cfg.style.display=isAdmin?'':'none';
+  const u=document.getElementById('cfgUmbral');const d=document.getElementById('cfgDiasFrenado');
+  if(u)u.value=alertasConfig.umbralGlobal;if(d)d.value=alertasConfig.diasFrenado;
+  document.getElementById('alertUmbralLabel').textContent=`Umbral: <${alertasConfig.umbralGlobal} unidades`;
+  document.getElementById('alertDiasLabel').textContent=`Sin movimiento +${alertasConfig.diasFrenado} días`;
+  const now=new Date();const seen=new Set();const stockBajo=[],frenados=[];
+  // Check all depots
+  Object.keys(depositos).forEach(depId=>{
+    const depStock=stockDB[depId]||{};
+    const depSecs=sectoresDB[depId]||{};
+    const depSM=sectorMapDB[depId]||{};
+    Object.entries(depStock).forEach(([key,qty])=>{
+      const entry=catalog[key];if(!entry)return;
+      const can=entry.canonical;
+      const uid=depId+'_'+can;if(seen.has(uid))return;seen.add(uid);
+      if(qty<=0)return;
+      const secId=depSM[can];const secN=secId&&depSecs[secId]?depSecs[secId].nombre:'—';
+      const depN=depositos[depId]?.nombre||depId;
+      const umbral=getUmbralForProduct(can);
+      if(qty<=umbral)stockBajo.push({entry,qty,umbral,secN,depN,key:can,depId});
+      const last=getLastMovDate(can);
+      const dias=last?Math.floor((now-last)/(1000*60*60*24)):999;
+      if(dias>=alertasConfig.diasFrenado)frenados.push({entry,qty,dias,secN,depN,key:can});
+    });
+  });
+  document.getElementById('alertStockBajoCnt').textContent=stockBajo.length;
+  document.getElementById('alertFrenadoCnt').textContent=frenados.length;
+  const sbList=document.getElementById('alertStockBajoList');
+  if(!stockBajo.length){sbList.innerHTML='<div class="empty"><div class="icon">✅</div><p>Sin alertas.</p></div>';}
+  else{
+    stockBajo.sort((a,b)=>a.qty-b.qty);
+    sbList.innerHTML=stockBajo.map(({entry,qty,umbral,secN,depN,key,depId})=>`
+      <div class="stbl-row" style="grid-template-columns:1fr auto auto${isAdmin?' auto':''};">
+        <div><div class="rname">${entry.name}</div><div class="rsku">🏭 ${depN} · 📍 ${secN} · ${entry.talle||'—'}</div></div>
+        <div class="rqty zero">${qty}</div>
+        <div style="font-size:.7rem;color:var(--muted);">umbral:${umbral}</div>
+        ${isAdmin?`<button class="btn btn-ghost btn-sm" style="font-size:.68rem;padding:4px 8px;" onclick="setExcepcion('${key}')">✏️</button>`:''}
+      </div>`).join('');
+  }
+  const frList=document.getElementById('alertFrenadoList');
+  if(!frenados.length){frList.innerHTML='<div class="empty"><div class="icon">✅</div><p>Sin productos frenados.</p></div>';}
+  else{
+    frenados.sort((a,b)=>b.dias-a.dias);
+    frList.innerHTML=frenados.map(({entry,qty,dias,secN,depN})=>`
+      <div class="stbl-row" style="grid-template-columns:1fr auto auto;">
+        <div><div class="rname">${entry.name}</div><div class="rsku">🏭 ${depN} · 📍 ${secN} · ${entry.talle||'—'}</div></div>
+        <div class="rqty">${qty}</div>
+        <div style="font-size:.72rem;color:#f59e0b;font-weight:700;">${dias>=999?'Sin reg.':dias+'d'}</div>
+      </div>`).join('');
+  }
+}
+
+// Update historial to show depot
+function renderHG(){
+  const l=document.getElementById('hGList');
+  const uf=document.getElementById('hUserF')?.value||'';
+  const tf=document.getElementById('hTipoF')?.value||'';
+  const users=[...new Set(movimientos.map(m=>m.usuario).filter(Boolean))];
+  const us=document.getElementById('hUserF');
+  if(us){const cur=us.value;us.innerHTML='<option value="">Todos los usuarios</option>'+users.map(u=>`<option value="${u}"${u===cur?' selected':''}>${u}</option>`).join('');}
+  let f=movimientos;
+  if(uf)f=f.filter(m=>m.usuario===uf);
+  if(tf)f=f.filter(m=>m.tipo===tf);
+  if(!f.length){l.innerHTML='<div class="empty"><div class="icon">📋</div><p>Sin movimientos.</p></div>';return;}
+  const icons={entrada:'📥',salida:'📤',traslado:'🔄'};
+  const colors={entrada:'var(--accent)',salida:'var(--danger)',traslado:'#f59e0b'};
+  l.innerHTML=f.map(m=>{
+    const depInfo=m.depositoNombre?` · 🏭 ${m.depositoNombre}`:'';
+    const meta=m.tipo==='traslado'?` · ${m.sectorOrigen||'?'} → ${m.sectorDestino||'?'}`:` · 📍 ${m.sectorNombre||'—'}${depInfo}`;
+    return`<div class="mov">
+      <div>${icons[m.tipo]||'•'}</div>
+      <div><div class="mv-name">${m.nombre}${m.talle?' · '+m.talle:''}</div>
+      <div class="mv-meta">👤 ${m.usuario||'—'}${meta} · ${m.fecha||''} ${m.hora||''}</div></div>
+      <div class="mv-qty" style="color:${colors[m.tipo]||'var(--text)'};">${m.tipo==='entrada'?'+':m.tipo==='salida'?'-':''}${m.qty}</div>
+    </div>`;
+  }).join('');
 }
 
 </script>
