@@ -210,7 +210,7 @@
     <div class="tab" data-tab="sectores">📍 Sectores</div>
     <div class="tab" data-tab="empleados" id="tabEmpleados" style="display:none;">👤 Empleados</div>
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
-    <div class="tab" data-tab="alertas">🔔 Alertas</div>
+    <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">🔔 Alertas</div>
   </div>
 
   <!-- IMPORT -->
@@ -1211,7 +1211,7 @@ window.crearEmpleado=async function(){
   const n=document.getElementById('empNombre').value.trim();
   const cod=document.getElementById('empCodigo').value.trim();
   if(!n){showToast('Escribí un nombre','err');return;}
-  if(!/^\d{4,}$/.test(cod)){showToast('Código de barras inválido','err');return;}
+  if(cod.length<2){showToast('El código es muy corto','err');return;}
   if(Object.values(empleados).find(e=>e.codigo===cod)){showToast('Ese código ya está registrado','err');return;}
   const id='emp_'+Date.now();
   empleados[id]={id,nombre:n,codigo:cod};
@@ -1230,7 +1230,7 @@ window.editarEmpleado=async function(id){
   if(n===null)return;
   const cod=prompt('Nuevo código de barras:',empleados[id].codigo);
   if(cod===null)return;
-  if(!/^\d{4,}$/.test(cod.trim())){showToast('Código de barras inválido','err');return;}
+  if(cod.trim().length<2){showToast('El código es muy corto','err');return;}
   if(Object.values(empleados).find(e=>e.codigo===cod.trim()&&e.id!==id)){showToast('Ese código ya está registrado','err');return;}
   empleados[id].nombre=n.trim()||empleados[id].nombre;
   empleados[id].codigo=cod.trim();
@@ -1265,7 +1265,6 @@ window.confirmarResp=function(){
   const input=document.getElementById('tResp');
   const v=input.value.trim();
   if(!v){showToast('Escaneá el código de barras del responsable','err');return;}
-  if(!/^\d{4,}$/.test(v)){showToast('Eso no es un código de barras válido. Escaneá el código.','err');return;}
   const emp=Object.values(empleados).find(e=>e.codigo===v);
   if(!emp){showToast('Código no registrado. Cargalo en la sección Empleados.','err');return;}
   traslado.responsable=emp.nombre;
@@ -1691,6 +1690,7 @@ window.setExcepcion=function(key){
 };
 window.adminConfigAlertas=function(){closeAdminPanel();switchTab('alertas');};
 function updateAlertTab(){
+  if(!isAdmin)return;
   const seen=new Set();let cnt=0;
   Object.entries(stock).forEach(([key])=>{
     const entry=catalog[key];if(!entry)return;
