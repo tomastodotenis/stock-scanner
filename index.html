@@ -160,6 +160,9 @@
     .rtalle{background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:.73rem;font-weight:700;text-align:center;}
     .rqty{background:rgba(200,245,0,.15);color:var(--accent);border-radius:5px;padding:2px 8px;font-weight:700;font-size:.86rem;text-align:center;font-family:monospace;}
     .rqty.zero{background:rgba(239,68,68,.1);color:var(--danger);}
+    .alert-badge{display:inline-flex;align-items:center;gap:3px;border-radius:5px;padding:1px 6px;font-size:.67rem;font-weight:700;margin-right:4px;}
+    .alert-bajo{background:rgba(239,68,68,.15);color:var(--danger);border:1px solid rgba(239,68,68,.3);}
+    .alert-frenado{background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.3);}
     .rcode{color:var(--muted);font-family:monospace;font-size:.68rem;}
     .empty{padding:36px 18px;text-align:center;color:var(--muted);}
     .empty .icon{font-size:1.9rem;margin-bottom:9px;}
@@ -1297,11 +1300,13 @@ function renderStock(){
       return q>0?`<span style="font-size:.65rem;color:var(--muted);">${dep.nombre.replace('Depósito ','Dep.')}: ${q}</span>`:'';
     }).filter(Boolean).join(' · '):'';
     const promoBadge=getPromoBadge(entry.name);
+    const alertBadges=getAlertBadges(key,entry.name,qty);
     return`<div class="stbl-row" style="grid-template-columns:1fr 50px 50px auto auto;">
       <div>
         <div class="rname">${entry.name}</div>
         <div class="rsku">${entry.sku||''}${depDetail?' · '+depDetail:''}</div>
-        ${promoBadge?`<div style="margin-top:3px;">${promoBadge}</div>`:''}
+        ${alertBadges?`<div style="margin-top:3px;">${alertBadges}</div>`:''}
+        ${promoBadge?`<div style="margin-top:2px;">${promoBadge}</div>`:''}
       </div>
       <div class="rsec">${sn}</div>
       <div class="rtalle">${entry.talle||'—'}</div>
@@ -2313,6 +2318,21 @@ function isVencida(fechaCad){
   return diff; // negative = vencida, 0-7 = vence pronto
 }
 
+function getAlertBadges(canonicalKey, nombre, qty){
+  const badges=[];
+  const umbral=getUmbralForProduct(canonicalKey);
+  if(qty>0&&qty<=umbral){
+    badges.push(`<span class="alert-badge alert-bajo">⚠️ Stock bajo (${qty})</span>`);
+  }
+  const lastMov=getLastMovDate(canonicalKey);
+  const now=new Date();
+  const dias=lastMov?Math.floor((now-lastMov)/(1000*60*60*24)):null;
+  if(qty>0&&(dias===null||dias>=alertasConfig.diasFrenado)){
+    const txt=dias===null?'Sin movimiento':'Frenado '+dias+'d';
+    badges.push(`<span class="alert-badge alert-frenado">🧊 ${txt}</span>`);
+  }
+  return badges.join('');
+}
 function findPromo(nombre){
   if(!nombre||!promociones.length)return null;
   const nombreLower=nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
