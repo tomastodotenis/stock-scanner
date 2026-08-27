@@ -563,15 +563,15 @@
 
       <!-- Stats -->
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
-        <div class="card" style="padding:10px;text-align:center;">
+        <div class="card" id="promoCardTodos" style="padding:10px;text-align:center;cursor:pointer;border-color:var(--accent);" onclick="setPromoFiltro('todos')">
           <div style="font-size:1.4rem;font-weight:700;color:var(--accent);" id="promoCnt">0</div>
-          <div style="font-size:.7rem;color:var(--muted);">Promos</div>
+          <div style="font-size:.7rem;color:var(--muted);">Todas</div>
         </div>
-        <div class="card" style="padding:10px;text-align:center;">
+        <div class="card" id="promoCardPronto" style="padding:10px;text-align:center;cursor:pointer;" onclick="setPromoFiltro('pronto')">
           <div style="font-size:1.4rem;font-weight:700;color:#f59e0b;" id="promoVenceCnt">0</div>
           <div style="font-size:.7rem;color:var(--muted);">Vencen pronto</div>
         </div>
-        <div class="card" style="padding:10px;text-align:center;">
+        <div class="card" id="promoCardVencida" style="padding:10px;text-align:center;cursor:pointer;" onclick="setPromoFiltro('vencida')">
           <div style="font-size:1.4rem;font-weight:700;color:var(--danger);" id="promoVencidaCnt">0</div>
           <div style="font-size:.7rem;color:var(--muted);">Vencidas</div>
         </div>
@@ -701,6 +701,7 @@ let traslado={responsable:null,origenDep:null,origenSec:null,destinoDep:null,des
 let alertasConfig={umbralGlobal:3,diasFrenado:30,excepciones:{}};
 let promociones=[]; // Array de {descripcion, nroPub, fechaInicio, fechaCad, precioLista, descuento, precioFinal, recibis}
 let promoLastFetch=0;
+let promoFiltroActivo='todos'; // 'todos' | 'pronto' | 'vencida'
 const PROMO_CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vTMwDSOgRoX2iJn2Xnpn6IMxScpIqp4ZujlbKlxgPPRWxjJFQ3Be4a8_NQE5o2rkDFy2H-eRubr_QF_/pub?gid=1093616578&single=true&output=csv';
 const TALLE_ORD=['XS','S','M','L','XL','XXL','2XL','3XL','4XL','5XL'];
 
@@ -2328,6 +2329,17 @@ function findPromo(nombre){
   return best;
 }
 
+window.setPromoFiltro=function(filtro){
+  promoFiltroActivo=filtro;
+  // Update card borders
+  const colors={todos:'var(--accent)',pronto:'#f59e0b',vencida:'var(--danger)'};
+  ['todos','pronto','vencida'].forEach(f=>{
+    const card=document.getElementById('promoCard'+f.charAt(0).toUpperCase()+f.slice(1));
+    if(card)card.style.borderColor=f===filtro?colors[f]:'var(--border)';
+  });
+  renderPromos();
+};
+
 function renderPromos(){
   const list=document.getElementById('promoList');
   const search=(document.getElementById('promoSearch')?.value||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
@@ -2337,27 +2349,36 @@ function renderPromos(){
     return;
   }
 
+  // Count all for stats (ignore active filter)
   let cnt=0,vencePronto=0,vencida=0;
+  promociones.forEach(p=>{
+    cnt++;
+    const dias=isVencida(p.fechaCad);
+    if(dias!==null){if(dias<0)vencida++;else if(dias<=7)vencePronto++;}
+  });
+  document.getElementById('promoCnt').textContent=cnt;
+  document.getElementById('promoVenceCnt').textContent=vencePronto;
+  document.getElementById('promoVencidaCnt').textContent=vencida;
+
+  // Apply filters
   const filtered=promociones.filter(p=>{
     if(search){
       const d=p.descripcion.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
       if(!d.includes(search))return false;
     }
+    if(promoFiltroActivo==='pronto'){
+      const dias=isVencida(p.fechaCad);
+      if(dias===null||dias<0||dias>7)return false;
+    }
+    if(promoFiltroActivo==='vencida'){
+      const dias=isVencida(p.fechaCad);
+      if(dias===null||dias>=0)return false;
+    }
     return true;
   });
 
-  filtered.forEach(p=>{
-    cnt++;
-    const dias=isVencida(p.fechaCad);
-    if(dias!==null){if(dias<0)vencida++;else if(dias<=7)vencePronto++;}
-  });
-
-  document.getElementById('promoCnt').textContent=cnt;
-  document.getElementById('promoVenceCnt').textContent=vencePronto;
-  document.getElementById('promoVencidaCnt').textContent=vencida;
-
   if(!filtered.length){
-    list.innerHTML='<div class="empty"><div class="icon">🔍</div><p>Sin resultados.</p></div>';return;
+    list.innerHTML='<div class="empty"><div class="icon">🔍</div><p>Sin resultados para este filtro.</p></div>';return;
   }
 
   list.innerHTML=filtered.map(p=>{
