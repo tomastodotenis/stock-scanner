@@ -239,7 +239,7 @@
     <div class="tab" data-tab="sectores">📍 Sectores</div>
     <div class="tab" data-tab="empleados" id="tabEmpleados" style="display:none;">👤 Empleados</div>
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
-    <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">🔔 Alertas</div>
+    <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">⚙️ Config. Alertas</div>
     <div class="tab" data-tab="promos">🏷️ Promos MeLi</div>
   </div>
 
@@ -659,7 +659,6 @@
       <button class="btn btn-danger btn-sm" onclick="adminLimpiarStock()" style="justify-content:flex-start;">🗑 Limpiar todo el conteo</button>
       <button class="btn btn-danger btn-sm" onclick="adminExportarTodo()" style="justify-content:flex-start;background:rgba(124,58,237,.2);color:#a78bfa;border:1px solid #7c3aed;">📊 Exportar todo (admin)</button>
       <button class="btn btn-ghost btn-sm" onclick="adminGestionDepositos()" style="justify-content:flex-start;">🏭 Gestionar depósitos</button>
-      <button class="btn btn-ghost btn-sm" onclick="adminConfigAlertas()" style="justify-content:flex-start;">🔔 Configurar alertas</button>
       <button class="btn btn-danger btn-sm" onclick="salirAdmin()" style="justify-content:flex-start;background:none;border:1px solid var(--border);color:var(--muted);">🔓 Salir de modo admin</button>
     </div>
     <div id="adminPanelContent" style="font-size:.8rem;color:var(--muted);"></div>
@@ -2051,7 +2050,7 @@ function updateAlertTab(){
     if(rq>0&&rq<=getUmbralForProduct(can))cnt++;
   });
   const tab=document.querySelector('.tab[data-tab="alertas"]');
-  if(tab)tab.textContent=cnt>0?`🔔 Alertas (${cnt})`:'🔔 Alertas';
+  if(tab)tab.textContent=cnt>0?`⚙️ Config. Alertas (${cnt})`:'⚙️ Config. Alertas';
 }
 
 
