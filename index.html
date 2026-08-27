@@ -1902,12 +1902,21 @@ window.requireAdmin = function(fn){
 
 window.salirAdmin = function(){
   isAdmin=false;
+  // Hide admin-only tabs immediately
+  ['tabAlertas','tabEmpleados'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.style.display='none';
+  });
+  const btnHist=document.getElementById('btnBorrarHist');
+  if(btnHist)btnHist.style.display='none';
   document.getElementById('adminBadge').style.display='none';
-  document.getElementById('tabEmpleados').style.display='none';
-  document.getElementById('btnBorrarHist').style.display='none';
+  // If currently on an admin-only tab, redirect to stock
   const active=document.querySelector('.tab.active');
-  if(active&&active.dataset.tab==='empleados')switchTab('import');
+  if(active&&(active.dataset.tab==='alertas'||active.dataset.tab==='empleados')){
+    switchTab('stock');
+  }
   closeAdminPanel();
+  updateAlertTab();
   showToast('Saliste del modo administrador','ok');
 };
 
