@@ -1121,7 +1121,7 @@ function makeMov(key,entry,tipo,qty,motivo,extra){
   };
 }
 
-function processCode(rawCode,fromCam){
+async function processCode(rawCode,fromCam){
   const code=String(rawCode).trim();if(!code)return;
   if(fromCam){
     const now=Date.now();
