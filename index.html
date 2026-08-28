@@ -256,9 +256,30 @@
     </div>
     <div class="ist" id="importStatus"></div>
 
-    <!-- Búsqueda en Odoo -->
+    <!-- Sincronización con Odoo -->
     <div style="padding:0 18px 18px;display:flex;flex-direction:column;gap:9px;">
-      <div class="slabel">Buscar producto en Odoo</div>
+      
+      <!-- Sync button -->
+      <div class="slabel">Catálogo desde Odoo</div>
+      <div class="card" style="padding:13px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div>
+            <div style="font-size:.83rem;font-weight:600;">🔄 Sincronizar catálogo completo</div>
+            <div style="font-size:.72rem;color:var(--muted);margin-top:2px;" id="syncStatus">Trae todos los productos de Odoo en tiempo real</div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="btnSyncOdoo" onclick="syncCatalogFromOdoo()">Sincronizar</button>
+        </div>
+        <!-- Progress bar -->
+        <div id="syncProgress" style="display:none;">
+          <div style="background:var(--surface2);border-radius:4px;overflow:hidden;height:6px;margin-bottom:6px;">
+            <div id="syncBar" style="height:100%;background:var(--accent);width:0%;transition:width .3s;border-radius:4px;"></div>
+          </div>
+          <div style="font-size:.72rem;color:var(--muted);text-align:center;" id="syncLabel">Preparando...</div>
+        </div>
+      </div>
+
+      <!-- Búsqueda puntual en Odoo -->
+      <div class="slabel">Buscar producto puntual en Odoo</div>
       <div style="display:flex;gap:7px;">
         <input type="text" id="odooSearchInput" class="inp" placeholder="Nombre, SKU o código de barras..." />
         <button class="btn btn-ghost btn-sm" onclick="doOdooSearch()">🔍</button>
@@ -2465,6 +2486,88 @@ function getPromoBadge(nombre){
 // Fetch promos on load
 window.addEventListener('load',()=>setTimeout(fetchPromos,2000));
 
+
+// ── ODOO CATALOG SYNC ──
+let syncRunning = false;
+
+window.syncCatalogFromOdoo = async function(){
+  if(syncRunning){ showToast('Sincronización en curso...','err'); return; }
+  if(!confirm('¿Sincronizar todo el catálogo desde Odoo? Esto puede tardar 1-2 minutos.')) return;
+
+  syncRunning = true;
+  const btn = document.getElementById('btnSyncOdoo');
+  const progress = document.getElementById('syncProgress');
+  const bar = document.getElementById('syncBar');
+  const label = document.getElementById('syncLabel');
+  const status = document.getElementById('syncStatus');
+
+  btn.disabled = true;
+  btn.textContent = 'Sincronizando...';
+  progress.style.display = 'block';
+
+  let offset = 0;
+  const batchSize = 500;
+  let totalLoaded = 0;
+  let hasMore = true;
+  const newCatalog = {};
+
+  try {
+    // First get total count
+    label.textContent = 'Obteniendo total de productos...';
+    const countResp = await fetch(`${ODOO_WORKER_URL}/count`);
+    const countData = await countResp.json();
+    const total = countData.count || 0;
+    label.textContent = `0 / ${total.toLocaleString()} productos`;
+
+    while(hasMore){
+      const resp = await fetch(`${ODOO_WORKER_URL}/products?offset=${offset}&limit=${batchSize}`);
+      const data = await resp.json();
+      const products = data.results || [];
+
+      products.forEach(p => {
+        const canonical = p.barcode || p.sku || String(p.id);
+        if(!canonical) return;
+        const entry = { name: p.name, sku: p.sku||'', barcode: p.barcode||'', talle: p.talle||'', canonical };
+        newCatalog[canonical] = entry;
+        if(p.barcode) newCatalog[p.barcode] = entry;
+        if(p.sku && p.sku !== p.barcode) newCatalog[p.sku] = entry;
+      });
+
+      totalLoaded += products.length;
+      offset += batchSize;
+      hasMore = products.length === batchSize;
+
+      const pct = total > 0 ? Math.min(100, Math.round(totalLoaded/total*100)) : 50;
+      bar.style.width = pct + '%';
+      label.textContent = `${totalLoaded.toLocaleString()} / ${total.toLocaleString()} productos (${pct}%)`;
+
+      // Small delay to not overwhelm
+      if(hasMore) await new Promise(r => setTimeout(r, 100));
+    }
+
+    // Merge with existing catalog (keep local additions)
+    catalog = { ...newCatalog };
+    await idbSet('ss_catalog', catalog);
+    localStorage.setItem('ss_catalog', JSON.stringify(catalog));
+    updateHeader();
+
+    const now = new Date();
+    status.textContent = `✅ Última sync: ${now.toLocaleDateString('es-AR')} ${now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${totalLoaded.toLocaleString()} productos`;
+    label.textContent = `✅ ${totalLoaded.toLocaleString()} productos sincronizados`;
+    bar.style.width = '100%';
+    showToast(`✅ ${totalLoaded.toLocaleString()} productos sincronizados`, 'ok');
+
+  } catch(err) {
+    label.textContent = '❌ Error: ' + err.message;
+    showToast('Error al sincronizar', 'err');
+    console.error('Sync error:', err);
+  } finally {
+    syncRunning = false;
+    btn.disabled = false;
+    btn.textContent = 'Sincronizar';
+    setTimeout(() => { progress.style.display = 'none'; }, 3000);
+  }
+};
 
 // ── ODOO SEARCH UI ──
 window.doOdooSearch=async function(){
