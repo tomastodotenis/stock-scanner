@@ -255,6 +255,16 @@
       <p>Arrastrá o tocá para seleccionar el Excel de Odoo<br><br><small style="color:var(--muted)">Columnas: Código de barras · Referencia interna · Nombre · Valores de las variantes</small></p>
     </div>
     <div class="ist" id="importStatus"></div>
+
+    <!-- Búsqueda en Odoo -->
+    <div style="padding:0 18px 18px;display:flex;flex-direction:column;gap:9px;">
+      <div class="slabel">Buscar producto en Odoo</div>
+      <div style="display:flex;gap:7px;">
+        <input type="text" id="odooSearchInput" class="inp" placeholder="Nombre, SKU o código de barras..." />
+        <button class="btn btn-ghost btn-sm" onclick="doOdooSearch()">🔍</button>
+      </div>
+      <div id="odooSearchResults" style="display:none;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;max-height:300px;overflow-y:auto;"></div>
+    </div>
     <div style="padding:0 18px 20px;display:flex;flex-direction:column;gap:9px;">
       <div class="slabel">Estado</div>
       <div class="card" style="font-size:.81rem;line-height:1.8;color:var(--muted);">
@@ -704,6 +714,7 @@ let alertasConfig={umbralGlobal:3,diasFrenado:30,excepciones:{}};
 let promociones=[]; // Array de {descripcion, nroPub, fechaInicio, fechaCad, precioLista, descuento, precioFinal, recibis}
 let promoLastFetch=0;
 let promoFiltroActivo='todos'; // 'todos' | 'pronto' | 'vencida'
+const ODOO_WORKER_URL='https://odoo-proxy.tomastodotenis.workers.dev';
 const PROMO_CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vTMwDSOgRoX2iJn2Xnpn6IMxScpIqp4ZujlbKlxgPPRWxjJFQ3Be4a8_NQE5o2rkDFy2H-eRubr_QF_/pub?gid=1093616578&single=true&output=csv';
 const TALLE_ORD=['XS','S','M','L','XL','XXL','2XL','3XL','4XL','5XL'];
 
@@ -1114,7 +1125,16 @@ function processCode(rawCode,fromCam){
     processTScan(code);return;
   }
   const re=document.getElementById('scanResult'),rh=document.getElementById('srh'),rb=document.getElementById('srb');
-  const entry=catalog[code];
+  let entry=catalog[code];
+
+  // If not in local catalog, try Odoo
+  if(!entry){
+    rh.textContent='🔍 Buscando en Odoo...';
+    re.style.display='block';re.className='scan-result found';
+    rb.innerHTML='<div class="pmeta" style="color:var(--muted);">Consultando catálogo...</div>';
+    entry=await lookupOdoo(code);
+  }
+
   if(entry){
     const key=entry.canonical;
     const esSalida=modoScan==='salida';
@@ -2444,6 +2464,71 @@ function getPromoBadge(nombre){
 
 // Fetch promos on load
 window.addEventListener('load',()=>setTimeout(fetchPromos,2000));
+
+
+// ── ODOO SEARCH UI ──
+window.doOdooSearch=async function(){
+  const q=document.getElementById('odooSearchInput').value.trim();
+  const resultsDiv=document.getElementById('odooSearchResults');
+  if(q.length<2){showToast('Escribí al menos 2 caracteres','err');return;}
+  resultsDiv.style.display='block';
+  resultsDiv.innerHTML='<div style="padding:12px;text-align:center;color:var(--muted);font-size:.82rem;">🔍 Buscando en Odoo...</div>';
+  const results=await searchOdoo(q);
+  if(!results.length){
+    resultsDiv.innerHTML='<div style="padding:12px;text-align:center;color:var(--muted);font-size:.82rem;">Sin resultados en Odoo.</div>';
+    return;
+  }
+  resultsDiv.innerHTML=results.map(p=>`
+    <div style="padding:9px 13px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="addOdooProduct(${JSON.stringify(p).replace(/"/g,'&quot;')})">
+      <div style="font-weight:600;font-size:.83rem;">${p.name}</div>
+      <div style="font-size:.72rem;color:var(--muted);">SKU: ${p.sku||'—'} · EAN: ${p.barcode||'—'} · Talle: ${p.talle||'—'}</div>
+    </div>`).join('');
+};
+
+document.getElementById('odooSearchInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')doOdooSearch();});
+
+window.addOdooProduct=function(p){
+  const canonical=p.barcode||p.sku||String(p.id);
+  const entry={name:p.name,sku:p.sku||'',barcode:p.barcode||'',talle:p.talle||'',canonical};
+  catalog[canonical]=entry;
+  if(p.barcode)catalog[p.barcode]=entry;
+  if(p.sku&&p.sku!==p.barcode)catalog[p.sku]=entry;
+  localStorage.setItem('ss_catalog',JSON.stringify(catalog));
+  updateHeader();
+  showToast(`✅ ${p.name} agregado al catálogo`,'ok');
+  document.getElementById('odooSearchResults').style.display='none';
+  document.getElementById('odooSearchInput').value='';
+};
+
+// ── ODOO LOOKUP ──
+async function lookupOdoo(code){
+  try{
+    const resp=await fetch(`${ODOO_WORKER_URL}/barcode/${encodeURIComponent(code)}`);
+    const data=await resp.json();
+    if(data.found&&data.product){
+      // Add to local catalog
+      const p=data.product;
+      const entry={name:p.name,sku:p.sku||'',barcode:p.barcode||code,talle:p.talle||'',canonical:p.barcode||p.sku||code};
+      catalog[code]=entry;
+      if(p.barcode&&p.barcode!==code)catalog[p.barcode]=entry;
+      if(p.sku&&p.sku!==code)catalog[p.sku]=entry;
+      return entry;
+    }
+    return null;
+  }catch(e){
+    console.error('Odoo lookup failed:',e);
+    return null;
+  }
+}
+
+// Search Odoo by text (for import page)
+async function searchOdoo(q){
+  try{
+    const resp=await fetch(`${ODOO_WORKER_URL}/search?q=${encodeURIComponent(q)}`);
+    const data=await resp.json();
+    return data.results||[];
+  }catch(e){return[];}
+}
 
 </script>
 </body>
