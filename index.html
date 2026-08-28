@@ -918,6 +918,8 @@ window.addEventListener('DOMContentLoaded',()=>{
         const sh=document.getElementById('appShell');sh.style.display='flex';
         updateDisplayName();
         await fbLoad();fbListenMov();fbListenCatalog();
+        // Auto-sync catalog every 30 minutes
+        autoSyncCatalog();
         startPresence();
       }else{
         currentUser=null;
@@ -2490,9 +2492,34 @@ window.addEventListener('load',()=>setTimeout(fetchPromos,2000));
 // ── ODOO CATALOG SYNC ──
 let syncRunning = false;
 
-window.syncCatalogFromOdoo = async function(){
-  if(syncRunning){ showToast('Sincronización en curso...','err'); return; }
-  if(!confirm('¿Sincronizar todo el catálogo desde Odoo? Esto puede tardar 1-2 minutos.')) return;
+const SYNC_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 horas
+
+async function autoSyncCatalog(){
+  // Check when last sync was
+  try{
+    const meta = await idbGet('ss_catalog_meta');
+    const lastSync = meta?.upd ? new Date(meta.upd).getTime() : 0;
+    const now = Date.now();
+    const elapsed = now - lastSync;
+
+    if(elapsed >= SYNC_INTERVAL_MS || !lastSync){
+      // Needs sync - run silently in background
+      console.log('Auto-sync: iniciando...');
+      await syncCatalogFromOdoo(true); // silent mode
+    } else {
+      const remaining = Math.round((SYNC_INTERVAL_MS - elapsed) / 60000);
+      console.log(`Auto-sync: próxima en ${remaining} min`);
+      // Schedule next sync
+      setTimeout(autoSyncCatalog, SYNC_INTERVAL_MS - elapsed);
+    }
+  }catch(e){
+    console.error('autoSyncCatalog error:', e);
+  }
+}
+
+window.syncCatalogFromOdoo = async function(silent=false){
+  if(syncRunning){ if(!silent) showToast('Sincronización en curso...','err'); return; }
+  if(!silent && !confirm('¿Sincronizar todo el catálogo desde Odoo? Esto puede tardar 1-2 minutos.')) return;
 
   syncRunning = true;
   const btn = document.getElementById('btnSyncOdoo');
@@ -2501,9 +2528,8 @@ window.syncCatalogFromOdoo = async function(){
   const label = document.getElementById('syncLabel');
   const status = document.getElementById('syncStatus');
 
-  btn.disabled = true;
-  btn.textContent = 'Sincronizando...';
-  progress.style.display = 'block';
+  if(!silent){ if(btn){btn.disabled=true;btn.textContent='Sincronizando...';} if(progress)progress.style.display='block'; }
+  else { if(status) status.textContent = '🔄 Sincronizando en segundo plano...'; }
 
   let offset = 0;
   const batchSize = 500;
@@ -2552,11 +2578,20 @@ window.syncCatalogFromOdoo = async function(){
     try { localStorage.removeItem('ss_catalog'); } catch(e) {}
     updateHeader();
 
-    const now = new Date();
-    status.textContent = `✅ Última sync: ${now.toLocaleDateString('es-AR')} ${now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${totalLoaded.toLocaleString()} productos`;
-    label.textContent = `✅ ${totalLoaded.toLocaleString()} productos sincronizados`;
-    bar.style.width = '100%';
-    showToast(`✅ ${totalLoaded.toLocaleString()} productos sincronizados`, 'ok');
+    const nowDate = new Date();
+    // Save sync timestamp
+    try { await idbSet('ss_catalog_meta', {upd: nowDate.toISOString()}); } catch(e){}
+    if(!silent){
+      if(status) status.textContent = `✅ Última sync: ${nowDate.toLocaleDateString('es-AR')} ${nowDate.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${totalLoaded.toLocaleString()} productos`;
+      if(label) label.textContent = `✅ ${totalLoaded.toLocaleString()} productos sincronizados`;
+      if(bar) bar.style.width = '100%';
+      showToast(`✅ ${totalLoaded.toLocaleString()} productos sincronizados`, 'ok');
+    } else {
+      if(status) status.textContent = `✅ Última sync: ${nowDate.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${totalLoaded.toLocaleString()} productos`;
+      console.log(`Auto-sync completado: ${totalLoaded} productos`);
+    }
+    // Schedule next auto-sync
+    setTimeout(autoSyncCatalog, SYNC_INTERVAL_MS);
 
   } catch(err) {
     label.textContent = '❌ Error: ' + err.message;
@@ -2564,9 +2599,10 @@ window.syncCatalogFromOdoo = async function(){
     console.error('Sync error:', err);
   } finally {
     syncRunning = false;
-    btn.disabled = false;
-    btn.textContent = 'Sincronizar';
-    setTimeout(() => { progress.style.display = 'none'; }, 3000);
+    if(!silent){
+      if(btn){btn.disabled=false;btn.textContent='Sincronizar';}
+      setTimeout(() => { if(progress)progress.style.display='none'; }, 3000);
+    }
   }
 };
 
