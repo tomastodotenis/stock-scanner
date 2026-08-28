@@ -132,7 +132,7 @@
     .rank-num.silver{background:rgba(192,192,192,.2);color:#c0c0c0;}
     .rank-num.bronze{background:rgba(205,127,50,.2);color:#cd7f32;}
     .rank-num.normal{background:var(--surface2);color:var(--muted);}
-    .rank-name{flex:1;font-size:.82rem;font-weight:600;line-height:1.3;}
+    .rank-name{flex:1;font-size:.82rem;font-weight:600;line-height:1.3;word-break:break-word;}
     .rank-bar-wrap{width:80px;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;}
     .rank-bar-fill{height:100%;background:var(--accent);border-radius:3px;}
     .rank-units{font-size:.82rem;font-weight:700;color:var(--accent);min-width:36px;text-align:right;}
@@ -610,7 +610,10 @@
         <div class="rank-seg active" data-rperiod="day" onclick="setRankPeriod('day')">Hoy</div>
         <div class="rank-seg" data-rperiod="week" onclick="setRankPeriod('week')">Semana</div>
         <div class="rank-seg" data-rperiod="month" onclick="setRankPeriod('month')">Mes</div>
+        <div class="rank-seg" data-rperiod="range" onclick="setRankPeriod('range')">Rango</div>
       </div>
+      <!-- Period picker (shows for week/month) -->
+      <div id="rankPeriodPicker" style="display:none;"></div>
 
       <!-- Vista -->
       <div style="display:flex;gap:6px;">
@@ -626,9 +629,11 @@
         </div>
         <div class="card" style="padding:11px;text-align:center;">
           <div style="font-size:1.5rem;font-weight:700;color:var(--accent);" id="rankTotalProds">—</div>
-          <div style="font-size:.7rem;color:var(--muted);" id="rankPeriodLabel">en el período</div>
+          <div style="font-size:.7rem;color:var(--muted);">Productos distintos</div>
         </div>
       </div>
+      <!-- Period label -->
+      <div style="font-size:.75rem;color:var(--muted);text-align:center;" id="rankPeriodLabel"></div>
 
       <!-- Lista -->
       <div class="stbl" id="rankingList">
@@ -2759,8 +2764,46 @@ window.setRankPeriod = function(p){
   document.querySelectorAll('.rank-seg[data-rperiod]').forEach(el=>{
     el.classList.toggle('active', el.dataset.rperiod === p);
   });
+  // Show picker for week/month
+  const picker = document.getElementById('rankPeriodPicker');
+  if(!picker) return;
+  const today = new Date().toISOString().slice(0,10);
+  if(p === 'week'){
+    const week = isoWeekStr(new Date());
+    picker.style.display = '';
+    picker.innerHTML = `<input type="week" id="rankWeekInput" class="inp" value="${week}" />`;
+    document.getElementById('rankWeekInput').addEventListener('change', renderRanking);
+  } else if(p === 'month'){
+    const month = today.slice(0,7);
+    picker.style.display = '';
+    picker.innerHTML = `<input type="month" id="rankMonthInput" class="inp" value="${month}" />`;
+    document.getElementById('rankMonthInput').addEventListener('change', renderRanking);
+  } else if(p === 'range'){
+    const today = new Date().toISOString().slice(0,10);
+    picker.style.display = '';
+    picker.innerHTML = `
+      <div style="display:flex;gap:7px;align-items:center;">
+        <input type="date" id="rankRangeFrom" class="inp" value="${today}" style="flex:1;" />
+        <span style="color:var(--muted);font-size:.8rem;">→</span>
+        <input type="date" id="rankRangeTo" class="inp" value="${today}" style="flex:1;" />
+      </div>`;
+    document.getElementById('rankRangeFrom').addEventListener('change', renderRanking);
+    document.getElementById('rankRangeTo').addEventListener('change', renderRanking);
+  } else {
+    picker.style.display = 'none';
+    picker.innerHTML = '';
+  }
   renderRanking();
 };
+
+function isoWeekStr(date){
+  const d = new Date(date);
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  const weekNo = 1 + Math.round(((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+  return `${d.getFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+}
 
 window.setRankView = function(v){
   rankView = v;
@@ -2800,19 +2843,43 @@ function getDateRange(period){
     return {
       from: today,
       to: new Date(today.getTime() + 86399999),
-      label: today.toLocaleDateString('es-AR',{day:'2-digit',month:'long'})
+      label: today.toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'long'})
     };
   }
   if(period === 'week'){
-    const day = today.getDay() || 7;
-    const from = new Date(today); from.setDate(today.getDate() - day + 1);
+    const val = document.getElementById('rankWeekInput')?.value || isoWeekStr(today);
+    const [yearStr, weekStr] = val.split('-W');
+    const year = Number(yearStr), week = Number(weekStr);
+    const jan4 = new Date(year, 0, 4);
+    const mondayW1 = new Date(jan4);
+    mondayW1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+    const from = new Date(mondayW1);
+    from.setDate(mondayW1.getDate() + (week - 1) * 7);
     const to = new Date(from); to.setDate(from.getDate() + 6); to.setHours(23,59,59);
-    return { from, to, label: `${from.toLocaleDateString('es-AR',{day:'2-digit',month:'short'})} - ${to.toLocaleDateString('es-AR',{day:'2-digit',month:'short'})}` };
+    return {
+      from, to,
+      label: `Sem. ${week} — ${from.toLocaleDateString('es-AR',{day:'2-digit',month:'short'})} al ${to.toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'})}`
+    };
   }
   if(period === 'month'){
-    const from = new Date(now.getFullYear(), now.getMonth(), 1);
-    const to = new Date(now.getFullYear(), now.getMonth()+1, 0, 23, 59, 59);
+    const val = document.getElementById('rankMonthInput')?.value || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const [y, m] = val.split('-').map(Number);
+    const from = new Date(y, m-1, 1);
+    const to = new Date(y, m, 0, 23, 59, 59);
     return { from, to, label: from.toLocaleDateString('es-AR',{month:'long',year:'numeric'}) };
+  }
+  if(period === 'range'){
+    const fromVal = document.getElementById('rankRangeFrom')?.value;
+    const toVal = document.getElementById('rankRangeTo')?.value;
+    if(!fromVal || !toVal) return null;
+    const [fy,fm,fd] = fromVal.split('-').map(Number);
+    const [ty,tm,td] = toVal.split('-').map(Number);
+    const from = new Date(fy,fm-1,fd,0,0,0);
+    const to = new Date(ty,tm-1,td,23,59,59);
+    return {
+      from, to,
+      label: `${from.toLocaleDateString('es-AR')} → ${to.toLocaleDateString('es-AR')}`
+    };
   }
   return null;
 }
@@ -2827,7 +2894,7 @@ function renderRanking(){
   if(!range) return;
 
   const filtered = rankingData.filter(r => r.date && r.date >= range.from && r.date <= range.to);
-  document.getElementById('rankPeriodLabel').textContent = range.label;
+  const pLabel=document.getElementById('rankPeriodLabel');if(pLabel)pLabel.textContent=range.label;
 
   // Aggregate
   const totals = new Map();
@@ -2850,7 +2917,7 @@ function renderRanking(){
   list.innerHTML = ranked.slice(0,20).map(([name, units], i) => {
     const pct = Math.round(units/maxVal*100);
     const numClass = i===0?'gold':i===1?'silver':i===2?'bronze':'normal';
-    const shortName = name.length > 35 ? name.slice(0,33)+'…' : name;
+    const shortName = name;
     return `<div class="rank-item">
       <div class="rank-num ${numClass}">${i+1}</div>
       <div class="rank-name">${shortName}</div>
