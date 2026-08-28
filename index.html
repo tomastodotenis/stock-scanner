@@ -417,7 +417,7 @@
   <!-- HISTORIAL GLOBAL -->
   <div class="page" id="page-historial">
     <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
-      <div style="display:flex;gap:7px;">
+      <div style="display:flex;gap:7px;" id="historialUserFilterRow">
         <select id="hUserF" class="inp" onchange="renderHG()" style="flex:1;"><option value="">Todos los usuarios</option></select>
         <select id="hTipoF" class="inp" onchange="renderHG()" style="flex:1;">
           <option value="">Todos</option>
@@ -429,7 +429,7 @@
       <button id="btnBorrarHist" class="btn btn-danger btn-sm" style="display:none;" onclick="borrarHistorial()">🗑 Borrar todo el historial</button>
       <div class="stbl">
         <div style="padding:9px 13px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
-          <span class="slabel">Últimos 100 movimientos</span>
+          <span class="slabel" id="historialTitle">Últimos 100 movimientos</span>
           <span id="hSync" style="font-size:.7rem;color:var(--muted);">⏳ Cargando...</span>
         </div>
         <div id="hGList"><div class="empty"><div class="icon">📋</div><p>Sin movimientos.</p></div></div>
@@ -2324,12 +2324,23 @@ function renderHG(){
   const l=document.getElementById('hGList');
   const uf=document.getElementById('hUserF')?.value||'';
   const tf=document.getElementById('hTipoF')?.value||'';
+  const myName=getDisplayName();
+
+  // Non-admin: only see own movements, hide user filter
+  const userFilterRow=document.getElementById('historialUserFilterRow');
+  if(userFilterRow) userFilterRow.style.display=isAdmin?'':'none';
+
   const users=[...new Set(movimientos.map(m=>m.usuario).filter(Boolean))];
   const us=document.getElementById('hUserF');
-  if(us){const cur=us.value;us.innerHTML='<option value="">Todos los usuarios</option>'+users.map(u=>`<option value="${u}"${u===cur?' selected':''}>${u}</option>`).join('');}
+  if(us&&isAdmin){const cur=us.value;us.innerHTML='<option value="">Todos los usuarios</option>'+users.map(u=>`<option value="${u}"${u===cur?' selected':''}>${u}</option>`).join('');}
   let f=movimientos;
-  if(uf)f=f.filter(m=>m.usuario===uf);
+  // Non-admin: filter to own movements only
+  if(!isAdmin) f=f.filter(m=>m.usuario===myName);
+  else if(uf) f=f.filter(m=>m.usuario===uf);
   if(tf)f=f.filter(m=>m.tipo===tf);
+  // Update title
+  const titleEl=document.getElementById('historialTitle');
+  if(titleEl) titleEl.textContent=isAdmin?'Últimos 100 movimientos':'Mis movimientos';
   if(!f.length){l.innerHTML='<div class="empty"><div class="icon">📋</div><p>Sin movimientos.</p></div>';return;}
   const icons={entrada:'📥',salida:'📤',traslado:'🔄'};
   const colors={entrada:'var(--accent)',salida:'var(--danger)',traslado:'#f59e0b'};
