@@ -2591,7 +2591,7 @@ window.doOdooSearch=async function(){
 
 document.getElementById('odooSearchInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')doOdooSearch();});
 
-window.addOdooProduct=function(p){
+window.addOdooProduct=async function(p){
   const canonical=p.barcode||p.sku||String(p.id);
   const entry={name:p.name,sku:p.sku||'',barcode:p.barcode||'',talle:p.talle||'',canonical};
   catalog[canonical]=entry;
