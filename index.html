@@ -2545,10 +2545,11 @@ window.syncCatalogFromOdoo = async function(){
       if(hasMore) await new Promise(r => setTimeout(r, 100));
     }
 
-    // Merge with existing catalog (keep local additions)
+    // Save to IndexedDB (supports large datasets)
     catalog = { ...newCatalog };
     await idbSet('ss_catalog', catalog);
-    localStorage.setItem('ss_catalog', JSON.stringify(catalog));
+    // Remove from localStorage if it was there (too small for 56k products)
+    try { localStorage.removeItem('ss_catalog'); } catch(e) {}
     updateHeader();
 
     const now = new Date();
@@ -2596,7 +2597,8 @@ window.addOdooProduct=function(p){
   catalog[canonical]=entry;
   if(p.barcode)catalog[p.barcode]=entry;
   if(p.sku&&p.sku!==p.barcode)catalog[p.sku]=entry;
-  localStorage.setItem('ss_catalog',JSON.stringify(catalog));
+  try { await idbSet('ss_catalog', catalog); } catch(e) {}
+  try { localStorage.setItem('ss_catalog',JSON.stringify(catalog)); } catch(e) {}
   updateHeader();
   showToast(`✅ ${p.name} agregado al catálogo`,'ok');
   document.getElementById('odooSearchResults').style.display='none';
