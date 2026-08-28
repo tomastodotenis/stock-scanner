@@ -1182,20 +1182,6 @@ function processFile(file){
 }
 
 // ── SCAN ──
-function makeMov(key,entry,tipo,qty,motivo,extra){
-  const now=new Date();
-  const secId=sectorMap[key];
-  return{
-    fecha:now.toLocaleDateString('es-AR'),
-    hora:now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
-    canonicalKey:key,nombre:entry.name,talle:entry.talle||'',
-    sku:entry.sku||entry.barcode||'',tipo,qty,motivo,
-    usuario:currentUser?.email?.split('@')[0]||'—',
-    sectorId:secId||null,
-    sectorNombre:secId&&sectores[secId]?sectores[secId].nombre:'—',
-    ...extra
-  };
-}
 
 async function processCode(rawCode,fromCam){
   const code=String(rawCode).trim();if(!code)return;
@@ -1448,29 +1434,6 @@ function renderMovList(){
 }
 
 // ── HISTORIAL GLOBAL ──
-function renderHG(){
-  const l=document.getElementById('hGList');
-  const uf=document.getElementById('hUserF')?.value||'';
-  const tf=document.getElementById('hTipoF')?.value||'';
-  const users=[...new Set(movimientos.map(m=>m.usuario).filter(Boolean))];
-  const us=document.getElementById('hUserF');
-  if(us){const cur=us.value;us.innerHTML='<option value="">Todos los usuarios</option>'+users.map(u=>`<option value="${u}"${u===cur?' selected':''}>${u}</option>`).join('');}
-  let f=movimientos;
-  if(uf)f=f.filter(m=>m.usuario===uf);
-  if(tf)f=f.filter(m=>m.tipo===tf);
-  if(!f.length){l.innerHTML='<div class="empty"><div class="icon">📋</div><p>Sin movimientos.</p></div>';return;}
-  const icons={entrada:'📥',salida:'📤',traslado:'🔄'};
-  const colors={entrada:'var(--accent)',salida:'var(--danger)',traslado:'#f59e0b'};
-  l.innerHTML=f.map(m=>{
-    const meta=m.tipo==='traslado'?` · ${m.sectorOrigen||'?'} → ${m.sectorDestino||'?'}`:` · 📍 ${m.sectorNombre||'—'}`;
-    return`<div class="mov">
-      <div>${icons[m.tipo]||'•'}</div>
-      <div><div class="mv-name">${m.nombre}${m.talle?' · '+m.talle:''}</div>
-      <div class="mv-meta">👤 ${m.usuario||'—'}${meta} · ${m.fecha||''} ${m.hora||''}</div></div>
-      <div class="mv-qty" style="color:${colors[m.tipo]||'var(--text)'};">${m.tipo==='entrada'?'+':m.tipo==='salida'?'-':''}${m.qty}</div>
-    </div>`;
-  }).join('');
-}
 
 // ── SECTORES ──
 window.crearSector=async function(){
@@ -2091,9 +2054,7 @@ const _origOnAuth = window._onAuthCallback;
 
 
 // ── ALERTAS ──
-function getUmbralForProduct(can){
-  return alertasConfig.excepciones?.[can]??alertasConfig.umbralGlobal;
-}
+
 function getLastMovDate(can){
   const movs=movimientos.filter(m=>m.canonicalKey===can);
   if(!movs.length)return null;
@@ -2105,75 +2066,7 @@ function getLastMovDate(can){
   if(!dates.length)return null;
   return new Date(Math.max(...dates.map(d=>d.getTime())));
 }
-function renderAlertas(){
-  const cfg=document.getElementById('alertasConfigCard');
-  if(cfg)cfg.style.display=isAdmin?'':'none';
-  const u=document.getElementById('cfgUmbral');
-  const d=document.getElementById('cfgDiasFrenado');
-  if(u)u.value=alertasConfig.umbralGlobal;
-  if(d)d.value=alertasConfig.diasFrenado;
-  document.getElementById('alertUmbralLabel').textContent=`Umbral: <${alertasConfig.umbralGlobal} unidades`;
-  document.getElementById('alertDiasLabel').textContent=`Sin movimiento +${alertasConfig.diasFrenado} días`;
-  const now=new Date();
-  const seen=new Set();
-  const stockBajo=[],frenados=[];
-  Object.entries(stock).forEach(([key,qty])=>{
-    const entry=catalog[key];if(!entry)return;
-    const can=entry.canonical;if(seen.has(can))return;seen.add(can);
-    const rq=stock[can]||0;if(rq===0)return;
-    const secId=sectorMap[can];
-    const secN=secId&&sectores[secId]?sectores[secId].nombre:'—';
-    const umbral=getUmbralForProduct(can);
-    if(rq<=umbral)stockBajo.push({entry,qty:rq,umbral,secN,key:can});
-    const last=getLastMovDate(can);
-    const dias=last?Math.floor((now-last)/(1000*60*60*24)):999;
-    if(dias>=alertasConfig.diasFrenado)frenados.push({entry,qty:rq,dias,secN,key:can});
-  });
-  document.getElementById('alertStockBajoCnt').textContent=stockBajo.length;
-  document.getElementById('alertFrenadoCnt').textContent=frenados.length;
-  const sbList=document.getElementById('alertStockBajoList');
-  if(!stockBajo.length){sbList.innerHTML='<div class="empty"><div class="icon">✅</div><p>Sin alertas de stock bajo.</p></div>';}
-  else{
-    stockBajo.sort((a,b)=>a.qty-b.qty);
-    sbList.innerHTML=stockBajo.map(({entry,qty,umbral,secN,key})=>`
-      <div class="stbl-row" style="grid-template-columns:1fr auto auto${isAdmin?' auto':''};">
-        <div><div class="rname">${entry.name}</div><div class="rsku">📍 ${secN} · ${entry.talle||'—'}</div></div>
-        <div class="rqty zero">${qty}</div>
-        <div style="font-size:.7rem;color:var(--muted);">umbral:${umbral}</div>
-        ${isAdmin?`<button class="btn btn-ghost btn-sm" style="font-size:.68rem;padding:4px 8px;" onclick="setExcepcion('${key}')">✏️</button>`:''}
-      </div>`).join('');
-  }
-  const frList=document.getElementById('alertFrenadoList');
-  if(!frenados.length){frList.innerHTML='<div class="empty"><div class="icon">✅</div><p>Sin productos frenados.</p></div>';}
-  else{
-    frenados.sort((a,b)=>b.dias-a.dias);
-    frList.innerHTML=frenados.map(({entry,qty,dias,secN})=>`
-      <div class="stbl-row" style="grid-template-columns:1fr auto auto;">
-        <div><div class="rname">${entry.name}</div><div class="rsku">📍 ${secN} · ${entry.talle||'—'}</div></div>
-        <div class="rqty">${qty}</div>
-        <div style="font-size:.72rem;color:#f59e0b;font-weight:700;">${dias>=999?'Sin reg.':dias+'d'}</div>
-      </div>`).join('');
-  }
-}
-window.saveAlertasConfig=async function(){
-  const u=parseInt(document.getElementById('cfgUmbral').value);
-  const d=parseInt(document.getElementById('cfgDiasFrenado').value);
-  if(isNaN(u)||u<1){showToast('Umbral inválido','err');return;}
-  if(isNaN(d)||d<1){showToast('Días inválido','err');return;}
-  alertasConfig.umbralGlobal=u;alertasConfig.diasFrenado=d;
-  await fbSaveAlertasConfig();renderAlertas();showToast('Configuración guardada ✅','ok');
-};
-window.setExcepcion=function(key){
-  const entry=catalog[key];
-  const actual=alertasConfig.excepciones?.[key]??alertasConfig.umbralGlobal;
-  const nuevo=prompt(`Umbral personalizado para:\n${entry?.name||key}\n(vacío = usar global de ${alertasConfig.umbralGlobal}):`,actual);
-  if(nuevo===null)return;
-  if(!alertasConfig.excepciones)alertasConfig.excepciones={};
-  if(nuevo.trim()===''||parseInt(nuevo)===alertasConfig.umbralGlobal){delete alertasConfig.excepciones[key];}
-  else{const v=parseInt(nuevo);if(isNaN(v)||v<0){showToast('Valor inválido','err');return;}alertasConfig.excepciones[key]=v;}
-  fbSaveAlertasConfig();renderAlertas();showToast('Excepción guardada ✅','ok');
-};
-window.adminConfigAlertas=function(){closeAdminPanel();switchTab('alertas');};
+
 function updateAlertTab(){
   if(!isAdmin)return;
   const seen=new Set();let cnt=0;
