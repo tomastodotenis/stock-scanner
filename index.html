@@ -604,7 +604,10 @@
           <div style="font-size:.85rem;font-weight:700;">🏆 Top Ventas MeLi</div>
           <div style="font-size:.72rem;color:var(--muted);margin-top:2px;" id="rankingStatus">Tocá para cargar</div>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="loadRanking(true)">🔄 Actualizar</button>
+        <div style="display:flex;gap:7px;">
+          <button class="btn btn-ghost btn-sm" onclick="loadRanking(true)">🔄 Actualizar</button>
+          <button class="btn btn-ghost btn-sm" onclick="printRanking()">🖨️ Imprimir</button>
+        </div>
       </div>
 
       <!-- Período -->
@@ -2665,6 +2668,91 @@ function formatOdooDate(dateStr){
     const d = new Date(dateStr.replace(' ','T') + 'Z');
     return d.toLocaleDateString('es-AR',{day:'2-digit',month:'long',year:'numeric'});
   }catch(e){ return null; }
+}
+
+// ── PRINT RANKING ──
+window.printRanking = function(){
+  const list = document.getElementById('rankingList');
+  const period = document.getElementById('rankPeriodLabel')?.textContent || '';
+  const totalUnits = document.getElementById('rankTotalUnits')?.textContent || '—';
+  const totalProds = document.getElementById('rankTotalProds')?.textContent || '—';
+  const search = document.getElementById('rankSearch')?.value || '';
+  const view = rankView === 'sizes' ? 'Talles' : 'Productos';
+  const now = new Date().toLocaleString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
+  const win = window.open('','_blank');
+  win.document.write(`<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Ranking Top Ventas — Todo Tenis & Running</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #555; margin-bottom: 16px; }
+  .stats { display: flex; gap: 24px; margin-bottom: 16px; }
+  .stat { background: #f5f5f5; border-radius: 8px; padding: 10px 16px; text-align: center; }
+  .stat .val { font-size: 22px; font-weight: 700; }
+  .stat .lbl { font-size: 11px; color: #777; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #111; color: #fff; padding: 8px 10px; text-align: left; }
+  td { padding: 7px 10px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) td { background: #f9f9f9; }
+  .num { font-weight: 700; width: 30px; text-align: center; }
+  .medal-1 { color: #d4a000; }
+  .medal-2 { color: #888; }
+  .medal-3 { color: #a0522d; }
+  .promo { background: #e8ff80; border-radius: 4px; padding: 1px 5px; font-size: 11px; font-weight: 700; margin-left: 4px; }
+  .bar-wrap { width: 100px; background: #eee; border-radius: 3px; height: 8px; display: inline-block; vertical-align: middle; }
+  .bar-fill { height: 100%; background: #c8f500; border-radius: 3px; }
+  .footer { margin-top: 20px; font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 8px; }
+  @media print { body { margin: 12px; } }
+</style>
+</head>
+<body>
+<h1>🏆 Ranking Top Ventas — Todo Tenis & Running</h1>
+<div class="sub">
+  ${view}${search?' · Búsqueda: "'+search+'"':''} · ${period}
+</div>
+<div class="stats">
+  <div class="stat"><div class="val">${totalUnits}</div><div class="lbl">Unidades vendidas</div></div>
+  <div class="stat"><div class="val">${totalProds}</div><div class="lbl">Productos distintos</div></div>
+</div>
+${list.innerHTML ? generatePrintTable(list) : '<p>Sin datos para imprimir.</p>'}
+<div class="footer">Generado: ${now} · Stock Scanner — Todo Tenis & Running</div>
+</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(), 500);
+};
+
+function generatePrintTable(listEl){
+  const items = listEl.querySelectorAll('.rank-item');
+  if(!items.length) return '<p>Sin datos.</p>';
+  const maxBar = 100;
+  let rows = '';
+  items.forEach((item, i) => {
+    const num = i+1;
+    const medal = num===1?'medal-1':num===2?'medal-2':num===3?'medal-3':'';
+    const nameEl = item.querySelector('.rank-name');
+    const name = nameEl ? nameEl.textContent.replace(/🏷️.*$/,'').trim() : '';
+    const hasPromo = item.classList.contains('en-promo');
+    const promoTag = nameEl?.querySelector('.rank-promo-badge');
+    const promoText = promoTag ? promoTag.textContent : '';
+    const units = item.querySelector('.rank-units')?.textContent || '';
+    const barFill = item.querySelector('.rank-bar-fill');
+    const pct = barFill ? barFill.style.width : '0%';
+    rows += `<tr>
+      <td class="num ${medal}">${num===1?'🥇':num===2?'🥈':num===3?'🥉':num}</td>
+      <td>${name}${hasPromo?`<span class="promo">${promoText}</span>`:''}</td>
+      <td><div class="bar-wrap"><div class="bar-fill" style="width:${pct}"></div></div></td>
+      <td style="font-weight:700;text-align:right;">${units}</td>
+    </tr>`;
+  });
+  return `<table>
+    <thead><tr><th>#</th><th>Producto</th><th>Proporción</th><th style="text-align:right">Unidades</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 // ── RANKING TOP VENTAS ──
