@@ -638,6 +638,11 @@
       <div style="font-size:.75rem;color:var(--muted);text-align:center;" id="rankPeriodLabel"></div>
 
       <!-- Lista -->
+      <!-- Buscador -->
+      <div style="position:relative;">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);">🔍</span>
+        <input type="text" id="rankSearch" class="inp" placeholder="Buscar producto o marca..." style="padding-left:36px;" oninput="renderRanking()" />
+      </div>
       <!-- Promo legend -->
       <div id="rankPromoLegend" style="display:none;font-size:.72rem;color:var(--muted);padding:6px 2px;display:flex;align-items:center;gap:6px;">
         <span class="rank-promo-badge">🏷️</span> Producto en promoción activa en MeLi
@@ -2804,7 +2809,15 @@ function renderRanking(){
   const range = getDateRange(rankPeriod);
   if(!range) return;
 
-  const filtered = rankingData.filter(r => r.date && r.date >= range.from && r.date <= range.to);
+  const rankSearchVal = (document.getElementById('rankSearch')?.value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const filtered = rankingData.filter(r => {
+    if(!r.date || r.date < range.from || r.date > range.to) return false;
+    if(rankSearchVal){
+      const t = (r.title||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      return rankSearchVal.split(/\s+/).filter(Boolean).every(w => t.includes(w));
+    }
+    return true;
+  });
   const pLabel=document.getElementById('rankPeriodLabel');if(pLabel)pLabel.textContent=range.label;
 
   // Aggregate
