@@ -644,7 +644,8 @@
       <!-- Buscador -->
       <div style="position:relative;">
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);">🔍</span>
-        <input type="text" id="rankSearch" class="inp" placeholder="Buscar producto o marca..." style="padding-left:36px;" oninput="renderRanking()" />
+        <input type="text" id="rankSearch" class="inp" placeholder="Buscar producto o marca..." style="padding-left:36px;padding-right:36px;" oninput="renderRanking()" />
+        <span id="rankSearchClear" onclick="clearRankSearch()" style="display:none;position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);cursor:pointer;font-size:1rem;">✕</span>
       </div>
       <!-- Promo legend -->
       <div id="rankPromoLegend" style="display:none;font-size:.72rem;color:var(--muted);padding:6px 2px;display:flex;align-items:center;gap:6px;">
@@ -2712,7 +2713,7 @@ window.printRanking = function(){
 <body>
 <h1>🏆 Ranking Top Ventas — Todo Tenis & Running</h1>
 <div class="sub">
-  ${view}${search?' · Búsqueda: "'+search+'"':''} · ${period}
+  ${search ? '🔍 Búsqueda: <strong>&quot;'+search+'&quot;</strong>' : '📊 Ranking general'} &nbsp;·&nbsp; ${view} &nbsp;·&nbsp; ${period}
 </div>
 <div class="stats">
   <div class="stat"><div class="val">${totalUnits}</div><div class="lbl">Unidades vendidas</div></div>
@@ -2742,18 +2743,27 @@ function generatePrintTable(listEl){
     const units = item.querySelector('.rank-units')?.textContent || '';
     const barFill = item.querySelector('.rank-bar-fill');
     const pct = barFill ? barFill.style.width : '0%';
+    const discountPct = hasPromo ? promoText.replace('🏷️','').trim() : '';
     rows += `<tr>
       <td class="num ${medal}">${num===1?'🥇':num===2?'🥈':num===3?'🥉':num}</td>
-      <td>${name}${hasPromo?`<span class="promo">${promoText}</span>`:''}</td>
-      <td><div class="bar-wrap"><div class="bar-fill" style="width:${pct}"></div></div></td>
+      <td>${name}</td>
+      <td style="text-align:center;font-weight:700;color:${hasPromo?'#c8a000':'#aaa'};">${discountPct||'—'}</td>
       <td style="font-weight:700;text-align:right;">${units}</td>
     </tr>`;
   });
   return `<table>
-    <thead><tr><th>#</th><th>Producto</th><th>Proporción</th><th style="text-align:right">Unidades</th></tr></thead>
+    <thead><tr><th>#</th><th>Producto</th><th style="text-align:center">Descuento MeLi</th><th style="text-align:right">Unidades</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
+
+window.clearRankSearch = function(){
+  const inp = document.getElementById('rankSearch');
+  if(inp){ inp.value = ''; }
+  const clr = document.getElementById('rankSearchClear');
+  if(clr) clr.style.display = 'none';
+  renderRanking();
+};
 
 // ── RANKING TOP VENTAS ──
 const TOPVENTAS_URL = 'https://script.google.com/macros/s/AKfycbzi82oXL8KPJED8ndog9EWBMBVB3H2nzPw_1s01zdSTMkcsB_z5QGtquUy3xh9R368z/exec';
@@ -2897,7 +2907,10 @@ function renderRanking(){
   const range = getDateRange(rankPeriod);
   if(!range) return;
 
-  const rankSearchVal = (document.getElementById('rankSearch')?.value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const rankSearchRaw = document.getElementById('rankSearch')?.value||'';
+  const clrBtn = document.getElementById('rankSearchClear');
+  if(clrBtn) clrBtn.style.display = rankSearchRaw ? '' : 'none';
+  const rankSearchVal = rankSearchRaw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const filtered = rankingData.filter(r => {
     if(!r.date || r.date < range.from || r.date > range.to) return false;
     if(rankSearchVal){
