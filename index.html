@@ -102,6 +102,7 @@
     .qty-disp{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:5px 13px;font-family:monospace;font-size:1.05rem;font-weight:700;color:var(--accent);min-width:56px;text-align:center;}
     /* NF LIST */
     .modo-btn{padding:7px 8px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:.76rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all .15s;}
+    .modo-btn.active{background:rgba(200,245,0,.15);border-color:var(--accent);color:var(--accent);}
     .modo-btn.active.entrada{background:rgba(200,245,0,.15);border-color:var(--accent);color:var(--accent);}
     .modo-btn.active.consulta{background:rgba(124,58,237,.15);border-color:#7c3aed;color:#a78bfa;}
     .modo-btn.active.salida{background:rgba(239,68,68,.15);border-color:var(--danger);color:var(--danger);}
@@ -329,7 +330,6 @@
         </div>
         <div style="font-size:.72rem;color:var(--muted);margin-top:7px;" id="modoDesc">Cada scan suma +1 al stock</div>
       </div>
-      <!-- Sector badge -->
       <!-- Sector selector always visible in scanner -->
       <div class="card" style="padding:10px 13px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;" id="secBadgeRow">
@@ -338,17 +338,11 @@
           </div>
           <button class="btn btn-ghost btn-sm" onclick="toggleSecDropdown()" style="font-size:.72rem;">Cambiar ▾</button>
         </div>
-        <div id="secBadge" style="background:rgba(200,245,0,.1);border:1px solid rgba(200,245,0,.3);border-radius:10px;padding:7px 13px;font-size:.8rem;font-weight:600;color:var(--accent);display:none;">
-        <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">
-          <span>📍</span><span id="secBadgeName">Sin sector</span>
-          <span style="margin-left:auto;cursor:pointer;color:var(--muted);font-size:.72rem;" onclick="toggleSecDropdown()">Cambiar ▾</span>
-        </div>
         <div id="secDropdown" style="display:none;margin-top:7px;">
           <select id="secBadgeSelect" class="inp" style="font-size:.8rem;padding:7px 10px;" onchange="cambiarSectorDesdeScanner(this.value)">
             <option value="">— Sin sector —</option>
           </select>
         </div>
-      </div>
       </div>
       <!-- Camera -->
       <div class="cam-section">
@@ -402,7 +396,6 @@
         <select id="secFilter" class="inp" style="flex:1;" onchange="filterSec=this.value;renderStock()">
         <option value="">Todos los sectores</option>
       </select>
-        </select>
       </div>
       <div class="stabs">
         <div class="stab active" onclick="switchSub('saldo')">📦 Saldo actual</div>
@@ -2418,6 +2411,32 @@ function renderAlertas(){
       </div>`).join('');
   }
 }
+
+window.saveAlertasConfig=async function(){
+  if(!isAdmin)return;
+  const u=parseInt(document.getElementById('cfgUmbral').value,10);
+  const d=parseInt(document.getElementById('cfgDiasFrenado').value,10);
+  if(!isNaN(u)&&u>0)alertasConfig.umbralGlobal=u;
+  if(!isNaN(d)&&d>0)alertasConfig.diasFrenado=d;
+  await fbSaveAlertasConfig();
+  renderAlertas();
+  showToast('⚙️ Configuración guardada','ok');
+};
+
+window.setExcepcion=async function(key){
+  if(!isAdmin)return;
+  const entry=catalog[key];
+  const actual=alertasConfig.excepciones?.[key]??alertasConfig.umbralGlobal;
+  const val=prompt(`Umbral personalizado para "${entry?entry.name:key}"\n(vacío para volver a usar el umbral global de ${alertasConfig.umbralGlobal})`,actual);
+  if(val===null)return;
+  if(!alertasConfig.excepciones)alertasConfig.excepciones={};
+  const n=parseInt(val,10);
+  if(val.trim()===''||isNaN(n)){delete alertasConfig.excepciones[key];}
+  else{alertasConfig.excepciones[key]=Math.max(0,n);}
+  await fbSaveAlertasConfig();
+  renderAlertas();
+  showToast('✏️ Umbral actualizado','ok');
+};
 
 // Update historial to show depot
 function renderHG(){
