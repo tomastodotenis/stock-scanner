@@ -2503,7 +2503,7 @@ function renderPromos(){
   promociones.forEach(p=>{
     cnt++;
     const dias=isVencida(p.fechaCad);
-    if(dias!==null){if(dias<0)vencida++;else if(dias<=15)vencePronto++;}
+    if(dias!==null){if(dias<0)vencida++;else if(dias<=7)vencePronto++;}
   });
   document.getElementById('promoCnt').textContent=cnt;
   document.getElementById('promoVenceCnt').textContent=vencePronto;
@@ -2517,7 +2517,7 @@ function renderPromos(){
     }
     if(promoFiltroActivo==='pronto'){
       const dias=isVencida(p.fechaCad);
-      if(dias===null||dias<0||dias>15)return false;
+      if(dias===null||dias<0||dias>7)return false;
     }
     if(promoFiltroActivo==='vencida'){
       const dias=isVencida(p.fechaCad);
