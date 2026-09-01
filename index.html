@@ -2445,7 +2445,7 @@ function isVencida(fechaCad){
   const fecha=new Date(anio,mes,dia);
   const hoy=new Date();hoy.setHours(0,0,0,0);
   const diff=Math.floor((fecha-hoy)/(1000*60*60*24));
-  return diff; // negative = vencida, 0-20 = vence pronto
+  return diff; // negative = vencida, 0-7 = vence pronto
 }
 
 function getAlertBadges(canonicalKey, nombre, qty){
