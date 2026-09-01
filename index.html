@@ -263,6 +263,7 @@
     <div class="tab" data-tab="promos">🏷️ Promos MeLi</div>
     <div class="tab" data-tab="ranking">🏆 Ranking</div>
     <div class="tab" data-tab="planilla">📄 Planilla</div>
+    <div class="tab" data-tab="auditoria" id="tabAuditoria" style="display:none;">🧮 Auditoría</div>
   </div>
 
   <!-- IMPORT -->
@@ -427,6 +428,7 @@
           <option value="entrada">📥 Entradas</option>
           <option value="salida">📤 Salidas</option>
           <option value="traslado">🔄 Traslados</option>
+          <option value="ajuste">🧮 Ajustes de auditoría</option>
         </select>
       </div>
       <select id="hDepF" class="inp" onchange="renderHG()" style="display:none;">
@@ -764,6 +766,91 @@
     </div>
   </div>
 
+  <!-- AUDITORIA -->
+  <div class="page" id="page-auditoria">
+    <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
+
+      <!-- Sin auditoría activa -->
+      <div id="auditInactive">
+        <div class="card" style="padding:18px 15px;text-align:center;">
+          <div style="font-size:2rem;margin-bottom:6px;">🧮</div>
+          <div style="font-size:.9rem;font-weight:700;margin-bottom:4px;">Auditoría de stock</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-bottom:15px;">Comparás el stock físico contra lo que dice el sistema, en todos los depósitos y sectores. Podés pausarla y retomarla cuando quieras — queda guardada.</div>
+          <button class="btn btn-primary" onclick="iniciarAuditoria()" style="width:100%;justify-content:center;">▶️ Iniciar auditoría</button>
+        </div>
+      </div>
+
+      <!-- Auditoría activa -->
+      <div id="auditActive" style="display:none;">
+        <div style="display:flex;flex-direction:column;gap:11px;">
+          <div class="card" style="padding:11px 13px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+              <div>
+                <div style="font-size:.85rem;font-weight:700;">🧮 Auditoría en curso</div>
+                <div style="font-size:.68rem;color:var(--muted);margin-top:2px;" id="auditMeta"></div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="cancelarAuditoria()" style="white-space:nowrap;">✕ Cancelar</button>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:6px;">
+            <button class="modo-btn active" id="auditTabScan" onclick="setAuditView('scan')" style="flex:1;justify-content:center;">📷 Escanear</button>
+            <button class="modo-btn" id="auditTabResults" onclick="setAuditView('results')" style="flex:1;justify-content:center;">📊 Diferencias</button>
+          </div>
+
+          <!-- ESCANEAR -->
+          <div id="auditScanView">
+            <div class="card" style="padding:10px 13px;">
+              <div style="font-size:.75rem;color:var(--muted);">Contando en depósito: <b style="color:var(--accent);" id="auditDepLabel">—</b></div>
+            </div>
+            <div class="card">
+              <h3 style="font-size:.83rem;font-weight:600;margin-bottom:9px;">🔢 Pistola / Manual</h3>
+              <div style="display:flex;gap:7px;">
+                <input type="text" id="auditManInput" class="inp" placeholder="Código de barras o SKU..." autocomplete="off" />
+                <button class="btn btn-primary btn-sm" onclick="auditManScan()">Contar</button>
+              </div>
+            </div>
+            <div class="scan-result" id="auditScanResult">
+              <div class="srh" id="auditSrh"></div>
+              <div class="srb" id="auditSrb"></div>
+            </div>
+          </div>
+
+          <!-- DIFERENCIAS -->
+          <div id="auditResultsView" style="display:none;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+              <div class="card" id="auditFiltCoincide" onclick="setAuditFilter('coincide')" style="padding:10px;text-align:center;cursor:pointer;">
+                <div style="font-size:1.2rem;font-weight:700;color:var(--accent);" id="auditStatCoincide">0</div>
+                <div style="font-size:.65rem;color:var(--muted);">✅ Coincide</div>
+              </div>
+              <div class="card" id="auditFiltSobrante" onclick="setAuditFilter('sobrante')" style="padding:10px;text-align:center;cursor:pointer;">
+                <div style="font-size:1.2rem;font-weight:700;color:#3b82f6;" id="auditStatSobrante">0</div>
+                <div style="font-size:.65rem;color:var(--muted);">⬆️ Sobrante</div>
+              </div>
+              <div class="card" id="auditFiltFaltante" onclick="setAuditFilter('faltante')" style="padding:10px;text-align:center;cursor:pointer;">
+                <div style="font-size:1.2rem;font-weight:700;color:var(--danger);" id="auditStatFaltante">0</div>
+                <div style="font-size:.65rem;color:var(--muted);">⬇️ Faltante</div>
+              </div>
+            </div>
+            <div style="position:relative;margin-top:9px;">
+              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);">🔍</span>
+              <input type="text" id="auditSearch" class="inp" placeholder="Buscar por SKU o nombre..." style="padding-left:36px;" oninput="renderAuditResults()" />
+            </div>
+            <div style="display:flex;gap:8px;margin-top:9px;">
+              <button class="btn btn-ghost btn-sm" onclick="exportAuditXLSX()" style="flex:1;justify-content:center;">⬇️ Exportar Excel</button>
+              <button class="btn btn-primary btn-sm" onclick="aplicarTodasCorrecciones()" style="flex:1;justify-content:center;">✅ Aplicar todas</button>
+            </div>
+            <div class="stbl" style="margin-top:9px;">
+              <div id="auditList"></div>
+            </div>
+            <button class="btn btn-ghost" onclick="cerrarAuditoria()" style="width:100%;justify-content:center;margin-top:4px;">🏁 Finalizar y cerrar auditoría</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
 <!-- DEPOSITOS MODAL -->
 <div class="admin-modal" id="depModal">
   <div class="admin-card" style="max-width:380px;">
@@ -871,6 +958,8 @@ function getTotalStock(key){ return Object.values(stockDB).reduce((s,d)=>s+(d[ke
 function getStockInDep(depId,key){ return (stockDB[depId]||{})[key]||0; }
 
 let notFoundLog=[], modoScan='entrada', sectorActivo=null;
+let auditoria={activa:false,id:null,iniciadoPor:'',fechaInicio:'',snapshot:{},conteo:{},corregidos:{}};
+let unsubAuditoria=null, auditFilterEstado='';
 let filterSec='', filterDep='', searchQuery='', cameraActive=false;
 let lastScan=null, lastScanTime=0;
 const CAM_DB=400;
@@ -913,6 +1002,21 @@ async function fbSaveEmpleados(){
 async function fbAddMov(mov){
   if(!currentUser)return;
   try{const{db,collection,addDoc,serverTimestamp}=fb();await addDoc(collection(db,'movimientos'),{...mov,createdAt:serverTimestamp()});}catch(e){console.error(e);}
+}
+async function fbSaveAuditoria(){
+  if(!currentUser)return;
+  try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','auditoria'),{...auditoria,upd:new Date().toISOString()});}catch(e){console.error(e);}
+}
+function fbListenAuditoria(){
+  if(unsubAuditoria)unsubAuditoria();
+  try{
+    const{db,doc,onSnapshot}=fb();
+    unsubAuditoria=onSnapshot(doc(db,'config','auditoria'),snap=>{
+      const def={activa:false,id:null,iniciadoPor:'',fechaInicio:'',snapshot:{},conteo:{},corregidos:{}};
+      auditoria=snap.exists()?{...def,...snap.data()}:def;
+      if(document.getElementById('page-auditoria')?.classList.contains('active'))renderAuditoria();
+    });
+  }catch(e){console.error(e);}
 }
 async function fbLoad(){
   try{
@@ -1062,7 +1166,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         document.getElementById('loginScreen').style.display='none';
         const sh=document.getElementById('appShell');sh.style.display='flex';
         updateDisplayName();
-        await fbLoad();fbListenMov();fbListenCatalog();
+        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();
         // Auto-sync catalog every 30 minutes
         autoSyncCatalog();
         startPresence();
@@ -1155,6 +1259,7 @@ window.addEventListener('beforeunload',()=>{ navigator.sendBeacon; /* best-effor
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
 window.switchTab=function(name){
   if(name==='empleados'&&!isAdmin){showToast('Solo el administrador puede ver Empleados','err');return;}
+  if(name==='auditoria'&&!isAdmin){showToast('Solo el administrador puede ver Auditoría','err');return;}
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+name));
   if(name==='stock')renderStock();
@@ -1167,6 +1272,7 @@ window.switchTab=function(name){
   if(name==='promos')renderPromos();
   if(name==='ranking'){loadRanking();}
   if(name==='planilla')renderPlanilla();
+  if(name==='auditoria')renderAuditoria();
 };
 function switchSub(name){
   document.querySelectorAll('.stab').forEach(t=>t.classList.toggle('active',t.textContent.includes(name==='saldo'?'Saldo':'Mov')));
@@ -1264,7 +1370,7 @@ async function processCode(rawCode,fromCam){
     lastScan=code;lastScanTime=now;
   }
   // Sector code?
-  const sec=Object.values(sectores).find(s=>s.codigo===code);
+  const sec=Object.values(getSectores()).find(s=>s.codigo===code);
   if(sec){
     sectorActivo=sec.id;
     const sel=document.getElementById('secActivoSel');if(sel)sel.value=sec.id;
@@ -1903,7 +2009,9 @@ function exportXLSX(){
 }
 function exportXLSXSec(){
   const wb=XLSX.utils.book_new();const cols=[{wch:12},{wch:18},{wch:16},{wch:40},{wch:10},{wch:10}];
-  Object.values(sectores).sort((a,b)=>a.nombre.localeCompare(b.nombre)).forEach(s=>{
+  const allSecs={};
+  Object.values(sectoresDB).forEach(ds=>Object.values(ds).forEach(s=>{allSecs[s.id]=s;}));
+  Object.values(allSecs).sort((a,b)=>a.nombre.localeCompare(b.nombre)).forEach(s=>{
     const rows=buildRows(s.id);if(!rows.length)return;
     const ws=XLSX.utils.json_to_sheet(rows);ws['!cols']=cols;
     XLSX.utils.book_append_sheet(wb,ws,s.nombre.slice(0,31));
@@ -2034,6 +2142,7 @@ window.pinPress = function(key){
         document.getElementById('tabEmpleados').style.display='flex';
         document.getElementById('btnBorrarHist').style.display='block';
         document.getElementById('tabAlertas').style.display='';
+        document.getElementById('tabAuditoria').style.display='flex';
         showToast('Modo administrador activado 🔴','ok');
         openAdminPanel();
       }else{
@@ -2066,7 +2175,7 @@ window.requireAdmin = function(fn){
 window.salirAdmin = function(){
   isAdmin=false;
   // Hide admin-only tabs immediately
-  ['tabAlertas','tabEmpleados'].forEach(id=>{
+  ['tabAlertas','tabEmpleados','tabAuditoria'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.style.display='none';
   });
@@ -2127,6 +2236,8 @@ function makeMov(key,entry,tipo,qty,motivo,extra){
     usuario: getDisplayName(),
     sectorId:secId||null,
     sectorNombre:secId&&secs[secId]?secs[secId].nombre:'—',
+    depositoId:depActivo||null,
+    depositoNombre:depActivo&&depositos[depActivo]?depositos[depActivo].nombre:'—',
     ...extra
   };
 }
@@ -2345,16 +2456,16 @@ function renderHG(){
   const titleEl=document.getElementById('historialTitle');
   if(titleEl) titleEl.textContent=isAdmin?'Últimos 100 movimientos':'Mis movimientos';
   if(!f.length){l.innerHTML='<div class="empty"><div class="icon">📋</div><p>Sin movimientos.</p></div>';return;}
-  const icons={entrada:'📥',salida:'📤',traslado:'🔄'};
-  const colors={entrada:'var(--accent)',salida:'var(--danger)',traslado:'#f59e0b'};
+  const icons={entrada:'📥',salida:'📤',traslado:'🔄',ajuste:'🧮'};
+  const colors={entrada:'var(--accent)',salida:'var(--danger)',traslado:'#f59e0b',ajuste:'#a78bfa'};
   l.innerHTML=f.map(m=>{
     const depInfo=m.depositoNombre?` · 🏭 ${m.depositoNombre}`:'';
     const meta=m.tipo==='traslado'?` · ${m.sectorOrigen||'?'} → ${m.sectorDestino||'?'}`:` · 📍 ${m.sectorNombre||'—'}${depInfo}`;
     return`<div class="mov">
       <div>${icons[m.tipo]||'•'}</div>
       <div><div class="mv-name">${m.nombre}${m.talle?' · '+m.talle:''}</div>
-      <div class="mv-meta">👤 ${m.usuario||'—'}${meta} · ${m.fecha||''} ${m.hora||''}</div></div>
-      <div class="mv-qty" style="color:${colors[m.tipo]||'var(--text)'};">${m.tipo==='entrada'?'+':m.tipo==='salida'?'-':''}${m.qty}</div>
+      <div class="mv-meta">👤 ${m.usuario||'—'}${meta} · ${m.fecha||''} ${m.hora||''}${m.ajusteDetalle?' · '+m.ajusteDetalle:''}</div></div>
+      <div class="mv-qty" style="color:${colors[m.tipo]||'var(--text)'};">${m.tipo==='entrada'?'+':m.tipo==='salida'?'-':m.tipo==='ajuste'?(m.qtySigno||''):''}${m.qty}</div>
     </div>`;
   }).join('');
 }
@@ -3171,6 +3282,247 @@ function clearPlanilla(){
   document.getElementById('planillaStatus').style.display='none';
   const s=document.getElementById('planillaSearch');if(s)s.value='';
   renderPlanilla();
+}
+
+// ── AUDITORÍA DE STOCK ──
+window.iniciarAuditoria=function(){
+  if(!isAdmin){showToast('Solo el administrador puede iniciar una auditoría','err');return;}
+  if(auditoria.activa){showToast('Ya hay una auditoría en curso','err');return;}
+  if(!confirm('¿Iniciar una auditoría de stock?\n\nSe toma como referencia el stock actual del sistema en todos los depósitos.'))return;
+  const snap={};
+  Object.keys(stockDB).forEach(depId=>{snap[depId]={...(stockDB[depId]||{})};});
+  auditoria={
+    activa:true,
+    id:'aud_'+Date.now(),
+    iniciadoPor:getDisplayName(),
+    fechaInicio:new Date().toISOString(),
+    snapshot:snap,
+    conteo:{},
+    corregidos:{}
+  };
+  fbSaveAuditoria();
+  setAuditView('scan');
+  renderAuditoria();
+  showToast('🧮 Auditoría iniciada','ok');
+};
+
+window.cancelarAuditoria=function(){
+  if(!isAdmin)return;
+  if(!confirm('¿Cancelar la auditoría?\n\nSe pierde todo lo contado hasta ahora. No se aplica ninguna corrección al stock.'))return;
+  auditoria={activa:false,id:null,iniciadoPor:'',fechaInicio:'',snapshot:{},conteo:{},corregidos:{}};
+  fbSaveAuditoria();
+  renderAuditoria();
+  showToast('Auditoría cancelada','ok');
+};
+
+window.cerrarAuditoria=function(){
+  if(!isAdmin)return;
+  const diffs=computeAuditDiffs();
+  const pend=diffs.filter(d=>d.estado!=='coincide'&&!d.corregido).length;
+  const msg=pend>0
+    ? `Todavía quedan ${pend} diferencia(s) sin corregir. ¿Cerrar igual la auditoría?\n\nEl historial de lo contado no se pierde (queda en Historial lo que sí corregiste), pero esta sesión de auditoría se cierra.`
+    : '¿Cerrar esta auditoría? Ya está todo revisado.';
+  if(!confirm(msg))return;
+  auditoria={activa:false,id:null,iniciadoPor:'',fechaInicio:'',snapshot:{},conteo:{},corregidos:{}};
+  fbSaveAuditoria();
+  renderAuditoria();
+  showToast('🏁 Auditoría cerrada','ok');
+};
+
+window.setAuditView=function(view){
+  document.getElementById('auditTabScan').classList.toggle('active',view==='scan');
+  document.getElementById('auditTabResults').classList.toggle('active',view==='results');
+  document.getElementById('auditScanView').style.display=view==='scan'?'block':'none';
+  document.getElementById('auditResultsView').style.display=view==='results'?'block':'none';
+  if(view==='results')renderAuditResults();
+};
+
+window.setAuditFilter=function(estado){
+  auditFilterEstado=(auditFilterEstado===estado)?'':estado;
+  renderAuditResults();
+};
+
+window.auditManScan=function(){
+  const inp=document.getElementById('auditManInput');
+  const v=inp.value.trim();
+  if(v){processAuditCode(v);inp.value='';}
+};
+document.getElementById('auditManInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')auditManScan();});
+
+async function processAuditCode(rawCode){
+  if(!auditoria.activa){showToast('No hay auditoría activa','err');return;}
+  if(!depActivo){showToast('Elegí primero un depósito activo','err');return;}
+  const code=String(rawCode).trim();if(!code)return;
+  const re=document.getElementById('auditScanResult'),rh=document.getElementById('auditSrh'),rb=document.getElementById('auditSrb');
+  let entry=catalog[code];
+  if(!entry){
+    rh.textContent='🔍 Buscando en Odoo...';
+    re.style.display='block';re.className='scan-result found';
+    rb.innerHTML='<div class="pmeta" style="color:var(--muted);">Consultando catálogo...</div>';
+    entry=await lookupOdoo(code);
+  }
+  if(!entry){
+    re.style.display='block';re.className='scan-result notfound';
+    rh.textContent='❌ No encontrado';
+    rb.innerHTML=`<div class="pmeta">Código: <code>${code}</code></div>`;
+    playBeep(false);vibrateDevice(false);flashScr(false);
+    return;
+  }
+  const key=entry.canonical;
+  if(!auditoria.conteo[depActivo])auditoria.conteo[depActivo]={};
+  auditoria.conteo[depActivo][key]=(auditoria.conteo[depActivo][key]||0)+1;
+  fbSaveAuditoria();
+  const contado=auditoria.conteo[depActivo][key];
+  const sistema=(auditoria.snapshot[depActivo]||{})[key]||0;
+  re.style.display='block';re.className='scan-result found';
+  rh.textContent='✅ Contado';
+  rb.innerHTML=`
+    <div class="pname">${entry.name}${entry.talle?' · '+entry.talle:''}</div>
+    <div class="pmeta">SKU: <code>${entry.sku||'—'}</code></div>
+    <div style="display:flex;gap:16px;margin-top:7px;">
+      <div><span style="font-size:.68rem;color:var(--muted);">Contado ahora</span><br><b style="font-size:1.15rem;color:var(--accent);">${contado}</b></div>
+      <div><span style="font-size:.68rem;color:var(--muted);">Sistema</span><br><b style="font-size:1.15rem;">${sistema}</b></div>
+    </div>`;
+  flashBorder(re,'var(--accent)');playBeep(true);vibrateDevice(true);
+  showToast(`+1 ${entry.name}`,'ok');
+}
+
+function computeAuditDiffs(){
+  const combos=new Set();
+  Object.keys(auditoria.snapshot||{}).forEach(d=>Object.keys(auditoria.snapshot[d]||{}).forEach(c=>combos.add(d+'|'+c)));
+  Object.keys(auditoria.conteo||{}).forEach(d=>Object.keys(auditoria.conteo[d]||{}).forEach(c=>combos.add(d+'|'+c)));
+  const out=[];
+  combos.forEach(dc=>{
+    const i=dc.indexOf('|');const depId=dc.slice(0,i),can=dc.slice(i+1);
+    const sistema=(auditoria.snapshot[depId]||{})[can]||0;
+    const contado=(auditoria.conteo[depId]||{})[can]||0;
+    if(sistema===0&&contado===0)return;
+    const entry=catalog[can];if(!entry)return;
+    const diff=contado-sistema;
+    const secId=(sectorMapDB[depId]||{})[can];
+    const secN=secId&&(sectoresDB[depId]||{})[secId]?(sectoresDB[depId]||{})[secId].nombre:'Sin sector';
+    const depN=depositos[depId]?.nombre||depId;
+    out.push({
+      depId,can,entry,sistema,contado,diff,
+      estado: diff===0?'coincide':(diff>0?'sobrante':'faltante'),
+      sector:secN,deposito:depN,
+      corregido: !!(auditoria.corregidos&&auditoria.corregidos[dc])
+    });
+  });
+  const ord={faltante:0,sobrante:1,coincide:2};
+  return out.sort((a,b)=>ord[a.estado]-ord[b.estado]||a.entry.name.localeCompare(b.entry.name));
+}
+
+function renderAuditoria(){
+  const inactive=document.getElementById('auditInactive'),active=document.getElementById('auditActive');
+  if(!inactive||!active)return;
+  if(!auditoria.activa){inactive.style.display='block';active.style.display='none';return;}
+  inactive.style.display='none';active.style.display='block';
+  const fecha=auditoria.fechaInicio?new Date(auditoria.fechaInicio).toLocaleString('es-AR'):'';
+  document.getElementById('auditMeta').textContent=`Iniciada por ${auditoria.iniciadoPor||'—'} · ${fecha}`;
+  document.getElementById('auditDepLabel').textContent=depositos[depActivo]?.nombre||'— elegí un depósito —';
+  const scanVisible=document.getElementById('auditScanView').style.display!=='none';
+  if(!scanVisible)renderAuditResults();
+}
+
+function renderAuditResults(){
+  if(!auditoria.activa)return;
+  const diffs=computeAuditDiffs();
+  document.getElementById('auditStatCoincide').textContent=diffs.filter(d=>d.estado==='coincide').length;
+  document.getElementById('auditStatSobrante').textContent=diffs.filter(d=>d.estado==='sobrante').length;
+  document.getElementById('auditStatFaltante').textContent=diffs.filter(d=>d.estado==='faltante').length;
+  ['Coincide','Sobrante','Faltante'].forEach(k=>{
+    const el=document.getElementById('auditFilt'+k);
+    if(el)el.style.border=auditFilterEstado===k.toLowerCase()?'1px solid var(--accent)':'1px solid var(--border)';
+  });
+
+  let filtered=diffs;
+  if(auditFilterEstado)filtered=filtered.filter(d=>d.estado===auditFilterEstado);
+  const q=normPlanilla(document.getElementById('auditSearch')?.value||'');
+  if(q)filtered=filtered.filter(d=>normPlanilla(d.entry.name).includes(q)||normPlanilla(d.entry.sku).includes(q));
+
+  const list=document.getElementById('auditList');
+  if(!filtered.length){
+    list.innerHTML=`<div class="empty"><div class="icon">🧮</div><p>${diffs.length?'Sin resultados para ese filtro.':'Todavía no escaneaste nada en esta auditoría.'}</p></div>`;
+    return;
+  }
+  list.innerHTML=filtered.map(d=>{
+    const badge=d.estado==='coincide'?'✅':(d.estado==='sobrante'?'⬆️':'⬇️');
+    const color=d.estado==='coincide'?'var(--accent)':(d.estado==='sobrante'?'#3b82f6':'var(--danger)');
+    let accion='';
+    if(d.estado!=='coincide'){
+      accion=d.corregido
+        ?'<span style="font-size:.68rem;color:var(--accent);white-space:nowrap;">✅ Corregido</span>'
+        :`<button class="btn btn-ghost btn-sm" style="white-space:nowrap;" onclick="aplicarCorreccion('${d.depId}','${d.can}')">Corregir</button>`;
+    }
+    return `
+    <div class="stbl-row" style="grid-template-columns:1fr auto auto;align-items:center;gap:8px;">
+      <div>
+        <div class="rname">${badge} ${d.entry.name}${d.entry.talle?' · '+d.entry.talle:''}</div>
+        <div class="rsku">${d.entry.sku||'—'} · ${d.deposito} · ${d.sector}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:.66rem;color:var(--muted);">Sist. ${d.sistema} → Cont. ${d.contado}</div>
+        <div style="font-weight:700;color:${color};">${d.diff>0?'+':''}${d.diff}</div>
+      </div>
+      <div>${accion}</div>
+    </div>`;
+  }).join('');
+}
+
+window.aplicarCorreccion=async function(depId,can){
+  if(!isAdmin)return;
+  const contado=(auditoria.conteo[depId]||{})[can]||0;
+  const sistema=(auditoria.snapshot[depId]||{})[can]||0;
+  const diff=contado-sistema;
+  if(diff===0)return;
+  const entry=catalog[can];if(!entry)return;
+  if(!stockDB[depId])stockDB[depId]={};
+  if(contado<=0)delete stockDB[depId][can];else stockDB[depId][can]=contado;
+  try{
+    const{db,doc,setDoc}=fb();
+    await setDoc(doc(db,'stock',depId),{stock:stockDB[depId]||{},sectorMap:sectorMapDB[depId]||{},upd:new Date().toISOString()});
+  }catch(e){console.error(e);}
+  const depPrev=depActivo;depActivo=depId; // makeMov usa depActivo para sector/depósito
+  const mov=makeMov(can,entry,'ajuste',Math.abs(diff),'Corrección de auditoría',{
+    ajusteDetalle:`${sistema} → ${contado}`,
+    qtySigno:diff>0?'+':'-'
+  });
+  depActivo=depPrev;
+  fbAddMov(mov);
+  if(!auditoria.corregidos)auditoria.corregidos={};
+  auditoria.corregidos[depId+'|'+can]=true;
+  fbSaveAuditoria();
+  renderAuditResults();
+  updateHeader();
+  showToast(`✅ Corregido: ${entry.name}`,'ok');
+};
+
+window.aplicarTodasCorrecciones=async function(){
+  if(!isAdmin)return;
+  const pendientes=computeAuditDiffs().filter(d=>d.estado!=='coincide'&&!d.corregido);
+  if(!pendientes.length){showToast('No hay correcciones pendientes','ok');return;}
+  if(!confirm(`¿Aplicar ${pendientes.length} corrección(es) al stock?\n\nEsto actualiza el stock del sistema con lo que contaste físicamente.`))return;
+  for(const d of pendientes){
+    await aplicarCorreccion(d.depId,d.can);
+  }
+  showToast('✅ Correcciones aplicadas','ok');
+};
+
+function exportAuditXLSX(){
+  const diffs=computeAuditDiffs();
+  if(!diffs.length){showToast('Todavía no hay datos de auditoría','err');return;}
+  const rows=diffs.map(d=>({
+    'Estado':d.estado==='coincide'?'Coincide':(d.estado==='sobrante'?'Sobrante':'Faltante'),
+    'Depósito':d.deposito,'Sector':d.sector,'SKU':d.entry.sku||'',
+    'Producto':d.entry.name,'Talle':d.entry.talle||'',
+    'Sistema':d.sistema,'Contado':d.contado,'Diferencia':d.diff,
+    'Corregido':d.corregido?'Sí':'No'
+  }));
+  const wb=XLSX.utils.book_new();const ws=XLSX.utils.json_to_sheet(rows);
+  ws['!cols']=[{wch:10},{wch:16},{wch:16},{wch:16},{wch:40},{wch:8},{wch:9},{wch:9},{wch:11},{wch:9}];
+  XLSX.utils.book_append_sheet(wb,ws,'Auditoría');
+  XLSX.writeFile(wb,`auditoria_stock_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 </script>
 </body>
