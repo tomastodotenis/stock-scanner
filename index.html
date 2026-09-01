@@ -262,6 +262,7 @@
     <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">⚙️ Config. Alertas</div>
     <div class="tab" data-tab="promos">🏷️ Promos MeLi</div>
     <div class="tab" data-tab="ranking">🏆 Ranking</div>
+    <div class="tab" data-tab="planilla">📄 Planilla</div>
   </div>
 
   <!-- IMPORT -->
@@ -704,6 +705,65 @@
     </div>
   </div>
 
+  <!-- PLANILLA DE BUSQUEDA PAGE -->
+  <div class="page" id="page-planilla">
+    <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
+
+      <!-- Header -->
+      <div class="card" style="padding:11px 13px;">
+        <div style="font-size:.85rem;font-weight:700;">📄 Planilla de Búsqueda</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:2px;">Subí el Excel de ventas de MeLi para ubicar cada producto en el depósito</div>
+      </div>
+
+      <!-- Import zone -->
+      <div class="import-zone" id="planillaZone">
+        <input type="file" id="planillaFileInput" accept=".xlsx,.xls,.csv" />
+        <div class="icon">📥</div>
+        <h3>Importar reporte de ventas MeLi</h3>
+        <p>Arrastrá o tocá para seleccionar el Excel que descargás de Mercado Libre</p>
+      </div>
+      <div class="ist" id="planillaStatus"></div>
+
+      <!-- Stats -->
+      <div style="display:none;grid-template-columns:1fr 1fr 1fr;gap:8px;" id="planillaStats">
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:1.3rem;font-weight:700;color:var(--accent);" id="planillaTotalUnid">0</div>
+          <div style="font-size:.68rem;color:var(--muted);">Unidades</div>
+        </div>
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:1.3rem;font-weight:700;color:var(--accent);" id="planillaTotalFilas">0</div>
+          <div style="font-size:.68rem;color:var(--muted);">Ventas</div>
+        </div>
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:1.3rem;font-weight:700;color:var(--danger);" id="planillaSinUbicar">0</div>
+          <div style="font-size:.68rem;color:var(--muted);">Sin ubicar</div>
+        </div>
+      </div>
+
+      <!-- Buscador + acciones -->
+      <div style="position:relative;display:none;" id="planillaSearchWrap">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);">🔍</span>
+        <input type="text" id="planillaSearch" class="inp" placeholder="Buscar por SKU o título..." style="padding-left:36px;" oninput="renderPlanilla()" />
+      </div>
+      <div style="display:none;gap:8px;" id="planillaActions">
+        <button class="btn btn-ghost btn-sm" onclick="exportPlanillaXLSX()" style="flex:1;justify-content:center;">⬇️ Exportar Excel</button>
+        <button class="btn btn-danger btn-sm" onclick="clearPlanilla()" style="flex:1;justify-content:center;">🗑 Limpiar</button>
+      </div>
+
+      <!-- Tabla -->
+      <div class="stbl" id="planillaTbl" style="display:none;">
+        <div class="stbl-hdr" style="grid-template-columns:44px 1fr 90px 90px;">
+          <div>Unid.</div><div>Producto</div><div>Depósito</div><div>Sector</div>
+        </div>
+        <div id="planillaList"></div>
+      </div>
+      <div class="stbl" id="planillaEmpty">
+        <div class="empty"><div class="icon">📄</div><p>Subí un Excel de ventas de MeLi para empezar.</p></div>
+      </div>
+
+    </div>
+  </div>
+
 <!-- DEPOSITOS MODAL -->
 <div class="admin-modal" id="depModal">
   <div class="admin-card" style="max-width:380px;">
@@ -1106,6 +1166,7 @@ window.switchTab=function(name){
   if(name==='traslados'){updateTrasladoSels();resetTraslado();}
   if(name==='promos')renderPromos();
   if(name==='ranking'){loadRanking();}
+  if(name==='planilla')renderPlanilla();
 };
 function switchSub(name){
   document.querySelectorAll('.stab').forEach(t=>t.classList.toggle('active',t.textContent.includes(name==='saldo'?'Saldo':'Mov')));
@@ -2973,6 +3034,133 @@ function renderRanking(){
   const hasPromos = ranked.slice(0,20).some(([name]) => findPromo(name));
   const legend = document.getElementById('rankPromoLegend');
   if(legend) legend.style.display = hasPromos ? 'flex' : 'none';
+}
+
+// ── PLANILLA DE BÚSQUEDA (ventas MeLi → sector/depósito) ──
+let planillaData=[];
+const pz=document.getElementById('planillaZone'),pfi=document.getElementById('planillaFileInput');
+pz.addEventListener('click',()=>pfi.click());
+pz.addEventListener('dragover',e=>{e.preventDefault();pz.style.borderColor='var(--accent)';});
+pz.addEventListener('dragleave',()=>pz.style.borderColor='');
+pz.addEventListener('drop',e=>{e.preventDefault();pz.style.borderColor='';if(e.dataTransfer.files[0])processPlanillaFile(e.dataTransfer.files[0]);});
+pfi.addEventListener('change',()=>{if(pfi.files[0])processPlanillaFile(pfi.files[0]);});
+
+function normPlanilla(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+
+// Busca en qué depósito(s)/sector(es) hay stock de un SKU de MeLi (=canonical en el catálogo)
+function ubicarSku(sku){
+  const entry=catalog[String(sku).trim()];
+  if(!entry) return {deposito:'❓ No está en el catálogo',sector:'—',sinUbicar:true};
+  const can=entry.canonical;
+  const matches=[];
+  Object.keys(depositos).forEach(depId=>{
+    const qty=getStockInDep(depId,can);
+    if(qty<=0)return;
+    const secId=(sectorMapDB[depId]||{})[can];
+    const secNombre=secId&&sectoresDB[depId]&&sectoresDB[depId][secId]?sectoresDB[depId][secId].nombre:'Sin sector';
+    const depNombre=depositos[depId]?.nombre||depId;
+    matches.push({depNombre,secNombre,qty});
+  });
+  if(!matches.length) return {deposito:'⚠️ Sin stock',sector:'—',sinUbicar:true};
+  return {
+    deposito:matches.map(m=>`${m.depNombre} (${m.qty})`).join(' + '),
+    sector:matches.map(m=>m.secNombre).join(' + '),
+    sinUbicar:false
+  };
+}
+
+function processPlanillaFile(file){
+  const r=new FileReader();
+  r.onload=e=>{
+    const st=document.getElementById('planillaStatus');
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      // La fila 1 del export de MeLi trae categorías agrupadas (Ventas, Envíos, etc);
+      // la fila 2 tiene los encabezados reales, los datos arrancan en la fila 3.
+      const rows=XLSX.utils.sheet_to_json(ws,{range:1,defval:''});
+      const out=[];
+      rows.forEach(row=>{
+        const sku=String(row['SKU']||'').trim();
+        if(!sku)return; // filas de estado sin producto (cambios/reclamos)
+        const unidades=Number(row['Unidades'])||1;
+        const titulo=String(row['Título de la publicación']||'').trim();
+        const variante=String(row['Variante']||'').trim();
+        const ub=ubicarSku(sku);
+        out.push({unidades,sku,titulo,variante,deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar});
+      });
+      if(!out.length){
+        st.style.display='block';st.className='ist err';
+        st.innerHTML='❌ No se encontraron filas con SKU en el archivo';
+        return;
+      }
+      planillaData=out;
+      st.style.display='block';st.className='ist ok';
+      st.innerHTML=`✅ <b>${out.length} ventas</b> procesadas`;
+      showToast(`${out.length} ventas procesadas`,'ok');
+      renderPlanilla();
+    }catch(err){
+      st.style.display='block';st.className='ist err';
+      st.innerHTML=`❌ ${err.message}`;
+    }
+  };
+  r.readAsArrayBuffer(file);
+}
+
+function renderPlanilla(){
+  const hasData=planillaData.length>0;
+  document.getElementById('planillaStats').style.display=hasData?'grid':'none';
+  document.getElementById('planillaSearchWrap').style.display=hasData?'block':'none';
+  document.getElementById('planillaActions').style.display=hasData?'flex':'none';
+  document.getElementById('planillaTbl').style.display=hasData?'block':'none';
+  document.getElementById('planillaEmpty').style.display=hasData?'none':'block';
+  if(!hasData)return;
+
+  const q=normPlanilla(document.getElementById('planillaSearch')?.value||'');
+  const filtered=planillaData.filter(r=>{
+    if(!q)return true;
+    return normPlanilla(r.sku).includes(q)||normPlanilla(r.titulo).includes(q)||normPlanilla(r.variante).includes(q);
+  });
+
+  document.getElementById('planillaTotalUnid').textContent=planillaData.reduce((s,r)=>s+r.unidades,0).toLocaleString('es-AR');
+  document.getElementById('planillaTotalFilas').textContent=planillaData.length;
+  document.getElementById('planillaSinUbicar').textContent=planillaData.filter(r=>r.sinUbicar).length;
+
+  const list=document.getElementById('planillaList');
+  if(!filtered.length){
+    list.innerHTML='<div class="empty"><div class="icon">🔍</div><p>Sin resultados.</p></div>';
+    return;
+  }
+  list.innerHTML=filtered.map(r=>`
+    <div class="stbl-row" style="grid-template-columns:44px 1fr 90px 90px;">
+      <div class="rqty">${r.unidades}</div>
+      <div>
+        <div class="rname">${r.titulo||'—'}</div>
+        <div class="rsku">${r.sku}${r.variante?' · '+r.variante:''}</div>
+      </div>
+      <div class="rsec" style="${r.sinUbicar?'color:var(--danger);':''}">${r.deposito}</div>
+      <div class="rsec">${r.sector}</div>
+    </div>`).join('');
+}
+
+function exportPlanillaXLSX(){
+  if(!planillaData.length)return;
+  const rows=planillaData.map(r=>({
+    'Unidades':r.unidades,'SKU':r.sku,'Título de la publicación':r.titulo,
+    'Variante':r.variante,'Depósito':r.deposito,'Sector':r.sector
+  }));
+  const wb=XLSX.utils.book_new();const ws=XLSX.utils.json_to_sheet(rows);
+  ws['!cols']=[{wch:9},{wch:20},{wch:45},{wch:30},{wch:22},{wch:18}];
+  XLSX.utils.book_append_sheet(wb,ws,'Ventas');
+  XLSX.writeFile(wb,`planilla_busqueda_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function clearPlanilla(){
+  planillaData=[];
+  pfi.value='';
+  document.getElementById('planillaStatus').style.display='none';
+  const s=document.getElementById('planillaSearch');if(s)s.value='';
+  renderPlanilla();
 }
 </script>
 </body>
