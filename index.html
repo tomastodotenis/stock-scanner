@@ -1449,11 +1449,17 @@ document.getElementById('searchInput').addEventListener('input',e=>{searchQuery=
 function renderStock(){
   const list=document.getElementById('stockList');
   const seen=new Set(),rendered=[];
-  Object.entries(stock).forEach(([key,qty])=>{
-    const entry=catalog[key];if(!entry)return;
-    const can=entry.canonical;if(seen.has(can))return;seen.add(can);
-    const rqty=stock[can]||0;if(rqty===0)return;
-    const secId=sectorMap[can];
+  const depToShow=filterDep||null;
+  // Unión de todas las claves con stock>0 en algún depósito
+  const allCans=new Set();
+  Object.values(stockDB).forEach(d=>Object.entries(d).forEach(([k,q])=>{if(q>0)allCans.add(k);}));
+  allCans.forEach(can=>{
+    const entry=catalog[can];if(!entry)return;
+    if(seen.has(can))return;seen.add(can);
+    // Sin filtro de depósito → suma general de todos; con filtro → solo ese depósito
+    const rqty=depToShow?getStockInDep(depToShow,can):getTotalStock(can);
+    if(rqty<=0)return;
+    const secId=depToShow?(sectorMapDB[depToShow]||{})[can]:(depActivo?(sectorMapDB[depActivo]||{})[can]:null);
     if(filterSec&&secId!==filterSec)return;
     const txt=(entry.name+' '+entry.sku+' '+entry.talle).toLowerCase();
     if(searchQuery&&!txt.includes(searchQuery))return;
@@ -1533,10 +1539,11 @@ window.eliminarSector=async function(id){
   renderSectores();updateSecSelects();updateTrasladoSels();showToast('Sector eliminado','ok');
 };
 window.editarSector=async function(id){
-  const n=prompt('Nuevo nombre:',sectores[id].nombre);
-  if(!n||n.trim()===sectores[id].nombre)return;
-  sectores[id].nombre=n.trim();
-  sectores[id].codigo='SEC-'+n.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const secs=getSectores();
+  const n=prompt('Nuevo nombre:',secs[id].nombre);
+  if(!n||n.trim()===secs[id].nombre)return;
+  secs[id].nombre=n.trim();
+  secs[id].codigo='SEC-'+n.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
   await fbSaveSectores();renderSectores();updateSecSelects();updateTrasladoSels();showToast('Actualizado','ok');
 };
 window.setSectorActivo=function(id){sectorActivo=id||null;updateSecBadge();};
@@ -1576,7 +1583,8 @@ window.cambiarSectorDesdeScanner=function(id){
   if(mainSel) mainSel.value=id||'';
   updateSecBadge();
   document.getElementById('secDropdown').style.display='none';
-  showToast(id&&sectores[id]?`📍 Sector: ${sectores[id].nombre}`:'Sector desactivado','ok');
+  const secs=getSectores();
+  showToast(id&&secs[id]?`📍 Sector: ${secs[id].nombre}`:'Sector desactivado','ok');
 };
 function updateSecSelects(){
   const secs=getSectores();
@@ -2109,7 +2117,8 @@ const _origMakeMov = makeMov;
 // patch usuario in makeMov calls by redefining
 function makeMov(key,entry,tipo,qty,motivo,extra){
   const now=new Date();
-  const secId=sectorMap[key];
+  const secId=getSectorForProduct(key);
+  const secs=getSectores();
   return{
     fecha:now.toLocaleDateString('es-AR'),
     hora:now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
@@ -2117,7 +2126,7 @@ function makeMov(key,entry,tipo,qty,motivo,extra){
     sku:entry.sku||entry.barcode||'',tipo,qty,motivo,
     usuario: getDisplayName(),
     sectorId:secId||null,
-    sectorNombre:secId&&sectores[secId]?sectores[secId].nombre:'—',
+    sectorNombre:secId&&secs[secId]?secs[secId].nombre:'—',
     ...extra
   };
 }
@@ -2143,11 +2152,12 @@ function getLastMovDate(can){
 function updateAlertTab(){
   if(!isAdmin)return;
   const seen=new Set();let cnt=0;
-  Object.entries(stock).forEach(([key])=>{
-    const entry=catalog[key];if(!entry)return;
-    const can=entry.canonical;if(seen.has(can))return;seen.add(can);
-    const rq=stock[can]||0;
-    if(rq>0&&rq<=getUmbralForProduct(can))cnt++;
+  Object.keys(depositos).forEach(depId=>{
+    Object.entries(stockDB[depId]||{}).forEach(([key,rq])=>{
+      const entry=catalog[key];if(!entry)return;
+      const can=entry.canonical;const uid=depId+'_'+can;if(seen.has(uid))return;seen.add(uid);
+      if(rq>0&&rq<=getUmbralForProduct(can))cnt++;
+    });
   });
   const tab=document.querySelector('.tab[data-tab="alertas"]');
   if(tab)tab.textContent=cnt>0?`⚙️ Config. Alertas (${cnt})`:'⚙️ Config. Alertas';
