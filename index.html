@@ -2989,6 +2989,8 @@ let rankingData = [];
 let rankingLastFetch = 0;
 let rankPeriod = 'day';
 let rankView = 'products';
+let rankDrillTalle = null;
+let rankSizeKeys = [];
 const RANKING_CACHE_MS = 15 * 60 * 1000; // 15 min cache
 
 window.setRankPeriod = function(p){
@@ -3039,8 +3041,18 @@ function isoWeekStr(date){
 
 window.setRankView = function(v){
   rankView = v;
+  rankDrillTalle = null;
   document.getElementById('rankViewProd').classList.toggle('active', v==='products');
   document.getElementById('rankViewTalle').classList.toggle('active', v==='sizes');
+  renderRanking();
+};
+
+window.drillTalle = function(i){
+  rankDrillTalle = rankSizeKeys[i];
+  renderRanking();
+};
+window.rankDrillBack = function(){
+  rankDrillTalle = null;
   renderRanking();
 };
 
@@ -3139,6 +3151,36 @@ function renderRanking(){
   });
   const pLabel=document.getElementById('rankPeriodLabel');if(pLabel)pLabel.textContent=range.label;
 
+  // ── Drill-down: dentro de Talles, tocando un talle se ve qué productos lo componen ──
+  if(rankView === 'sizes' && rankDrillTalle !== null){
+    const source = filtered.filter(r => (r.talle || 'Sin talle') === rankDrillTalle);
+    const totals = new Map();
+    source.forEach(r => totals.set(r.title, (totals.get(r.title)||0) + r.units));
+    const ranked = [...totals.entries()].sort((a,b) => b[1]-a[1]);
+    const totalUnits = ranked.reduce((s,[,v]) => s+v, 0);
+    const maxVal = ranked[0]?.[1] || 1;
+
+    document.getElementById('rankTotalUnits').textContent = totalUnits.toLocaleString('es-AR');
+    document.getElementById('rankTotalProds').textContent = ranked.length;
+
+    const backRow = `<div class="rank-item" onclick="rankDrillBack()" style="cursor:pointer;color:var(--accent);font-weight:700;">← Volver a Talles &nbsp;·&nbsp; Talle: ${rankDrillTalle}</div>`;
+    if(!ranked.length){
+      list.innerHTML = backRow + '<div class="empty"><div class="icon">📭</div><p>Sin ventas para este talle en este período.</p></div>';
+      return;
+    }
+    list.innerHTML = backRow + ranked.slice(0,20).map(([name, units], i) => {
+      const pct = Math.round(units/maxVal*100);
+      const numClass = i===0?'gold':i===1?'silver':i===2?'bronze':'normal';
+      return `<div class="rank-item">
+        <div class="rank-num ${numClass}">${i+1}</div>
+        <div class="rank-name">${name}</div>
+        <div class="rank-bar-wrap"><div class="rank-bar-fill" style="width:${pct}%"></div></div>
+        <div class="rank-units">${units}</div>
+      </div>`;
+    }).join('');
+    return;
+  }
+
   // Aggregate
   const totals = new Map();
   filtered.forEach(r => {
@@ -3148,6 +3190,7 @@ function renderRanking(){
   const ranked = [...totals.entries()].sort((a,b) => b[1]-a[1]);
   const totalUnits = ranked.reduce((s,[,v]) => s+v, 0);
   const maxVal = ranked[0]?.[1] || 1;
+  rankSizeKeys = ranked.map(([name]) => name);
 
   document.getElementById('rankTotalUnits').textContent = totalUnits.toLocaleString('es-AR');
   document.getElementById('rankTotalProds').textContent = ranked.length;
@@ -3161,14 +3204,16 @@ function renderRanking(){
     const pct = Math.round(units/maxVal*100);
     const numClass = i===0?'gold':i===1?'silver':i===2?'bronze':'normal';
     const promo = findPromo(name);
-    const promoTag = promo ? `<span class="rank-promo-badge">🏷️ -${promo.descuentoPct}%</span>` : '';
-    const enPromo = promo ? 'en-promo' : '';
-    return `<div class="rank-item ${enPromo}">
+    const promoTag = rankView==='products' && promo ? `<span class="rank-promo-badge">🏷️ -${promo.descuentoPct}%</span>` : '';
+    const enPromo = rankView==='products' && promo ? 'en-promo' : '';
+    const clickAttr = rankView==='sizes' ? ` onclick="drillTalle(${i})" style="cursor:pointer;"` : '';
+    return `<div class="rank-item ${enPromo}"${clickAttr}>
       <div class="rank-num ${numClass}">${i+1}</div>
       <div class="rank-name">${name}${promoTag}</div>
       <div class="rank-bar-wrap"><div class="rank-bar-fill" style="width:${pct}%"></div></div>
       <div class="rank-units">${units}</div>
     </div>`;
+
   }).join('');
   // Show promo legend if any promos found
   const hasPromos = ranked.slice(0,20).some(([name]) => findPromo(name));
