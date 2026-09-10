@@ -265,6 +265,7 @@
     <div class="tab" data-tab="ranking">🏆 Ranking</div>
     <div class="tab" data-tab="planilla">📄 Planilla</div>
     <div class="tab" data-tab="auditoria" id="tabAuditoria" style="display:none;">🧮 Auditoría</div>
+    <div class="tab" data-tab="meli" id="tabMeli" style="display:none;">🔗 MeLi Sync</div>
   </div>
 
   <!-- IMPORT -->
@@ -844,6 +845,15 @@
     </div>
   </div>
 
+  <!-- MELI SYNC -->
+  <div class="page" id="page-meli">
+    <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
+      <div id="meliTabContent">
+        <div style="text-align:center;padding:20px;color:var(--muted);">Cargando...</div>
+      </div>
+    </div>
+  </div>
+
 <!-- DEPOSITOS MODAL -->
 <div class="admin-modal" id="depModal">
   <div class="admin-card" style="max-width:380px;">
@@ -918,7 +928,6 @@
       <button class="btn btn-danger btn-sm" onclick="adminLimpiarStock()" style="justify-content:flex-start;">🗑 Limpiar todo el conteo</button>
       <button class="btn btn-danger btn-sm" onclick="adminExportarTodo()" style="justify-content:flex-start;background:rgba(124,58,237,.2);color:#a78bfa;border:1px solid #7c3aed;">📊 Exportar todo (admin)</button>
       <button class="btn btn-ghost btn-sm" onclick="adminGestionDepositos()" style="justify-content:flex-start;">🏭 Gestionar depósitos</button>
-      <button class="btn btn-ghost btn-sm" onclick="adminMeliPanel()" style="justify-content:flex-start;">🔗 Mercado Libre</button>
       <button class="btn btn-danger btn-sm" onclick="salirAdmin()" style="justify-content:flex-start;background:none;border:1px solid var(--border);color:var(--muted);">🔓 Salir de modo admin</button>
     </div>
     <div id="adminPanelContent" style="font-size:.8rem;color:var(--muted);"></div>
@@ -1286,6 +1295,7 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>swit
 window.switchTab=function(name){
   if(name==='empleados'&&!isAdmin){showToast('Solo el administrador puede ver Empleados','err');return;}
   if(name==='auditoria'&&!isAdmin){showToast('Solo el administrador puede ver Auditoría','err');return;}
+  if(name==='meli'&&!isAdmin){showToast('Solo el administrador puede ver esto','err');return;}
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+name));
   if(name==='stock')renderStock();
@@ -1299,6 +1309,7 @@ window.switchTab=function(name){
   if(name==='ranking'){loadRanking();}
   if(name==='planilla')renderPlanilla();
   if(name==='auditoria')renderAuditoria();
+  if(name==='meli')renderMeliTab();
 };
 function switchSub(name){
   document.querySelectorAll('.stab').forEach(t=>t.classList.toggle('active',t.textContent.includes(name==='saldo'?'Saldo':'Mov')));
@@ -2169,6 +2180,7 @@ window.pinPress = function(key){
         document.getElementById('btnBorrarHist').style.display='block';
         document.getElementById('tabAlertas').style.display='';
         document.getElementById('tabAuditoria').style.display='flex';
+        document.getElementById('tabMeli').style.display='flex';
         showToast('Modo administrador activado 🔴','ok');
         openAdminPanel();
       }else{
@@ -2211,7 +2223,7 @@ async function meliFetchStatus(){
 }
 
 window.adminMeliPanel = async function(){
-  const panel=document.getElementById('adminPanelContent');
+  const panel=document.getElementById('meliTabContent');
   panel.innerHTML='<div style="text-align:center;padding:12px;">Consultando estado...</div>';
   const status=await meliFetchStatus();
   const conectado=!!status.connected;
@@ -2233,6 +2245,9 @@ window.adminMeliPanel = async function(){
   `;
 };
 
+function renderMeliTab(){
+  adminMeliPanel();
+}
 window.meliToggleSync = async function(){
   meliConfig.syncActiva = !meliConfig.syncActiva;
   await fbSaveMeliConfig();
@@ -2296,7 +2311,7 @@ window.requireAdmin = function(fn){
 window.salirAdmin = function(){
   isAdmin=false;
   // Hide admin-only tabs immediately
-  ['tabAlertas','tabEmpleados','tabAuditoria'].forEach(id=>{
+  ['tabAlertas','tabEmpleados','tabAuditoria','tabMeli'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.style.display='none';
   });
@@ -2305,7 +2320,7 @@ window.salirAdmin = function(){
   document.getElementById('adminBadge').style.display='none';
   // If currently on an admin-only tab, redirect to stock
   const active=document.querySelector('.tab.active');
-  if(active&&(active.dataset.tab==='alertas'||active.dataset.tab==='empleados')){
+  if(active&&(active.dataset.tab==='alertas'||active.dataset.tab==='empleados'||active.dataset.tab==='meli')){
     switchTab('stock');
   }
   closeAdminPanel();
