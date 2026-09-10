@@ -971,7 +971,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091016';
+const APP_BUILD = '2026091017';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1246,7 +1246,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         // nombre que había quedado guardado localmente — si no, se pisa con
         // el del usuario anterior hasta que carguemos el de la nube.
         const lastUid=localStorage.getItem('ss_lastUid');
-        if(lastUid && lastUid!==user.uid){
+        if(lastUid!==user.uid){
           localStorage.removeItem('ss_displayName');
         }
         localStorage.setItem('ss_lastUid', user.uid);
