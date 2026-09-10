@@ -1,6 +1,6 @@
 {
   "name": "Stock Scanner - Todo Tenis & Running",
-  "short_name": "StockScan",
+  "short_name": "Tomidoo",
   "description": "Gestor de stock para depósito Todo Tenis & Running",
   "start_url": "./index.html",
   "display": "standalone",
