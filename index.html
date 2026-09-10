@@ -970,6 +970,31 @@
 
 <script>
 // ── STATE ──
+// ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
+const APP_BUILD = '2026091015';
+async function checkForUpdate(){
+  try{
+    const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
+    const text = await res.text();
+    const m = text.match(/const APP_BUILD = '([^']+)'/);
+    if(m && m[1] && m[1] !== APP_BUILD){
+      showUpdateBanner();
+    }
+  }catch(e){ /* sin conexión, no pasa nada */ }
+}
+function showUpdateBanner(){
+  if(document.getElementById('updateBanner'))return;
+  const b=document.createElement('div');
+  b.id='updateBanner';
+  b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#7c3aed;color:#fff;padding:10px 14px;text-align:center;font-size:.82rem;font-weight:700;cursor:pointer;';
+  b.textContent='🔄 Hay una actualización disponible — tocá para actualizar';
+  b.onclick=()=>location.reload(true);
+  document.body.appendChild(b);
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkForUpdate(); });
+setInterval(checkForUpdate, 5*60*1000);
+setTimeout(checkForUpdate, 4000);
+
 let catalog={}, movimientos=[], empleados={};
 // stock[depId][canonicalKey] = cantidad
 // sectores[depId] = { secId: {id,nombre,codigo} }
