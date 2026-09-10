@@ -1041,6 +1041,25 @@ async function fbSaveAuditoria(){
   if(!currentUser)return;
   try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','auditoria'),{...auditoria,upd:new Date().toISOString()});}catch(e){console.error(e);}
 }
+let unsubStock={};
+function fbListenStock(){
+  Object.values(unsubStock).forEach(fn=>fn&&fn());
+  unsubStock={};
+  try{
+    const{db,doc,onSnapshot}=fb();
+    Object.keys(depositos).forEach(depId=>{
+      unsubStock[depId]=onSnapshot(doc(db,'stock',depId),snap=>{
+        if(!snap.exists())return;
+        const data=snap.data();
+        stockDB[depId]=data.stock||{};
+        sectorMapDB[depId]=data.sectorMap||{};
+        renderStock();
+        if(document.getElementById('page-sectores')?.classList.contains('active'))renderSectores();
+      });
+    });
+  }catch(e){console.error(e);}
+}
+
 function fbListenAuditoria(){
   if(unsubAuditoria)unsubAuditoria();
   try{
@@ -1201,7 +1220,8 @@ window.addEventListener('DOMContentLoaded',()=>{
         document.getElementById('loginScreen').style.display='none';
         const sh=document.getElementById('appShell');sh.style.display='flex';
         updateDisplayName();
-        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();
+        await fbLoadProfile();
+        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();
         // Auto-sync catalog every 30 minutes
         autoSyncCatalog();
         startPresence();
@@ -2115,6 +2135,17 @@ let displayName = '';
 function getDisplayName(){
   return localStorage.getItem('ss_displayName') || currentUser?.email?.split('@')[0] || '—';
 }
+async function fbLoadProfile(){
+  if(!currentUser)return;
+  try{
+    const{db,doc,getDoc}=fb();
+    const pf=await getDoc(doc(db,'perfiles',currentUser.uid));
+    if(pf.exists() && pf.data().nombre){
+      localStorage.setItem('ss_displayName', pf.data().nombre);
+      updateDisplayName();
+    }
+  }catch(e){console.error(e);}
+}
 function updateDisplayName(){
   displayName = getDisplayName();
   document.getElementById('hUN').textContent = displayName;
@@ -2134,6 +2165,14 @@ window.saveProfile = function(){
   localStorage.setItem('ss_displayName', name);
   updateDisplayName();
   closeProfile();
+  if(currentUser){
+    (async()=>{
+      try{
+        const{db,doc,setDoc}=fb();
+        await setDoc(doc(db,'perfiles',currentUser.uid),{nombre:name,email:currentUser.email||'',upd:new Date().toISOString()});
+      }catch(e){console.error(e);}
+    })();
+  }
   showToast('Nombre actualizado ✅','ok');
 };
 
@@ -2437,6 +2476,7 @@ window.cambiarDepActivo=function(depId){
   sectorActivo=null;
   updateDepActivoBadge();
   renderStock();
+  fbListenStock();
   showToast(`Depósito: ${depositos[depId].nombre}`,'ok');
 };
 
