@@ -971,7 +971,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091019';
+const APP_BUILD = '2026091020';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2709,7 +2709,12 @@ function renderHG(){
 // ── PROMOCIONES ──
 function parsePrecio(str){
   if(!str)return 0;
-  return parseFloat(String(str).replace(/[$.,]/g,'').replace(',','.'))||0;
+  // Formato argentino: punto = miles, coma = decimales.
+  // Hay que sacar el punto de miles PRIMERO, y recién después convertir
+  // la coma decimal en punto — si se hacen las dos cosas en el mismo paso
+  // (como estaba antes), la coma decimal se pierde y el número queda
+  // 100 veces más grande (ej: "$169.900,00" → 16990000 en vez de 169900).
+  return parseFloat(String(str).replace(/[$.]/g,'').replace(',','.'))||0;
 }
 function parseDescuento(str){
   if(!str)return 0;
