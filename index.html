@@ -971,7 +971,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091017';
+const APP_BUILD = '2026091018';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2812,14 +2812,18 @@ function getAlertBadges(canonicalKey, nombre, qty){
 function findPromo(nombre){
   if(!nombre||!promociones.length)return null;
   const nombreLower=nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const words=nombreLower.split(/\s+/).filter(w=>w.length>3);
+  // Los códigos de modelo (mezcla de letras y números, ej "s2543") son el
+  // dato más confiable para distinguir productos parecidos entre sí — si el
+  // nombre tiene uno y no aparece en la promo, la descartamos directo.
+  const codigos=words.filter(w=>/[a-z]/.test(w)&&/\d/.test(w));
   let best=null;let bestScore=0;
   for(const p of promociones){
     const descLower=p.descripcion.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
-    // Score: count matching words
-    const words=nombreLower.split(/\s+/).filter(w=>w.length>3);
+    if(codigos.length&&!codigos.every(c=>descLower.includes(c)))continue;
     const matches=words.filter(w=>descLower.includes(w)).length;
     const score=matches/Math.max(words.length,1);
-    if(score>bestScore&&score>0.4){bestScore=score;best=p;}
+    if(score>bestScore&&score>0.65){bestScore=score;best=p;}
   }
   return best;
 }
