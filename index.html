@@ -971,7 +971,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091020';
+const APP_BUILD = '2026091021';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1061,12 +1061,33 @@ async function fbSaveEmpleados(){
 async function fbAddMov(mov){
   if(!currentUser)return;
   try{const{db,collection,addDoc,serverTimestamp}=fb();await addDoc(collection(db,'movimientos'),{...mov,createdAt:serverTimestamp()});}catch(e){console.error(e);}
+  fbSaveUltimoMov(mov.canonicalKey, mov.nombre); // no bloqueante, no hace falta esperarlo
+}
+function sanitizeDocId(s){return String(s).replace(/[\/#?\[\]]/g,'_')||'sinclave';}
+async function fbSaveUltimoMov(canonicalKey, nombre){
+  if(!currentUser||!canonicalKey)return;
+  try{
+    const{db,doc,setDoc}=fb();
+    await setDoc(doc(db,'ultimoMov',sanitizeDocId(canonicalKey)),{fecha:new Date().toISOString(),nombre:nombre||''});
+  }catch(e){console.error(e);}
+}
+function fbListenUltimoMov(){
+  try{
+    const{db,collection,onSnapshot}=fb();
+    unsubUltimoMov=onSnapshot(collection(db,'ultimoMov'),snap=>{
+      ultimoMovDB={};
+      snap.docs.forEach(d=>{ultimoMovDB[d.id]=d.data().fecha;});
+      renderStock();
+    });
+  }catch(e){console.error(e);}
 }
 async function fbSaveAuditoria(){
   if(!currentUser)return;
   try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','auditoria'),{...auditoria,upd:new Date().toISOString()});}catch(e){console.error(e);}
 }
 let unsubStock={};
+let unsubUltimoMov=null;
+let ultimoMovDB={}; // canonicalKey -> fecha ISO del último movimiento (sin límite, a diferencia del historial reciente)
 function fbListenStock(){
   Object.values(unsubStock).forEach(fn=>fn&&fn());
   unsubStock={};
@@ -1254,7 +1275,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         const sh=document.getElementById('appShell');sh.style.display='flex';
         updateDisplayName();
         await fbLoadProfile();
-        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();
+        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();fbListenUltimoMov();
         // Auto-sync catalog every 30 minutes
         autoSyncCatalog();
         startPresence();
@@ -2457,15 +2478,11 @@ const _origOnAuth = window._onAuthCallback;
 // ── ALERTAS ──
 
 function getLastMovDate(can){
-  const movs=movimientos.filter(m=>m.canonicalKey===can);
-  if(!movs.length)return null;
-  const dates=movs.map(m=>{
-    if(m.createdAt?.toDate)return m.createdAt.toDate();
-    if(m.fecha){const p=m.fecha.split('/');if(p.length===3)return new Date(p[2],p[1]-1,p[0]);}
-    return null;
-  }).filter(Boolean);
-  if(!dates.length)return null;
-  return new Date(Math.max(...dates.map(d=>d.getTime())));
+  // Usa el registro dedicado (sin límite, se actualiza en cada escaneo),
+  // no el historial reciente — ese solo trae los últimos 100 movimientos
+  // de toda la tienda y no alcanza para saber "nunca se movió" con certeza.
+  const iso=ultimoMovDB[sanitizeDocId(can)];
+  return iso?new Date(iso):null;
 }
 
 function updateAlertTab(){
