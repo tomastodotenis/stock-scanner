@@ -971,7 +971,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091021';
+const APP_BUILD = '2026091022';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1275,7 +1275,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         const sh=document.getElementById('appShell');sh.style.display='flex';
         updateDisplayName();
         await fbLoadProfile();
-        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();fbListenUltimoMov();
+        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();fbListenUltimoMov();fbListenNoEncontrados();
         // Auto-sync catalog every 30 minutes
         autoSyncCatalog();
         startPresence();
@@ -1593,8 +1593,7 @@ async function processCode(rawCode,fromCam){
     rh.textContent='⚠️ Código no encontrado';
     rb.innerHTML=`<div class="pmeta">Código: <code style="color:var(--text)">${code}</code><br>No está en el catálogo.</div>`;
     if(!notFoundLog.find(x=>x.code===code)){
-      notFoundLog.unshift({code,time:new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})});
-      renderNF();
+      fbAddNoEncontrado(code);
     }
     playBeep(false);vibrateDevice(false);flashScr(false);
     showToast('Código no encontrado','err');
@@ -1652,14 +1651,72 @@ function stopCam(){
   document.getElementById('camDot').classList.remove('on');
 }
 
-// ── NF ──
+// ── NF (No encontrados) — sincronizado en Firestore, con anotaciones ──
 function renderNF(){
   const l=document.getElementById('nfList');
   document.getElementById('nfCnt').textContent=notFoundLog.length;
   if(!notFoundLog.length){l.innerHTML='<div class="nfe">Ninguno por ahora ✅</div>';return;}
-  l.innerHTML=notFoundLog.map(i=>`<div class="nfi"><code>${i.code}</code><span style="color:var(--muted);font-size:.7rem;">${i.time}</span></div>`).join('');
+  l.innerHTML=notFoundLog.map(i=>`
+    <div class="nfi" style="flex-direction:column;align-items:stretch;gap:4px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+        <code>${i.code}</code>
+        <span style="color:var(--muted);font-size:.7rem;">${i.time}</span>
+        <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:.7rem;" onclick="anotarNF('${i.id}')">📝 ${i.nota?'Editar nota':'Anotar'}</button>
+      </div>
+      ${i.nota?`<div style="font-size:.75rem;color:var(--accent);background:rgba(200,245,0,.08);border-radius:6px;padding:4px 7px;">📝 ${i.nota}</div>`:''}
+    </div>
+  `).join('');
 }
-window.clearNF=function(){notFoundLog=[];renderNF();};
+window.anotarNF=function(id){
+  const actual=notFoundLog.find(x=>x.id===id);
+  const nota=prompt('Anotación para corregir en Odoo (ej: "es talle 42, no está cargado"):', actual?.nota||'');
+  if(nota===null)return; // canceló
+  fbSaveNotaNF(id,nota.trim());
+};
+window.clearNF=function(){
+  if(!notFoundLog.length)return;
+  if(!confirm('¿Borrar toda la lista de no encontrados (incluidas las anotaciones)?'))return;
+  fbClearNoEncontrados();
+};
+
+async function fbAddNoEncontrado(code){
+  if(!currentUser)return;
+  try{
+    const{db,doc,setDoc}=fb();
+    await setDoc(doc(db,'noEncontrados',sanitizeDocId(code)),{
+      code,
+      time:new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
+      createdAt:new Date().toISOString(),
+      nota:'',
+    });
+  }catch(e){console.error(e);}
+}
+async function fbSaveNotaNF(id,nota){
+  if(!currentUser)return;
+  try{
+    const{db,doc,setDoc}=fb();
+    await setDoc(doc(db,'noEncontrados',id),{nota},{merge:true});
+  }catch(e){console.error(e);}
+}
+async function fbClearNoEncontrados(){
+  if(!currentUser)return;
+  try{
+    const{db,collection,getDocs,deleteDoc,doc}=fb();
+    const snap=await getDocs(collection(db,'noEncontrados'));
+    await Promise.all(snap.docs.map(d=>deleteDoc(doc(db,'noEncontrados',d.id))));
+  }catch(e){console.error(e);}
+}
+let unsubNoEncontrados=null;
+function fbListenNoEncontrados(){
+  try{
+    const{db,collection,query,orderBy,limit,onSnapshot}=fb();
+    const q=query(collection(db,'noEncontrados'),orderBy('createdAt','desc'),limit(500));
+    unsubNoEncontrados=onSnapshot(q,snap=>{
+      notFoundLog=snap.docs.map(d=>({id:d.id,...d.data()}));
+      renderNF();
+    });
+  }catch(e){console.error(e);}
+}
 
 // ── STOCK ──
 document.getElementById('searchInput').addEventListener('input',e=>{searchQuery=e.target.value.toLowerCase();renderStock();});
