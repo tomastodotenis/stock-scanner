@@ -971,7 +971,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091025';
+const APP_BUILD = '2026091026';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1078,7 +1078,13 @@ async function fbSaveUltimoMov(canonicalKey, nombre){
 }
 // ── Push de stock a MeLi (Fase 2c) ──
 async function pushStockToMeli(key,entry){
-  if(!meliConfig.syncActiva)return; // interruptor apagado: no se manda nada
+  console.log('[MeLi] pushStockToMeli llamado. syncActiva=',meliConfig.syncActiva,'sku=',entry?.sku);
+  if(!meliConfig.syncActiva){
+    console.log('[MeLi] Sincronización apagada, no se manda nada.');
+    showToast('🔧 DEBUG: sync apagada, no se intentó nada','err');
+    return;
+  }
+  showToast('🔧 DEBUG: intentando sincronizar con MeLi...','ok');
   const sku=entry.sku||entry.barcode;
   if(!sku)return;
   const qty=getTotalStock(key);
