@@ -971,7 +971,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091024';
+const APP_BUILD = '2026091025';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1092,7 +1092,10 @@ async function pushStockToMeli(key,entry){
       showToast('⚠️ No se pudo sincronizar con MeLi (SKU sin mapear)','err');
       fbSaveMeliSinCoincidencia(sku,entry.name,entry.talle);
     }
-  }catch(e){console.error('pushStockToMeli',e);}
+  }catch(e){
+    console.error('pushStockToMeli',e);
+    showToast('⚠️ Error de conexión al sincronizar con MeLi — revisá manualmente','err');
+  }
 }
 async function fbSaveMeliSinCoincidencia(sku,nombre,talle){
   if(!currentUser)return;
