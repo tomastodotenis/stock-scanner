@@ -971,7 +971,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091022';
+const APP_BUILD = '2026091023';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -991,7 +991,12 @@ function showUpdateBanner(){
   b.onclick=()=>location.reload(true);
   document.body.appendChild(b);
 }
-document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkForUpdate(); });
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden){
+    checkForUpdate();
+    if(document.getElementById('page-meli')?.classList.contains('active')) adminMeliPanel();
+  }
+});
 setInterval(checkForUpdate, 5*60*1000);
 setTimeout(checkForUpdate, 4000);
 
@@ -2382,16 +2387,16 @@ window.adminMeliPanel = async function(){
     <div style="padding:10px;background:var(--surface2);border-radius:8px;margin-bottom:8px;">
       <div style="font-weight:700;font-size:.85rem;">${conectado ? '🟢 Conectado' : '🔴 Desconectado'}</div>
       ${conectado ? `<div style="font-size:.75rem;color:var(--muted);margin-top:3px;">Token con ${status.token_age_minutes ?? '?'} min de antigüedad</div>` : ''}
-      ${!conectado ? `<div style="font-size:.75rem;color:var(--muted);margin-top:3px;">Andá a ${MELI_WORKER_URL}/auth/start para conectar</div>` : ''}
+      ${!conectado ? `<a href="${MELI_WORKER_URL}/auth/start" target="_blank" rel="noopener" class="btn btn-primary btn-sm" style="margin-top:8px;justify-content:center;width:100%;">🔗 Conectar con Mercado Libre</a>` : ''}
     </div>
     <div style="padding:10px;background:var(--surface2);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
       <div>
         <div style="font-weight:700;font-size:.85rem;">Sincronización de stock</div>
         <div style="font-size:.72rem;color:var(--muted);">${meliConfig.syncActiva ? 'Activa — el stock se envía solo' : 'Pausada — no se envía nada a MeLi'}</div>
       </div>
-      <button class="btn btn-sm ${meliConfig.syncActiva ? 'btn-danger' : 'btn-primary'}" onclick="meliToggleSync()">${meliConfig.syncActiva ? 'Pausar' : 'Activar'}</button>
+      <button class="btn btn-sm ${meliConfig.syncActiva ? 'btn-danger' : 'btn-primary'}" onclick="meliToggleSync()" ${!conectado?'disabled title="Conectá primero"':''}>${meliConfig.syncActiva ? 'Pausar' : 'Activar'}</button>
     </div>
-    <button class="btn btn-danger btn-sm" onclick="openMeliDisyuntor()" style="justify-content:flex-start;width:100%;background:rgba(220,38,38,.15);border:1px solid var(--danger);">🔌 Desconectar de MeLi (disyuntor)</button>
+    ${conectado ? `<button class="btn btn-danger btn-sm" onclick="openMeliDisyuntor()" style="justify-content:flex-start;width:100%;background:rgba(220,38,38,.15);border:1px solid var(--danger);">🔌 Desconectar de MeLi (disyuntor)</button>` : ''}
   `;
 };
 
@@ -2444,6 +2449,19 @@ window.meliPinPress = function(key){
     },200);
   }
 };
+
+// Permite tipear el PIN con el teclado físico (antes solo andaba con el
+// mouse, tocando los botones en pantalla) — funciona para los dos modales
+// de PIN (el de entrar a admin y el del disyuntor de MeLi).
+document.addEventListener('keydown', e=>{
+  const adminOpen = document.getElementById('adminModal')?.classList.contains('show');
+  const meliOpen = document.getElementById('meliDisyuntorModal')?.classList.contains('show');
+  if(!adminOpen && !meliOpen) return;
+  const press = adminOpen ? window.pinPress : window.meliPinPress;
+  if(e.key>='0' && e.key<='9'){ e.preventDefault(); press(e.key); }
+  else if(e.key==='Backspace'){ e.preventDefault(); press('←'); }
+  else if(e.key==='Escape'){ e.preventDefault(); adminOpen?closeAdminModal():closeMeliDisyuntorModal(); }
+});
 
 function openAdminPanel(){
   document.getElementById('adminPanelContent').innerHTML='';
