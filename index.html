@@ -971,7 +971,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091023';
+const APP_BUILD = '2026091024';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1076,6 +1076,36 @@ async function fbSaveUltimoMov(canonicalKey, nombre){
     await setDoc(doc(db,'ultimoMov',sanitizeDocId(canonicalKey)),{fecha:new Date().toISOString(),nombre:nombre||''});
   }catch(e){console.error(e);}
 }
+// ── Push de stock a MeLi (Fase 2c) ──
+async function pushStockToMeli(key,entry){
+  if(!meliConfig.syncActiva)return; // interruptor apagado: no se manda nada
+  const sku=entry.sku||entry.barcode;
+  if(!sku)return;
+  const qty=getTotalStock(key);
+  try{
+    const res=await fetch(`${MELI_WORKER_URL}/stock/push?sku=${encodeURIComponent(sku)}&qty=${qty}`);
+    const data=await res.json();
+    if(data.ok){
+      showToast(`🔗 MeLi actualizado: ${qty} u.`,'ok');
+      fbClearMeliSinCoincidencia(sku); // si antes había quedado en la lista de pendientes, ya se resolvió
+    }else{
+      showToast('⚠️ No se pudo sincronizar con MeLi (SKU sin mapear)','err');
+      fbSaveMeliSinCoincidencia(sku,entry.name,entry.talle);
+    }
+  }catch(e){console.error('pushStockToMeli',e);}
+}
+async function fbSaveMeliSinCoincidencia(sku,nombre,talle){
+  if(!currentUser)return;
+  try{
+    const{db,doc,setDoc}=fb();
+    await setDoc(doc(db,'meliSinCoincidencia',sanitizeDocId(sku)),{sku,nombre:nombre||'',talle:talle||'',time:new Date().toISOString()});
+  }catch(e){console.error(e);}
+}
+async function fbClearMeliSinCoincidencia(sku){
+  if(!currentUser)return;
+  try{const{db,doc,deleteDoc}=fb();await deleteDoc(doc(db,'meliSinCoincidencia',sanitizeDocId(sku)));}catch(e){/* puede no existir, no pasa nada */}
+}
+
 function fbListenUltimoMov(){
   try{
     const{db,collection,onSnapshot}=fb();
@@ -1302,6 +1332,13 @@ window.doLogin=async function(){
   catch(ex){err.style.display='block';}
 };
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')doLogin();});
+document.addEventListener('keydown',function(e){
+  const modal=document.getElementById('adminModal');
+  if(!modal||!modal.classList.contains('show'))return;
+  if(e.key>='0'&&e.key<='9'){pinPress(e.key);}
+  else if(e.key==='Backspace'){e.preventDefault();pinPress('←');}
+  else if(e.key==='Escape'){closeAdminModal();}
+});
 window.doLogout=async function(){
   if(!confirm('¿Cerrar sesión?'))return;
   await markOffline();
@@ -1568,6 +1605,7 @@ async function processCode(rawCode,fromCam){
       fbAddMov(makeMov(key,entry,'entrada',1,'Escaneo'));
     }
     fbSaveStock();updateHeader();
+    pushStockToMeli(key,entry); // no bloqueante — si falla o no está mapeado, no traba el escaneo
     const secId=getSectorForProduct(key);
     const secs=getSectores();
     const secN=secId&&secs[secId]?secs[secId].nombre:null;
@@ -2390,8 +2428,29 @@ window.adminMeliPanel = async function(){
       <button class="btn btn-sm ${meliConfig.syncActiva ? 'btn-danger' : 'btn-primary'}" onclick="meliToggleSync()" ${!conectado?'disabled title="Conectá primero"':''}>${meliConfig.syncActiva ? 'Pausar' : 'Activar'}</button>
     </div>
     ${conectado ? `<button class="btn btn-danger btn-sm" onclick="openMeliDisyuntor()" style="justify-content:flex-start;width:100%;background:rgba(220,38,38,.15);border:1px solid var(--danger);">🔌 Desconectar de MeLi (disyuntor)</button>` : ''}
+    <div style="margin-top:14px;">
+      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">SKU sin coincidencia en MeLi</div>
+      <div id="meliSinCoincidenciaList" style="font-size:.75rem;color:var(--muted);">Cargando...</div>
+    </div>
   `;
+  cargarMeliSinCoincidencia();
 };
+async function cargarMeliSinCoincidencia(){
+  const cont=document.getElementById('meliSinCoincidenciaList');
+  if(!cont)return;
+  try{
+    const{db,collection,getDocs}=fb();
+    const snap=await getDocs(collection(db,'meliSinCoincidencia'));
+    if(snap.empty){cont.innerHTML='Ninguno por ahora ✅';return;}
+    cont.innerHTML=snap.docs.map(d=>{
+      const x=d.data();
+      return `<div style="padding:5px 0;border-bottom:1px solid var(--border);">
+        <b style="color:var(--text);">${x.nombre||'(sin nombre)'}</b> ${x.talle?'· Talle '+x.talle:''}<br>
+        SKU: <code>${x.sku}</code>
+      </div>`;
+    }).join('');
+  }catch(e){cont.innerHTML='No se pudo cargar.';}
+}
 
 function renderMeliTab(){
   adminMeliPanel();
