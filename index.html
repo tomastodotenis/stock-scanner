@@ -971,7 +971,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091027';
+const APP_BUILD = '2026091801';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1341,6 +1341,13 @@ window.doLogin=async function(){
   catch(ex){err.style.display='block';}
 };
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')doLogin();});
+document.addEventListener('keydown',function(e){
+  const modal=document.getElementById('adminModal');
+  if(!modal||!modal.classList.contains('show'))return;
+  if(e.key>='0'&&e.key<='9'){pinPress(e.key);}
+  else if(e.key==='Backspace'){e.preventDefault();pinPress('←');}
+  else if(e.key==='Escape'){closeAdminModal();}
+});
 window.doLogout=async function(){
   if(!confirm('¿Cerrar sesión?'))return;
   await markOffline();
@@ -2430,7 +2437,8 @@ window.adminMeliPanel = async function(){
       <button class="btn btn-sm ${meliConfig.syncActiva ? 'btn-danger' : 'btn-primary'}" onclick="meliToggleSync()" ${!conectado?'disabled title="Conectá primero"':''}>${meliConfig.syncActiva ? 'Pausar' : 'Activar'}</button>
     </div>
     ${conectado ? `<button class="btn btn-danger btn-sm" onclick="openMeliDisyuntor()" style="justify-content:flex-start;width:100%;background:rgba(220,38,38,.15);border:1px solid var(--danger);">🔌 Desconectar de MeLi (disyuntor)</button>` : ''}
-    <button class="btn btn-primary btn-sm" onclick="compararCatalogoMeli()" style="justify-content:center;width:100%;margin-top:10px;" ${!conectado?'disabled title="Conectá primero"':''}>📊 Comparar catálogo completo (Odoo vs. MeLi)</button>
+    ${conectado ? `<a href="${MELI_WORKER_URL}/completo/skus" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="justify-content:center;width:100%;margin-top:10px;font-size:.72rem;">🔄 1) Actualizar listado de publicaciones (abrir y dejar hasta que diga "Terminado")</a>` : ''}
+    <button class="btn btn-primary btn-sm" onclick="compararCatalogoMeli()" style="justify-content:center;width:100%;margin-top:6px;" ${!conectado?'disabled title="Conectá primero"':''}>📊 2) Comparar mis publicaciones de MeLi vs. Odoo</button>
     <div id="comparacionResultado" style="font-size:.78rem;color:var(--muted);margin-top:8px;"></div>
     <div style="margin-top:14px;">
       <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">SKU sin coincidencia en MeLi</div>
@@ -2441,55 +2449,63 @@ window.adminMeliPanel = async function(){
 };
 window.compararCatalogoMeli=async function(){
   const cont=document.getElementById('comparacionResultado');
-  cont.innerHTML='Trayendo el mapeo completo de MeLi...';
-  let mapeados;
+  cont.innerHTML='Trayendo tus publicaciones reales de MeLi...';
+  let data;
   try{
-    const res=await fetch(`${MELI_WORKER_URL}/mapear/exportar`);
-    const data=await res.json();
-    mapeados=new Set(data.skus||[]);
+    const res=await fetch(`${MELI_WORKER_URL}/completo/exportar`);
+    data=await res.json();
   }catch(e){
-    cont.innerHTML='⚠️ No se pudo traer el mapeo de MeLi. Probá de nuevo.';
+    cont.innerHTML='⚠️ No se pudo traer el listado de MeLi. Probá de nuevo.';
     return;
   }
-  cont.innerHTML='Comparando contra tu catálogo...';
+  if(!data.publicaciones||data.publicaciones.length===0){
+    cont.innerHTML=`⚠️ Todavía no hay un listado guardado. Usá el botón "1) Actualizar listado de publicaciones" de arriba, dejalo abierto hasta que diga <b>Terminado</b>, y volvé a comparar.`;
+    return;
+  }
+  if(!data.listo){
+    cont.innerHTML=`⏳ El listado se está armando (${data.total_procesadas||0} publicaciones procesadas hasta ahora). Dejá abierta la pestaña de "1) Actualizar listado..." hasta que diga <b>Terminado</b> y volvé a comparar.`;
+    return;
+  }
+  cont.innerHTML='Comparando contra tu catálogo de Odoo...';
 
-  // Un mismo producto puede estar varias veces en "catalog" (una entrada
-  // por barcode y otra por SKU) — nos quedamos con productos únicos.
-  const vistos=new Set();
+  // Base correcta: las publicaciones REALES que ya están activas en MeLi
+  // (no el catálogo entero de Odoo, que tiene productos que nunca se van
+  // a publicar). Una fila por variante/publicación simple.
+  const sinSku=[];
   const coinciden=[];
   const noCoinciden=[];
-  for(const key in catalog){
-    const entry=catalog[key];
-    if(!entry || vistos.has(entry.canonical))continue;
-    vistos.add(entry.canonical);
-    const sku=entry.sku||entry.barcode;
-    if(!sku)continue;
-    const fila={nombre:entry.name||'',talle:entry.talle||'',sku};
-    if(mapeados.has(sku))coinciden.push(fila);
+  for(const p of data.publicaciones){
+    const fila={nombre:p.title||'',talle:p.talle||'',sku:p.sku||'',item_id:p.item_id};
+    if(!p.sku){sinSku.push(fila);continue;}
+    if(catalog[p.sku])coinciden.push(fila);
     else noCoinciden.push(fila);
   }
 
   cont.innerHTML=`
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:6px;">Sobre ${data.publicaciones.length} publicaciones/variantes activas en MeLi:</div>
     <div style="padding:8px;background:rgba(200,245,0,.08);border-radius:6px;margin-bottom:6px;">
-      ✅ <b>${coinciden.length}</b> productos coinciden y ya se pueden sincronizar.
+      ✅ <b>${coinciden.length}</b> tienen SKU y coinciden con un producto de Odoo.
     </div>
-    <div style="padding:8px;background:rgba(239,68,68,.08);border-radius:6px;margin-bottom:8px;">
-      ⚠️ <b>${noCoinciden.length}</b> productos no tienen coincidencia en MeLi.
+    <div style="padding:8px;background:rgba(239,68,68,.08);border-radius:6px;margin-bottom:6px;">
+      ⚠️ <b>${noCoinciden.length}</b> tienen SKU pero no coincide con ningún producto de Odoo.
     </div>
-    <button class="btn btn-ghost btn-sm" onclick="descargarComparacionMeli()" style="width:100%;justify-content:center;">📥 Descargar Excel (coinciden + no coinciden)</button>
+    <div style="padding:8px;background:rgba(148,163,184,.15);border-radius:6px;margin-bottom:8px;">
+      ❔ <b>${sinSku.length}</b> todavía no tienen SKU cargado en MeLi.
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="descargarComparacionMeli()" style="width:100%;justify-content:center;">📥 Descargar Excel (3 hojas)</button>
   `;
-  window._comparacionMeli={coinciden,noCoinciden};
+  window._comparacionMeli={coinciden,noCoinciden,sinSku};
 };
 
 window.descargarComparacionMeli=function(){
   const data=window._comparacionMeli;
   if(!data)return;
   const wb=XLSX.utils.book_new();
-  const wsC=XLSX.utils.json_to_sheet(data.coinciden.map(x=>({Producto:x.nombre,Talle:x.talle,SKU:x.sku})));
-  const wsN=XLSX.utils.json_to_sheet(data.noCoinciden.map(x=>({Producto:x.nombre,Talle:x.talle,SKU:x.sku})));
-  XLSX.utils.book_append_sheet(wb,wsC,'Coinciden');
-  XLSX.utils.book_append_sheet(wb,wsN,'No coinciden');
-  XLSX.writeFile(wb,`Comparacion_Odoo_MeLi_${new Date().toISOString().slice(0,10)}.xlsx`);
+  const mk=arr=>XLSX.utils.json_to_sheet(arr.map(x=>({Publicacion:x.nombre,Talle:x.talle,SKU:x.sku,ItemID:x.item_id||''})));
+  XLSX.utils.book_append_sheet(wb,mk(data.coinciden),'Coinciden');
+  XLSX.utils.book_append_sheet(wb,mk(data.noCoinciden),'SKU no coincide');
+  XLSX.utils.book_append_sheet(wb,mk(data.sinSku),'Sin SKU');
+  XLSX.writeFile(wb,`Comparacion_MeLi_Odoo_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
 async function cargarMeliSinCoincidencia(){
