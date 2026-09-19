@@ -986,7 +986,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091902';
+const APP_BUILD = '2026091903';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -3371,8 +3371,22 @@ window.syncCatalogFromOdoo = async function(silent=false){
     label.textContent = `0 / ${total.toLocaleString()} productos`;
 
     while(hasMore){
-      const resp = await fetch(`${ODOO_WORKER_URL}/products?offset=${offset}&limit=${batchSize}`);
-      const data = await resp.json();
+      // Reintento con backoff: una página puntual puede fallar por timeout
+      // o límite de CPU del Worker de Odoo con tandas grandes — antes esto
+      // abortaba toda la sincronización, ahora reintenta un par de veces
+      // antes de darse por vencido.
+      let data;
+      for(let intento=1; ; intento++){
+        try{
+          const resp = await fetch(`${ODOO_WORKER_URL}/products?offset=${offset}&limit=${batchSize}`);
+          data = await resp.json();
+          break;
+        }catch(errIntento){
+          if(intento>=3) throw errIntento;
+          if(label) label.textContent = `Reintentando (offset ${offset})...`;
+          await new Promise(r=>setTimeout(r, 900*intento));
+        }
+      }
       const products = data.results || [];
 
       products.forEach(p => {
