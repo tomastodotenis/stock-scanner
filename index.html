@@ -985,7 +985,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091905';
+const APP_BUILD = '2026091906';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2574,29 +2574,72 @@ function devolDiasRestantes(fecha){
   return (new Date(fecha).getTime() - Date.now()) / (1000*60*60*24);
 }
 
-const DEVOL_ESTADOS = {
-  pending:'Iniciando envío', label_generated:'Etiqueta lista', shipped:'En camino',
-  pending_delivered:'Por llegar', delivered:'Recibido por vos', return_to_buyer:'Volviendo al comprador',
-  cancelled:'Cancelada', not_delivered:'No entregado', scheduled:'Retiro programado',
-  expired:'Expirada', failed:'Falló el envío', pending_cancel:'Cancelándose', pending_expiration:'Por expirar',
-  pending_failure:'Con problemas',
-};
 const DEVOL_MONEY = { retained:'💰 Dinero retenido', refunded:'💸 Devuelto al comprador', available:'✅ Dinero disponible' };
 
-// Estados posibles de un reclamo "crudo" (claim.status/stage), para cuando
-// todavía no hay una devolución asociada (return_status null) — sin esto
-// se mostraba el valor tal cual llega de MeLi (p. ej. "opened").
-const DEVOL_CLAIM_ESTADOS = {
-  opened:'Reclamo abierto', closed:'Cerrado', dispute:'En mediación',
-  claim:'Reclamo abierto', recontact:'Recontacto', stale:'En revisión por MeLi',
+// Traducción de los envíos individuales (usado en el detalle expandido)
+const DEVOL_ENVIO_ESTADOS = {
+  pending:'Generándose', ready_to_ship:'Etiqueta lista', shipped:'Despachado', not_delivered:'No entregado',
+  delivered:'Entregado', cancelled:'Cancelado',
 };
 
-function devolEstadoBadge(d){
-  if(d.claim_status==='closed') return `<span style="background:rgba(148,163,184,.2);color:var(--muted);padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">Cerrado</span>`;
-  if(d.seller_action_pending) return `<span style="background:rgba(239,68,68,.18);color:#f87171;padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">⚠️ Necesita revisión</span>`;
-  const st = d.return_status || d.claim_stage || d.claim_status || '';
-  const texto = DEVOL_ESTADOS[st] || DEVOL_CLAIM_ESTADOS[st] || (d.tiene_devolucion ? st : 'Reclamo (sin devolución aún)');
-  return `<span style="background:rgba(200,245,0,.12);color:var(--text);padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">${texto||'En curso'}</span>`;
+// Un solo lugar que decide "qué está pasando" con una devolución/reclamo,
+// combinando claim_status + claim_stage + return_status en UN estado
+// entendible (antes se mezclaban las tres cosas y salían términos crudos
+// de la API, tipo "opened" u "label_generated" sin contexto). Cada fase
+// tiene, además del texto corto de la etiqueta, una explicación de una
+// línea y una categoría (cat) que se usa para el filtro desplegable.
+function devolFase(d){
+  if(d.claim_status==='closed'){
+    return {cat:'cerrado', label:'Cerrado', desc:'Este reclamo ya está resuelto y cerrado.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
+  }
+  if(d.seller_action_pending){
+    return {cat:'atencion', label:'⚠️ Necesita tu revisión', desc:'El producto ya está en tus manos — entrá a Mercado Libre a indicar si llegó OK o con algún problema.', bg:'rgba(239,68,68,.18)', color:'#f87171'};
+  }
+  if(d.claim_stage==='dispute'){
+    return {cat:'mediacion', label:'⚖️ En mediación', desc:'Mercado Libre está interviniendo directamente para resolver el reclamo.', bg:'rgba(167,139,250,.18)', color:'#a78bfa'};
+  }
+  const rs = d.return_status;
+  const RETURN_FASES = {
+    pending:        {cat:'en_camino', label:'Preparando envío', desc:'La devolución se está generando todavía.'},
+    label_generated:{cat:'en_camino', label:'Etiqueta lista', desc:'Falta que el comprador despache el paquete de vuelta.'},
+    shipped:        {cat:'en_camino', label:'En camino', desc:'El comprador ya despachó el paquete, viene en camino.'},
+    pending_delivered:{cat:'en_camino', label:'Por llegar', desc:'Está por llegar a destino (a vos o al depósito de MeLi).'},
+    scheduled:      {cat:'en_camino', label:'Retiro programado', desc:'Hay un retiro coordinado para el paquete.'},
+    delivered:      {cat:'recibido', label:'📦 Recibido por vos', desc:'Ya está en tus manos. Revisalo y marcá el resultado en Mercado Libre.'},
+    return_to_buyer:{cat:'en_camino', label:'Volviendo al comprador', desc:'El paquete está volviendo hacia el comprador.'},
+    cancelled:      {cat:'cancelado', label:'Cancelada', desc:'La devolución fue cancelada, no hace falta hacer nada.'},
+    not_delivered:  {cat:'cancelado', label:'No entregado', desc:'El envío de la devolución no llegó a destino.'},
+    expired:        {cat:'cancelado', label:'Expirada', desc:'El plazo para la devolución venció.'},
+    failed:         {cat:'cancelado', label:'Con problemas', desc:'Hubo un problema con el envío de la devolución.'},
+    pending_cancel: {cat:'en_camino', label:'Cancelándose', desc:'La devolución se está cancelando.'},
+    pending_expiration:{cat:'en_camino', label:'Por expirar', desc:'El plazo de la devolución está por vencer.'},
+    pending_failure:{cat:'en_camino', label:'Con problemas', desc:'Se detectó un problema, en proceso de resolución.'},
+  };
+  if(rs && RETURN_FASES[rs]){
+    const f = RETURN_FASES[rs];
+    return {...f, bg: f.cat==='recibido'?'rgba(200,245,0,.15)':(f.cat==='cancelado'?'rgba(148,163,184,.2)':'rgba(96,165,250,.15)'), color: f.cat==='recibido'?'var(--text)':(f.cat==='cancelado'?'var(--muted)':'#60a5fa')};
+  }
+  if(d.tiene_devolucion){
+    return {cat:'en_camino', label:'En curso', desc:'La devolución está en trámite.', bg:'rgba(96,165,250,.15)', color:'#60a5fa'};
+  }
+  return {cat:'reclamo_abierto', label:'🗨️ Reclamo abierto', desc:'Reclamo recién abierto — todavía no se generó una devolución para este caso.', bg:'rgba(251,191,36,.15)', color:'#fbbf24'};
+}
+
+// Opciones del filtro desplegable (en el orden en que aparecen)
+const DEVOL_FILTROS = [
+  {value:'', label:'Todos los estados'},
+  {value:'atencion', label:'⚠️ Necesitan tu revisión'},
+  {value:'en_camino', label:'🚚 En camino'},
+  {value:'recibido', label:'📦 Recibidas (a revisar)'},
+  {value:'mediacion', label:'⚖️ En mediación'},
+  {value:'reclamo_abierto', label:'🗨️ Reclamos sin devolución'},
+  {value:'cancelado', label:'❌ Canceladas / con problemas'},
+  {value:'cerrado', label:'✅ Cerrados'},
+];
+let devolFiltroActivo = '';
+
+function devolEstadoBadge(fase){
+  return `<span style="background:${fase.bg};color:${fase.color};padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">${fase.label}</span>`;
 }
 
 window.renderDevoluciones = async function(forzar){
@@ -2622,6 +2665,7 @@ window.renderDevoluciones = async function(forzar){
   const fmtFechaHora = f => f ? new Date(f).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
 
   const card = d => {
+    const fase = devolFase(d);
     const dias = devolDiasRestantes(d.seller_action_due);
     const urgente = dias!==null && dias < 1;
     const expandido = devolExpandido===d.claim_id;
@@ -2632,8 +2676,9 @@ window.renderDevoluciones = async function(forzar){
           <div style="font-weight:700;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${d.item_title || ('Venta '+(d.order_id||d.claim_id))}</div>
           <div style="font-size:.68rem;color:var(--muted);margin-top:1px;display:flex;align-items:center;gap:4px;">Reclamo #${d.claim_id}${d.order_id?` · Venta ${d.order_id} <button onclick="event.stopPropagation();copiarNumeroVenta('${d.order_id}')" title="Copiar número de venta" style="background:none;border:none;padding:0 2px;cursor:pointer;color:var(--muted);font-size:.7rem;line-height:1;">📋</button>`:''}</div>
         </div>
-        ${devolEstadoBadge(d)}
+        ${devolEstadoBadge(fase)}
       </div>
+      ${fase.desc ? `<div style="font-size:.7rem;color:var(--muted);margin-top:4px;">${fase.desc}</div>` : ''}
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:7px;">
         ${d.status_money?`<span style="font-size:.68rem;color:var(--muted);">${DEVOL_MONEY[d.status_money]||d.status_money}</span>`:''}
         ${(d.shipments||[]).filter(s=>s.tracking_number).map(s=>`<span style="font-size:.68rem;color:var(--muted);">📦 ${s.tracking_number}</span>`).join('')}
@@ -2646,7 +2691,7 @@ window.renderDevoluciones = async function(forzar){
       <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--border);font-size:.72rem;color:var(--muted);display:flex;flex-direction:column;gap:3px;">
         ${d.subtype?`<div>Tipo: ${d.subtype==='return_total'?'Devolución total':d.subtype==='return_partial'?'Devolución parcial':d.subtype}</div>`:''}
         ${d.refund_at?`<div>El dinero se devuelve: ${d.refund_at==='shipped'?'al despachar la devolución':d.refund_at==='delivered'?'3 días después de recibirla':d.refund_at}</div>`:''}
-        ${(d.shipments||[]).map(s=>`<div>Envío ${s.tipo==='return_from_triage'?'(revisión intermedia)':''}: ${DEVOL_ESTADOS[s.status]||s.status}${s.destino?' → '+(s.destino==='warehouse'?'depósito MeLi':'tu dirección'):''}</div>`).join('')}
+        ${(d.shipments||[]).map(s=>`<div>Envío ${s.tipo==='return_from_triage'?'(revisión intermedia)':''}: ${DEVOL_ENVIO_ESTADOS[s.status]||s.status}${s.destino?' → '+(s.destino==='warehouse'?'depósito MeLi':'tu dirección'):''}</div>`).join('')}
         <div>Reclamo creado: ${fmtFechaHora(d.claim_date_created)}</div>
         <div>Última actualización: ${fmtFechaHora(d.claim_last_updated)}</div>
         <div>Sincronizado con MeLi: ${fmtFechaHora(d.last_synced)}</div>
@@ -2654,14 +2699,26 @@ window.renderDevoluciones = async function(forzar){
     </div>`;
   };
 
-  const abiertas = data.filter(d=>d.claim_status!=='closed').sort((a,b)=>{
+  const dataFiltrada = devolFiltroActivo ? data.filter(d=>devolFase(d).cat===devolFiltroActivo) : data;
+
+  const selectorHtml = `
+    <select id="devolFiltroSelect" onchange="devolFiltroActivo=this.value;renderDevoluciones();" class="inp" style="margin-bottom:10px;width:100%;">
+      ${DEVOL_FILTROS.map(f=>`<option value="${f.value}" ${f.value===devolFiltroActivo?'selected':''}>${f.label}</option>`).join('')}
+    </select>`;
+
+  if(dataFiltrada.length===0){
+    cont.innerHTML = selectorHtml + '<div style="text-align:center;padding:20px;color:var(--muted);">No hay devoluciones con ese filtro.</div>';
+    return;
+  }
+
+  const abiertas = dataFiltrada.filter(d=>d.claim_status!=='closed').sort((a,b)=>{
     const ap=a.seller_action_pending?1:0, bp=b.seller_action_pending?1:0;
     if(ap!==bp) return bp-ap;
     return new Date(b.claim_last_updated||0)-new Date(a.claim_last_updated||0);
   });
-  const cerradas = data.filter(d=>d.claim_status==='closed').sort((a,b)=>new Date(b.claim_last_updated||0)-new Date(a.claim_last_updated||0));
+  const cerradas = dataFiltrada.filter(d=>d.claim_status==='closed').sort((a,b)=>new Date(b.claim_last_updated||0)-new Date(a.claim_last_updated||0));
 
-  let html = '';
+  let html = selectorHtml;
   if(abiertas.length){
     html += `<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:6px;">En curso (${abiertas.length})</div>`;
     html += abiertas.map(card).join('');
