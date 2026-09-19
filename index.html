@@ -853,6 +853,7 @@
         <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);">Devoluciones y reclamos de MeLi</div>
         <button class="btn btn-ghost btn-sm" onclick="renderDevoluciones(true)">🔄 Actualizar</button>
       </div>
+      <a href="https://meli-proxy.tomastodotenis.workers.dev/devoluciones/sincronizar" target="_blank" rel="noopener" id="btnSincronizarDevol" class="btn btn-ghost btn-sm" style="justify-content:center;width:100%;font-size:.72rem;">⏳ Traer también las devoluciones que ya estaban abiertas (una sola vez)</a>
       <div id="devolucionesContent">
         <div style="text-align:center;padding:20px;color:var(--muted);">Cargando...</div>
       </div>
@@ -985,7 +986,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091901';
+const APP_BUILD = '2026091902';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
