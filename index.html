@@ -985,7 +985,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091906';
+const APP_BUILD = '2026091907';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2588,15 +2588,27 @@ const DEVOL_ENVIO_ESTADOS = {
 // de la API, tipo "opened" u "label_generated" sin contexto). Cada fase
 // tiene, además del texto corto de la etiqueta, una explicación de una
 // línea y una categoría (cat) que se usa para el filtro desplegable.
+// Motivos de cierre (claim.resolution.reason) que Mercado Libre considera
+// una devolución "concretada" (se completó) vs "no concretada" (se cerró
+// sin completarse) — mismos términos que usa la Central de Vendedores.
+const DEVOL_RESOLUCION_CONCRETADA = new Set(['item_returned','payment_refunded','partial_refunded','reimbursed','coverage_decision','change_expired','item_changed']);
+const DEVOL_RESOLUCION_NO_CONCRETADA = new Set(['return_expired','return_canceled','warehouse_timeout','warehouse_decision','timeout','respondent_timeout','shipment_not_stopped','opened_claim_by_mistake','buyer_claim_opened','buyer_dispute_opened']);
+
 function devolFase(d){
   if(d.claim_status==='closed'){
+    if(DEVOL_RESOLUCION_CONCRETADA.has(d.resolution_reason)){
+      return {cat:'concretada', label:'✅ Concretada', desc:'La devolución se completó.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
+    }
+    if(DEVOL_RESOLUCION_NO_CONCRETADA.has(d.resolution_reason)){
+      return {cat:'no_concretada', label:'❌ No concretada', desc:'El caso se cerró sin completarse.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
+    }
     return {cat:'cerrado', label:'Cerrado', desc:'Este reclamo ya está resuelto y cerrado.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
   }
   if(d.seller_action_pending){
-    return {cat:'atencion', label:'⚠️ Necesita tu revisión', desc:'El producto ya está en tus manos — entrá a Mercado Libre a indicar si llegó OK o con algún problema.', bg:'rgba(239,68,68,.18)', color:'#f87171'};
+    return {cat:'atencion', label:'🔴 Próxima por atender', desc:'El producto ya está en tus manos — entrá a Mercado Libre a indicar si llegó OK o con algún problema.', bg:'rgba(239,68,68,.18)', color:'#f87171'};
   }
   if(d.claim_stage==='dispute'){
-    return {cat:'mediacion', label:'⚖️ En mediación', desc:'Mercado Libre está interviniendo directamente para resolver el reclamo.', bg:'rgba(167,139,250,.18)', color:'#a78bfa'};
+    return {cat:'mediacion', label:'⚖️ En revisión por Mercado Libre', desc:'Mercado Libre está interviniendo directamente para resolver el reclamo.', bg:'rgba(167,139,250,.18)', color:'#a78bfa'};
   }
   const rs = d.return_status;
   const RETURN_FASES = {
@@ -2628,13 +2640,15 @@ function devolFase(d){
 // Opciones del filtro desplegable (en el orden en que aparecen)
 const DEVOL_FILTROS = [
   {value:'', label:'Todos los estados'},
-  {value:'atencion', label:'⚠️ Necesitan tu revisión'},
+  {value:'atencion', label:'🔴 Próximas por atender'},
   {value:'en_camino', label:'🚚 En camino'},
   {value:'recibido', label:'📦 Recibidas (a revisar)'},
-  {value:'mediacion', label:'⚖️ En mediación'},
+  {value:'mediacion', label:'⚖️ En revisión por Mercado Libre'},
   {value:'reclamo_abierto', label:'🗨️ Reclamos sin devolución'},
-  {value:'cancelado', label:'❌ Canceladas / con problemas'},
-  {value:'cerrado', label:'✅ Cerrados'},
+  {value:'cancelado', label:'⚠️ Con problemas (en curso)'},
+  {value:'concretada', label:'✅ Concretadas'},
+  {value:'no_concretada', label:'❌ No concretadas'},
+  {value:'cerrado', label:'Cerrados (otro motivo)'},
 ];
 let devolFiltroActivo = '';
 
