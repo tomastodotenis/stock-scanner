@@ -971,7 +971,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091801';
+const APP_BUILD = '2026091802';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1341,6 +1341,13 @@ window.doLogin=async function(){
   catch(ex){err.style.display='block';}
 };
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')doLogin();});
+document.addEventListener('keydown',function(e){
+  const modal=document.getElementById('adminModal');
+  if(!modal||!modal.classList.contains('show'))return;
+  if(e.key>='0'&&e.key<='9'){pinPress(e.key);}
+  else if(e.key==='Backspace'){e.preventDefault();pinPress('←');}
+  else if(e.key==='Escape'){closeAdminModal();}
+});
 window.doLogout=async function(){
   if(!confirm('¿Cerrar sesión?'))return;
   await markOffline();
@@ -2431,6 +2438,7 @@ window.adminMeliPanel = async function(){
     </div>
     ${conectado ? `<button class="btn btn-danger btn-sm" onclick="openMeliDisyuntor()" style="justify-content:flex-start;width:100%;background:rgba(220,38,38,.15);border:1px solid var(--danger);">🔌 Desconectar de MeLi (disyuntor)</button>` : ''}
     ${conectado ? `<a href="${MELI_WORKER_URL}/completo/skus" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="justify-content:center;width:100%;margin-top:10px;font-size:.72rem;">🔄 1) Actualizar listado de publicaciones (abrir y dejar hasta que diga "Terminado")</a>` : ''}
+    ${conectado ? `<button class="btn btn-ghost btn-sm" onclick="reiniciarListadoMeli()" style="justify-content:center;width:100%;margin-top:4px;font-size:.68rem;color:var(--danger);">↺ Reiniciar ese listado desde cero</button>` : ''}
     <button class="btn btn-primary btn-sm" onclick="compararCatalogoMeli()" style="justify-content:center;width:100%;margin-top:6px;" ${!conectado?'disabled title="Conectá primero"':''}>📊 2) Comparar mis publicaciones de MeLi vs. Odoo</button>
     <div id="comparacionResultado" style="font-size:.78rem;color:var(--muted);margin-top:8px;"></div>
     <div style="margin-top:14px;">
@@ -2439,6 +2447,18 @@ window.adminMeliPanel = async function(){
     </div>
   `;
   cargarMeliSinCoincidencia();
+};
+window.reiniciarListadoMeli=async function(){
+  if(!confirm('¿Reiniciar el listado de publicaciones de MeLi desde cero? Se borra el progreso guardado del paso 1 (no toca nada en MeLi, solo el conteo local).'))return;
+  const cont=document.getElementById('comparacionResultado');
+  cont.innerHTML='Reiniciando...';
+  try{
+    const res=await fetch(`${MELI_WORKER_URL}/completo/reset`);
+    const data=await res.json();
+    cont.innerHTML=data.ok?'✅ Listo, reiniciado. Ahora abrí "1) Actualizar listado de publicaciones" para arrancar de nuevo.':'⚠️ No se pudo reiniciar. Probá de nuevo.';
+  }catch(e){
+    cont.innerHTML='⚠️ No se pudo reiniciar. Probá de nuevo.';
+  }
 };
 window.compararCatalogoMeli=async function(){
   const cont=document.getElementById('comparacionResultado');
