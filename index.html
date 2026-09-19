@@ -985,7 +985,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091904';
+const APP_BUILD = '2026091905';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2583,11 +2583,20 @@ const DEVOL_ESTADOS = {
 };
 const DEVOL_MONEY = { retained:'💰 Dinero retenido', refunded:'💸 Devuelto al comprador', available:'✅ Dinero disponible' };
 
+// Estados posibles de un reclamo "crudo" (claim.status/stage), para cuando
+// todavía no hay una devolución asociada (return_status null) — sin esto
+// se mostraba el valor tal cual llega de MeLi (p. ej. "opened").
+const DEVOL_CLAIM_ESTADOS = {
+  opened:'Reclamo abierto', closed:'Cerrado', dispute:'En mediación',
+  claim:'Reclamo abierto', recontact:'Recontacto', stale:'En revisión por MeLi',
+};
+
 function devolEstadoBadge(d){
   if(d.claim_status==='closed') return `<span style="background:rgba(148,163,184,.2);color:var(--muted);padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">Cerrado</span>`;
   if(d.seller_action_pending) return `<span style="background:rgba(239,68,68,.18);color:#f87171;padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">⚠️ Necesita revisión</span>`;
-  const st = d.return_status || d.claim_status || '';
-  return `<span style="background:rgba(200,245,0,.12);color:var(--text);padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">${DEVOL_ESTADOS[st]||st||'En curso'}</span>`;
+  const st = d.return_status || d.claim_stage || d.claim_status || '';
+  const texto = DEVOL_ESTADOS[st] || DEVOL_CLAIM_ESTADOS[st] || (d.tiene_devolucion ? st : 'Reclamo (sin devolución aún)');
+  return `<span style="background:rgba(200,245,0,.12);color:var(--text);padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">${texto||'En curso'}</span>`;
 }
 
 window.renderDevoluciones = async function(forzar){
