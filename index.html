@@ -262,6 +262,7 @@
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
     <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">⚙️ Config. Alertas</div>
     <div class="tab" data-tab="promos">🏷️ Promos MeLi</div>
+    <div class="tab" data-tab="devoluciones" id="tabDevoluciones">📦 Devoluciones<span id="devolBadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:.65rem;margin-left:5px;font-weight:700;"></span></div>
     <div class="tab" data-tab="ranking">🏆 Ranking</div>
     <div class="tab" data-tab="planilla">📄 Planilla</div>
     <div class="tab" data-tab="auditoria" id="tabAuditoria" style="display:none;">🧮 Auditoría</div>
@@ -845,6 +846,19 @@
     </div>
   </div>
 
+  <!-- DEVOLUCIONES -->
+  <div class="page" id="page-devoluciones">
+    <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);">Devoluciones y reclamos de MeLi</div>
+        <button class="btn btn-ghost btn-sm" onclick="renderDevoluciones(true)">🔄 Actualizar</button>
+      </div>
+      <div id="devolucionesContent">
+        <div style="text-align:center;padding:20px;color:var(--muted);">Cargando...</div>
+      </div>
+    </div>
+  </div>
+
   <!-- MELI SYNC -->
   <div class="page" id="page-meli">
     <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
@@ -971,7 +985,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091802';
+const APP_BUILD = '2026091901';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -995,6 +1009,7 @@ document.addEventListener('visibilitychange', ()=>{
   if(!document.hidden){
     checkForUpdate();
     if(document.getElementById('page-meli')?.classList.contains('active')) adminMeliPanel();
+    if(document.getElementById('page-devoluciones')?.classList.contains('active')) renderDevoluciones();
   }
 });
 setInterval(checkForUpdate, 5*60*1000);
@@ -1421,6 +1436,7 @@ window.switchTab=function(name){
   if(name==='planilla')renderPlanilla();
   if(name==='auditoria')renderAuditoria();
   if(name==='meli')renderMeliTab();
+  if(name==='devoluciones')renderDevoluciones();
 };
 function switchSub(name){
   document.querySelectorAll('.stab').forEach(t=>t.classList.toggle('active',t.textContent.includes(name==='saldo'?'Saldo':'Mov')));
@@ -2534,6 +2550,153 @@ async function cargarMeliSinCoincidencia(){
 function renderMeliTab(){
   adminMeliPanel();
 }
+
+// ── DEVOLUCIONES (seguimiento de reclamos/devoluciones de MeLi) ──
+// Reemplaza a los mails que dejaron de llegar: el Worker escucha el
+// webhook de MeLi (tópico post_purchase) y guarda acá un resumen de
+// cada reclamo/devolución. Esta pestaña solo lee ese resumen — no hay
+// Firestore de por medio, es polling directo contra el Worker.
+let devolucionesCache = [];
+let devolExpandido = null;
+
+async function fetchDevoluciones(){
+  try{
+    const res = await fetch(`${MELI_WORKER_URL}/devoluciones/list`);
+    const data = await res.json();
+    return data.devoluciones || [];
+  }catch(e){
+    return null; // null = error de red/servidor, distinto de [] = sin devoluciones
+  }
+}
+
+function devolDiasRestantes(fecha){
+  if(!fecha) return null;
+  return (new Date(fecha).getTime() - Date.now()) / (1000*60*60*24);
+}
+
+const DEVOL_ESTADOS = {
+  pending:'Iniciando envío', label_generated:'Etiqueta lista', shipped:'En camino',
+  pending_delivered:'Por llegar', delivered:'Recibido por vos', return_to_buyer:'Volviendo al comprador',
+  cancelled:'Cancelada', not_delivered:'No entregado', scheduled:'Retiro programado',
+  expired:'Expirada', failed:'Falló el envío', pending_cancel:'Cancelándose', pending_expiration:'Por expirar',
+  pending_failure:'Con problemas',
+};
+const DEVOL_MONEY = { retained:'💰 Dinero retenido', refunded:'💸 Devuelto al comprador', available:'✅ Dinero disponible' };
+
+function devolEstadoBadge(d){
+  if(d.claim_status==='closed') return `<span style="background:rgba(148,163,184,.2);color:var(--muted);padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">Cerrado</span>`;
+  if(d.seller_action_pending) return `<span style="background:rgba(239,68,68,.18);color:#f87171;padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">⚠️ Necesita revisión</span>`;
+  const st = d.return_status || d.claim_status || '';
+  return `<span style="background:rgba(200,245,0,.12);color:var(--text);padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">${DEVOL_ESTADOS[st]||st||'En curso'}</span>`;
+}
+
+window.renderDevoluciones = async function(forzar){
+  const cont = document.getElementById('devolucionesContent');
+  if(!cont) return;
+  if(forzar || devolucionesCache.length===0){
+    cont.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">Cargando...</div>';
+  }
+  const data = await fetchDevoluciones();
+  if(data===null){
+    cont.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);">⚠️ No se pudo conectar con Mercado Libre. Probá de nuevo.</div>';
+    return;
+  }
+  devolucionesCache = data;
+  updateDevolBadge();
+
+  if(data.length===0){
+    cont.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">No hay devoluciones ni reclamos registrados todavía. 🎉<br><small>Van a ir apareciendo solas a medida que MeLi las notifique.</small></div>';
+    return;
+  }
+
+  const fmtFecha = f => f ? new Date(f).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
+  const fmtFechaHora = f => f ? new Date(f).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+
+  const card = d => {
+    const dias = devolDiasRestantes(d.seller_action_due);
+    const urgente = dias!==null && dias < 1;
+    const expandido = devolExpandido===d.claim_id;
+    return `
+    <div style="padding:11px;background:var(--surface2);border-radius:8px;margin-bottom:8px;${d.seller_action_pending?'border:1px solid var(--danger);':''}cursor:pointer;" onclick="verDetalleDevolucion('${d.claim_id}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${d.item_title || ('Orden '+(d.order_id||d.claim_id))}</div>
+          <div style="font-size:.68rem;color:var(--muted);margin-top:1px;">Reclamo #${d.claim_id}${d.order_id?' · Orden '+d.order_id:''}</div>
+        </div>
+        ${devolEstadoBadge(d)}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:7px;">
+        ${d.status_money?`<span style="font-size:.68rem;color:var(--muted);">${DEVOL_MONEY[d.status_money]||d.status_money}</span>`:''}
+        ${(d.shipments||[]).filter(s=>s.tracking_number).map(s=>`<span style="font-size:.68rem;color:var(--muted);">📦 ${s.tracking_number}</span>`).join('')}
+        <span style="font-size:.68rem;color:var(--muted);">Actualizado ${fmtFecha(d.claim_last_updated)}</span>
+      </div>
+      ${d.seller_action_pending ? `<div style="margin-top:6px;font-size:.72rem;color:${urgente?'#f87171':'var(--text)'};font-weight:700;">
+        ⏰ ${d.seller_action_due ? (urgente?'¡Vence hoy o ya venció!':'Tenés hasta el '+fmtFecha(d.seller_action_due)) : 'Requiere tu revisión'} — entrá a Mercado Libre (Reclamos) a responder
+      </div>` : ''}
+      ${expandido ? `
+      <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--border);font-size:.72rem;color:var(--muted);display:flex;flex-direction:column;gap:3px;">
+        ${d.subtype?`<div>Tipo: ${d.subtype==='return_total'?'Devolución total':d.subtype==='return_partial'?'Devolución parcial':d.subtype}</div>`:''}
+        ${d.refund_at?`<div>El dinero se devuelve: ${d.refund_at==='shipped'?'al despachar la devolución':d.refund_at==='delivered'?'3 días después de recibirla':d.refund_at}</div>`:''}
+        ${(d.shipments||[]).map(s=>`<div>Envío ${s.tipo==='return_from_triage'?'(revisión intermedia)':''}: ${DEVOL_ESTADOS[s.status]||s.status}${s.destino?' → '+(s.destino==='warehouse'?'depósito MeLi':'tu dirección'):''}</div>`).join('')}
+        <div>Reclamo creado: ${fmtFechaHora(d.claim_date_created)}</div>
+        <div>Última actualización: ${fmtFechaHora(d.claim_last_updated)}</div>
+        <div>Sincronizado con MeLi: ${fmtFechaHora(d.last_synced)}</div>
+      </div>` : ''}
+    </div>`;
+  };
+
+  const abiertas = data.filter(d=>d.claim_status!=='closed').sort((a,b)=>{
+    const ap=a.seller_action_pending?1:0, bp=b.seller_action_pending?1:0;
+    if(ap!==bp) return bp-ap;
+    return new Date(b.claim_last_updated||0)-new Date(a.claim_last_updated||0);
+  });
+  const cerradas = data.filter(d=>d.claim_status==='closed').sort((a,b)=>new Date(b.claim_last_updated||0)-new Date(a.claim_last_updated||0));
+
+  let html = '';
+  if(abiertas.length){
+    html += `<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:6px;">En curso (${abiertas.length})</div>`;
+    html += abiertas.map(card).join('');
+  }
+  if(cerradas.length){
+    html += `<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin:14px 0 6px;">Cerradas recientemente</div>`;
+    html += cerradas.slice(0,20).map(card).join('');
+  }
+  cont.innerHTML = html;
+};
+
+function updateDevolBadge(){
+  const badge = document.getElementById('devolBadge');
+  if(!badge) return;
+  const pendientes = devolucionesCache.filter(d=>d.seller_action_pending).length;
+  if(pendientes>0){ badge.style.display='inline-block'; badge.textContent = pendientes; }
+  else{ badge.style.display='none'; }
+}
+
+window.verDetalleDevolucion = function(claimId){
+  devolExpandido = (devolExpandido===claimId) ? null : claimId;
+  renderDevoluciones();
+};
+
+// Polling liviano en segundo plano (cada 90s) para que el número en la
+// pestaña esté al día aunque no estés mirándola, y para avisar con un
+// toast si aparece una devolución nueva que necesita revisión.
+async function pollDevolucionesBackground(){
+  try{
+    const prevPendientes = devolucionesCache.filter(d=>d.seller_action_pending).length;
+    const data = await fetchDevoluciones();
+    if(data===null) return;
+    devolucionesCache = data;
+    updateDevolBadge();
+    const nuevaPendientes = data.filter(d=>d.seller_action_pending).length;
+    if(nuevaPendientes > prevPendientes){
+      showToast('📦 Nueva devolución necesita tu revisión','err');
+      vibrateDevice(false);
+    }
+    if(document.getElementById('page-devoluciones')?.classList.contains('active')) renderDevoluciones();
+  }catch(e){ /* sin conexión, no pasa nada */ }
+}
+setInterval(pollDevolucionesBackground, 90000);
+setTimeout(pollDevolucionesBackground, 8000); // primer chequeo silencioso al abrir la app
 window.meliToggleSync = async function(){
   meliConfig.syncActiva = !meliConfig.syncActiva;
   await fbSaveMeliConfig();
