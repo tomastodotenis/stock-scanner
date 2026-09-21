@@ -985,7 +985,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026092101';
+const APP_BUILD = '2026092102';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2614,13 +2614,19 @@ function devolProductoLlegoAlVendedor(d){
   return d.return_status==='delivered';
 }
 
+// Categorías (cat) usadas tanto para el badge de cada tarjeta como para el
+// filtro desplegable. Están alineadas a como Mercado Libre organiza su
+// propio panel de Posventa (Próximas por atender / En camino / En revisión
+// por Mercado Libre / Concretadas / No concretadas / Otros problemas), para
+// no inventar categorías nuevas que no se correspondan con lo que ves ahí.
 function devolFase(d){
   // Si el producto todavía viene viajando hacia tu depósito (caso típico:
-  // MeLi lo revisó en su depósito y ahora te lo despacha a vos), mostramos
-  // eso primero — sin importar si el reclamo en sí ya figura "closed",
-  // porque para vos lo relevante es que todavía no llegó.
+  // una devolución con revisión intermedia — MeLi la recibe, la revisa en
+  // su depósito y recién ahí te la despacha a vos), mostramos eso primero
+  // — sin importar si el reclamo en sí ya figura "closed", porque para vos
+  // lo relevante es que el producto todavía no llegó.
   if(d.tiene_devolucion && devolProductoLlegoAlVendedor(d)===false){
-    return {cat:'en_camino', label:'🚚 Volviendo a tu depósito', desc:'Mercado Libre ya revisó el producto y te lo está enviando.', bg:'rgba(96,165,250,.15)', color:'#60a5fa'};
+    return {cat:'en_camino', label:'🚚 Volviendo a tu depósito', desc:'Mercado Libre ya revisó el producto en su depósito y te lo está enviando.', bg:'rgba(96,165,250,.15)', color:'#60a5fa'};
   }
   if(d.claim_status==='closed'){
     if(DEVOL_RESOLUCION_CONCRETADA.has(d.resolution_reason)){
@@ -2636,34 +2642,48 @@ function devolFase(d){
     if(devolucionCompleta){
       return {cat:'concretada', label:'✅ Concretada', desc:'La devolución se completó.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
     }
-    return {cat:'cerrado', label:'Cerrado', desc:'Este reclamo ya está resuelto y cerrado.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
+    return {cat:'cerrado', label:'Cerrado', desc:'Este reclamo ya está resuelto y cerrado, sin devolución de por medio.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
   }
+  // "seller_action_pending" cubre tanto la revisión de un producto ya
+  // recibido como cualquier otra acción obligatoria tuya en el reclamo
+  // (p. ej. responder un mensaje con vencimiento) — por eso agrupa todo
+  // bajo la misma categoría "atencion" que MeLi llama "Próximas por atender".
   if(d.seller_action_pending){
-    return {cat:'atencion', label:'🔴 Próxima por atender', desc:'El producto ya está en tus manos — entrá a Mercado Libre a indicar si llegó OK o con algún problema.', bg:'rgba(239,68,68,.18)', color:'#f87171'};
+    return {cat:'atencion', label:'🔴 Próxima por atender', desc:'Requiere una acción tuya — entrá a Mercado Libre (Reclamos) a resolverla.', bg:'rgba(239,68,68,.18)', color:'#f87171'};
   }
   if(d.claim_stage==='dispute'){
     return {cat:'mediacion', label:'⚖️ En revisión por Mercado Libre', desc:'Mercado Libre está interviniendo directamente para resolver el reclamo.', bg:'rgba(167,139,250,.18)', color:'#a78bfa'};
   }
+  // Estados del envío de la devolución (return.status), tal como los define
+  // la documentación oficial de MeLi — es la lista completa, no hay otros.
   const rs = d.return_status;
   const RETURN_FASES = {
-    pending:        {cat:'en_camino', label:'Preparando envío', desc:'La devolución se está generando todavía.'},
-    label_generated:{cat:'en_camino', label:'Etiqueta lista', desc:'Falta que el comprador despache el paquete de vuelta.'},
-    shipped:        {cat:'en_camino', label:'En camino', desc:'El comprador ya despachó el paquete, viene en camino.'},
-    pending_delivered:{cat:'en_camino', label:'Por llegar', desc:'Está por llegar a destino (a vos o al depósito de MeLi).'},
-    scheduled:      {cat:'en_camino', label:'Retiro programado', desc:'Hay un retiro coordinado para el paquete.'},
-    delivered:      {cat:'recibido', label:'📦 Recibido por vos', desc:'Ya está en tus manos. Revisalo y marcá el resultado en Mercado Libre.'},
-    return_to_buyer:{cat:'en_camino', label:'Volviendo al comprador', desc:'El paquete está volviendo hacia el comprador.'},
-    cancelled:      {cat:'cancelado', label:'Cancelada', desc:'La devolución fue cancelada, no hace falta hacer nada.'},
-    not_delivered:  {cat:'cancelado', label:'No entregado', desc:'El envío de la devolución no llegó a destino.'},
-    expired:        {cat:'cancelado', label:'Expirada', desc:'El plazo para la devolución venció.'},
-    failed:         {cat:'cancelado', label:'Con problemas', desc:'Hubo un problema con el envío de la devolución.'},
-    pending_cancel: {cat:'en_camino', label:'Cancelándose', desc:'La devolución se está cancelando.'},
-    pending_expiration:{cat:'en_camino', label:'Por expirar', desc:'El plazo de la devolución está por vencer.'},
-    pending_failure:{cat:'en_camino', label:'Con problemas', desc:'Se detectó un problema, en proceso de resolución.'},
+    pending:            {cat:'en_camino', label:'Preparando envío', desc:'La devolución se creó y se está generando el envío.'},
+    label_generated:    {cat:'en_camino', label:'Etiqueta lista', desc:'Falta que el comprador despache el paquete de vuelta.'},
+    shipped:            {cat:'en_camino', label:'En camino', desc:'El comprador ya despachó el paquete — el dinero queda retenido hasta que se complete.'},
+    pending_delivered:  {cat:'en_camino', label:'Por llegar', desc:'Está por marcarse como entregado.'},
+    scheduled:          {cat:'en_camino', label:'Retiro programado', desc:'Hay un retiro coordinado para el paquete.'},
+    pending_cancel:     {cat:'en_camino', label:'Cancelándose', desc:'La devolución se está cancelando.'},
+    pending_expiration: {cat:'en_camino', label:'Por expirar', desc:'El plazo de la devolución está por vencer.'},
+    pending_failure:    {cat:'en_camino', label:'Con problemas', desc:'Se detectó un problema, en proceso de resolución.'},
+    return_to_buyer:    {cat:'en_camino', label:'Volviendo al comprador', desc:'El paquete está volviendo hacia el comprador.'},
+    // "delivered" es, según MeLi, "devolución en manos del vendedor" — o
+    // sea vos. Va en la misma categoría que "atencion" porque en la
+    // práctica implica que tenés que revisarla en Mercado Libre.
+    delivered:          {cat:'atencion', label:'📦 Recibido por vos', desc:'Ya está en tus manos. Revisalo y marcá el resultado en Mercado Libre.'},
+    cancelled:          {cat:'problema', label:'Cancelada', desc:'La devolución fue cancelada, el dinero queda disponible para el comprador.'},
+    not_delivered:      {cat:'problema', label:'No entregado', desc:'El envío de la devolución no llegó a destino.'},
+    expired:            {cat:'problema', label:'Expirada', desc:'El plazo para la devolución venció.'},
+    failed:             {cat:'problema', label:'Con problemas', desc:'No se pudo generar o inicializar el envío de la devolución.'},
   };
   if(rs && RETURN_FASES[rs]){
     const f = RETURN_FASES[rs];
-    return {...f, bg: f.cat==='recibido'?'rgba(200,245,0,.15)':(f.cat==='cancelado'?'rgba(148,163,184,.2)':'rgba(96,165,250,.15)'), color: f.cat==='recibido'?'var(--text)':(f.cat==='cancelado'?'var(--muted)':'#60a5fa')};
+    const colores = {
+      atencion: {bg:'rgba(239,68,68,.18)', color:'#f87171'},
+      problema: {bg:'rgba(148,163,184,.2)', color:'var(--muted)'},
+      en_camino:{bg:'rgba(96,165,250,.15)', color:'#60a5fa'},
+    };
+    return {...f, ...colores[f.cat]};
   }
   if(d.tiene_devolucion){
     return {cat:'en_camino', label:'En curso', desc:'La devolución está en trámite.', bg:'rgba(96,165,250,.15)', color:'#60a5fa'};
@@ -2671,18 +2691,19 @@ function devolFase(d){
   return {cat:'reclamo_abierto', label:'🗨️ Reclamo abierto', desc:'Reclamo recién abierto — todavía no se generó una devolución para este caso.', bg:'rgba(251,191,36,.15)', color:'#fbbf24'};
 }
 
-// Opciones del filtro desplegable (en el orden en que aparecen)
+// Opciones del filtro desplegable (en el orden en que aparecen). Nombradas
+// igual que las secciones del propio panel de Posventa de Mercado Libre,
+// para que sea fácil reconocerlas si ya usás ese panel.
 const DEVOL_FILTROS = [
   {value:'', label:'Todos los estados'},
   {value:'atencion', label:'🔴 Próximas por atender'},
   {value:'en_camino', label:'🚚 En camino'},
-  {value:'recibido', label:'📦 Recibidas (a revisar)'},
   {value:'mediacion', label:'⚖️ En revisión por Mercado Libre'},
-  {value:'reclamo_abierto', label:'🗨️ Reclamos sin devolución'},
-  {value:'cancelado', label:'⚠️ Con problemas (en curso)'},
+  {value:'reclamo_abierto', label:'🗨️ Reclamos sin devolución todavía'},
+  {value:'problema', label:'⚠️ Otros problemas'},
   {value:'concretada', label:'✅ Concretadas'},
   {value:'no_concretada', label:'❌ No concretadas'},
-  {value:'cerrado', label:'Cerrados (otro motivo)'},
+  {value:'cerrado', label:'Cerradas (otro motivo, sin devolución)'},
 ];
 let devolFiltroActivo = '';
 
