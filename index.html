@@ -985,7 +985,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026091907';
+const APP_BUILD = '2026092101';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2591,16 +2591,50 @@ const DEVOL_ENVIO_ESTADOS = {
 // Motivos de cierre (claim.resolution.reason) que Mercado Libre considera
 // una devolución "concretada" (se completó) vs "no concretada" (se cerró
 // sin completarse) — mismos términos que usa la Central de Vendedores.
+// "warehouse_decision" queda afuera de las dos listas a propósito: es
+// ambiguo (puede terminar en devolución completa o no, depende de qué
+// decidió MeLi al revisar el producto), así que esos casos se resuelven
+// más abajo mirando evidencia real (se movió la plata y volvió el producto).
 const DEVOL_RESOLUCION_CONCRETADA = new Set(['item_returned','payment_refunded','partial_refunded','reimbursed','coverage_decision','change_expired','item_changed']);
-const DEVOL_RESOLUCION_NO_CONCRETADA = new Set(['return_expired','return_canceled','warehouse_timeout','warehouse_decision','timeout','respondent_timeout','shipment_not_stopped','opened_claim_by_mistake','buyer_claim_opened','buyer_dispute_opened']);
+const DEVOL_RESOLUCION_NO_CONCRETADA = new Set(['return_expired','return_canceled','warehouse_timeout','timeout','respondent_timeout','shipment_not_stopped','opened_claim_by_mistake','buyer_claim_opened','buyer_dispute_opened']);
+
+// Algunas devoluciones pasan primero por un depósito de MeLi (revisión/
+// triage) y recién después se despachan hacia el vendedor. En esos casos
+// el reclamo (claim) puede figurar "closed" — la disputa ya se resolvió —
+// mientras el paquete todavía viaja hacia tu depósito. Esta función mira
+// el envío cuyo destino sos vos (seller_address) y devuelve:
+//   true  = ya te llegó (o no había un tramo así: devolución directa)
+//   false = todavía está en camino hacia vos
+function devolProductoLlegoAlVendedor(d){
+  const tramosHaciaVendedor = (d.shipments||[]).filter(s=>s.destino==='seller_address');
+  if(tramosHaciaVendedor.length){
+    return tramosHaciaVendedor.every(s=>s.status==='delivered');
+  }
+  if(!d.tiene_devolucion) return true; // reclamo sin devolución física, no aplica
+  return d.return_status==='delivered';
+}
 
 function devolFase(d){
+  // Si el producto todavía viene viajando hacia tu depósito (caso típico:
+  // MeLi lo revisó en su depósito y ahora te lo despacha a vos), mostramos
+  // eso primero — sin importar si el reclamo en sí ya figura "closed",
+  // porque para vos lo relevante es que todavía no llegó.
+  if(d.tiene_devolucion && devolProductoLlegoAlVendedor(d)===false){
+    return {cat:'en_camino', label:'🚚 Volviendo a tu depósito', desc:'Mercado Libre ya revisó el producto y te lo está enviando.', bg:'rgba(96,165,250,.15)', color:'#60a5fa'};
+  }
   if(d.claim_status==='closed'){
     if(DEVOL_RESOLUCION_CONCRETADA.has(d.resolution_reason)){
       return {cat:'concretada', label:'✅ Concretada', desc:'La devolución se completó.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
     }
     if(DEVOL_RESOLUCION_NO_CONCRETADA.has(d.resolution_reason)){
       return {cat:'no_concretada', label:'❌ No concretada', desc:'El caso se cerró sin completarse.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
+    }
+    // Motivo ambiguo (p. ej. "warehouse_decision" — MeLi revisó el producto
+    // y decidió, pero el nombre solo no dice para qué lado): nos guiamos
+    // por si la plata se movió y el producto efectivamente volvió.
+    const devolucionCompleta = d.tiene_devolucion && (d.status_money==='refunded' || d.status_money==='retained');
+    if(devolucionCompleta){
+      return {cat:'concretada', label:'✅ Concretada', desc:'La devolución se completó.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
     }
     return {cat:'cerrado', label:'Cerrado', desc:'Este reclamo ya está resuelto y cerrado.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
   }
@@ -2725,12 +2759,17 @@ window.renderDevoluciones = async function(forzar){
     return;
   }
 
-  const abiertas = dataFiltrada.filter(d=>d.claim_status!=='closed').sort((a,b)=>{
+  // "En curso" incluye también los reclamos ya cerrados cuyo producto
+  // todavía está viajando hacia el vendedor (revisión en depósito de MeLi
+  // antes de despachar) — para vos siguen activos aunque el reclamo en sí
+  // ya se haya resuelto.
+  const sigueEnCurso = d => d.claim_status!=='closed' || (d.tiene_devolucion && devolProductoLlegoAlVendedor(d)===false);
+  const abiertas = dataFiltrada.filter(sigueEnCurso).sort((a,b)=>{
     const ap=a.seller_action_pending?1:0, bp=b.seller_action_pending?1:0;
     if(ap!==bp) return bp-ap;
     return new Date(b.claim_last_updated||0)-new Date(a.claim_last_updated||0);
   });
-  const cerradas = dataFiltrada.filter(d=>d.claim_status==='closed').sort((a,b)=>new Date(b.claim_last_updated||0)-new Date(a.claim_last_updated||0));
+  const cerradas = dataFiltrada.filter(d=>!sigueEnCurso(d)).sort((a,b)=>new Date(b.claim_last_updated||0)-new Date(a.claim_last_updated||0));
 
   let html = selectorHtml;
   if(abiertas.length){
