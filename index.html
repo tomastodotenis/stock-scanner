@@ -985,7 +985,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026092103';
+const APP_BUILD = '2026092104';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2725,11 +2725,16 @@ const DEVOL_FILTROS = [
   {value:'cerrado', label:'Cerradas (otro motivo, sin devolución)'},
 ];
 let devolFiltroActivo = '';
+let devolBusquedaActiva = '';
 
 function devolEstadoBadge(fase){
   return `<span style="background:${fase.bg};color:${fase.color};padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">${fase.label}</span>`;
 }
 
+// Trae datos frescos del Worker y repinta. Se usa al entrar a la pestaña,
+// al tocar "Actualizar" y en el polling en segundo plano — NO en cada letra
+// tipeada del buscador ni al cambiar el filtro (eso pinta directo desde la
+// caché, ver pintarDevoluciones más abajo).
 window.renderDevoluciones = async function(forzar){
   const cont = document.getElementById('devolucionesContent');
   if(!cont) return;
@@ -2743,6 +2748,16 @@ window.renderDevoluciones = async function(forzar){
   }
   devolucionesCache = data;
   updateDevolBadge();
+  pintarDevoluciones(data);
+};
+
+// Repinta la lista de devoluciones a partir de datos ya en memoria (sin
+// pegarle al Worker) — la usan el buscador y el filtro desplegable para
+// responder al instante en cada tecla/cambio, y renderDevoluciones la llama
+// después de traer datos frescos.
+function pintarDevoluciones(data){
+  const cont = document.getElementById('devolucionesContent');
+  if(!cont) return;
 
   if(data.length===0){
     cont.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">No hay devoluciones ni reclamos registrados todavía. 🎉<br><small>Van a ir apareciendo solas a medida que MeLi las notifique.</small></div>';
@@ -2787,15 +2802,36 @@ window.renderDevoluciones = async function(forzar){
     </div>`;
   };
 
-  const dataFiltrada = devolFiltroActivo ? data.filter(d=>devolFase(d).cat===devolFiltroActivo) : data;
+  // Búsqueda por número de venta (o de reclamo) — simple "contiene", sin
+  // distinguir mayúsculas, para no obligar a tipear el número completo.
+  const busqueda = devolBusquedaActiva.trim();
+  const dataBuscada = busqueda
+    ? data.filter(d => String(d.order_id||'').includes(busqueda) || String(d.claim_id||'').includes(busqueda))
+    : data;
+  const dataFiltrada = devolFiltroActivo ? dataBuscada.filter(d=>devolFase(d).cat===devolFiltroActivo) : dataBuscada;
+
+  const buscadorHtml = `
+    <input id="devolBuscadorInput" class="inp" type="search" inputmode="numeric" placeholder="🔎 Buscar por número de venta..." value="${devolBusquedaActiva.replace(/"/g,'&quot;')}" style="margin-bottom:8px;width:100%;" oninput="devolBusquedaActiva=this.value;pintarDevoluciones(devolucionesCache);">`;
 
   const selectorHtml = `
-    <select id="devolFiltroSelect" onchange="devolFiltroActivo=this.value;renderDevoluciones();" class="inp" style="margin-bottom:10px;width:100%;">
+    <select id="devolFiltroSelect" onchange="devolFiltroActivo=this.value;pintarDevoluciones(devolucionesCache);" class="inp" style="margin-bottom:10px;width:100%;">
       ${DEVOL_FILTROS.map(f=>`<option value="${f.value}" ${f.value===devolFiltroActivo?'selected':''}>${f.label}</option>`).join('')}
     </select>`;
 
+  // Refocaliza el buscador después de repintar el HTML (se pierde el foco
+  // en cada tecla porque reconstruimos el innerHTML entero).
+  const reenfocarBuscador = () => {
+    const inp = document.getElementById('devolBuscadorInput');
+    if(inp && document.activeElement!==inp){
+      inp.focus();
+      const pos = inp.value.length;
+      try{ inp.setSelectionRange(pos, pos); }catch(e){}
+    }
+  };
+
   if(dataFiltrada.length===0){
-    cont.innerHTML = selectorHtml + '<div style="text-align:center;padding:20px;color:var(--muted);">No hay devoluciones con ese filtro.</div>';
+    cont.innerHTML = buscadorHtml + selectorHtml + `<div style="text-align:center;padding:20px;color:var(--muted);">${busqueda ? 'No encontramos ninguna venta con ese número.' : 'No hay devoluciones con ese filtro.'}</div>`;
+    reenfocarBuscador();
     return;
   }
 
@@ -2811,16 +2847,19 @@ window.renderDevoluciones = async function(forzar){
   });
   const cerradas = dataFiltrada.filter(d=>!sigueEnCurso(d)).sort((a,b)=>new Date(b.claim_last_updated||0)-new Date(a.claim_last_updated||0));
 
-  let html = selectorHtml;
+  let html = buscadorHtml + selectorHtml;
   if(abiertas.length){
     html += `<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:6px;">En curso (${abiertas.length})</div>`;
     html += abiertas.map(card).join('');
   }
   if(cerradas.length){
-    html += `<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin:14px 0 6px;">Cerradas recientemente</div>`;
-    html += cerradas.slice(0,20).map(card).join('');
+    html += `<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin:14px 0 6px;">${busqueda?'Cerradas':'Cerradas recientemente'}</div>`;
+    // Buscando un número puntual mostramos todas las coincidencias; si no
+    // hay búsqueda, seguimos limitando a las 20 más recientes como antes.
+    html += (busqueda ? cerradas : cerradas.slice(0,20)).map(card).join('');
   }
   cont.innerHTML = html;
+  reenfocarBuscador();
 };
 
 function updateDevolBadge(){
