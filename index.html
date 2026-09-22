@@ -985,7 +985,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026092102';
+const APP_BUILD = '2026092103';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2599,19 +2599,30 @@ const DEVOL_RESOLUCION_CONCRETADA = new Set(['item_returned','payment_refunded',
 const DEVOL_RESOLUCION_NO_CONCRETADA = new Set(['return_expired','return_canceled','warehouse_timeout','timeout','respondent_timeout','shipment_not_stopped','opened_claim_by_mistake','buyer_claim_opened','buyer_dispute_opened']);
 
 // Algunas devoluciones pasan primero por un depósito de MeLi (revisión/
-// triage) y recién después se despachan hacia el vendedor. En esos casos
-// el reclamo (claim) puede figurar "closed" — la disputa ya se resolvió —
-// mientras el paquete todavía viaja hacia tu depósito. Esta función mira
-// el envío cuyo destino sos vos (seller_address) y devuelve:
-//   true  = ya te llegó (o no había un tramo así: devolución directa)
-//   false = todavía está en camino hacia vos
-function devolProductoLlegoAlVendedor(d){
+// triage) y recién después se despachan hacia el vendedor. Esta función
+// distingue en qué punto de ese trayecto está el producto, mirando los
+// envíos de la devolución (shipments) en vez de un solo campo:
+//   'llego'      → ya está en tus manos (o es una devolución directa, sin
+//                  depósito intermedio, y el envío ya figura entregado).
+//   'volviendo'  → MeLi ya decidió y generó el envío hacia vos, todavía en
+//                  camino (existe un tramo con destino seller_address).
+//   'en_revision'→ el producto llegó al depósito de MeLi pero el tramo
+//                  hacia vos todavía NI SIQUIERA SE GENERÓ — están
+//                  revisando el producto para decidir qué hacer (esto es
+//                  justo lo que MeLi llama "Otros problemas" en su panel:
+//                  no es una falla, es una revisión en curso).
+//   'viajando'   → todavía no llegó ni al depósito de MeLi ni a vos.
+function devolFaseEnvio(d){
+  if(!d.tiene_devolucion) return 'llego'; // reclamo sin devolución física, no aplica
   const tramosHaciaVendedor = (d.shipments||[]).filter(s=>s.destino==='seller_address');
   if(tramosHaciaVendedor.length){
-    return tramosHaciaVendedor.every(s=>s.status==='delivered');
+    return tramosHaciaVendedor.every(s=>s.status==='delivered') ? 'llego' : 'volviendo';
   }
-  if(!d.tiene_devolucion) return true; // reclamo sin devolución física, no aplica
-  return d.return_status==='delivered';
+  // No hay (todavía) un tramo hacia vos. Si el tramo principal ya está
+  // entregado (llegó al depósito de MeLi en un caso con revisión intermedia,
+  // o directo a vos en un caso sin depósito), lo tomamos como "en revisión".
+  if(d.return_status==='delivered') return 'en_revision';
+  return 'viajando';
 }
 
 // Categorías (cat) usadas tanto para el badge de cada tarjeta como para el
@@ -2620,20 +2631,28 @@ function devolProductoLlegoAlVendedor(d){
 // por Mercado Libre / Concretadas / No concretadas / Otros problemas), para
 // no inventar categorías nuevas que no se correspondan con lo que ves ahí.
 function devolFase(d){
-  // Si el producto todavía viene viajando hacia tu depósito (caso típico:
-  // una devolución con revisión intermedia — MeLi la recibe, la revisa en
-  // su depósito y recién ahí te la despacha a vos), mostramos eso primero
-  // — sin importar si el reclamo en sí ya figura "closed", porque para vos
-  // lo relevante es que el producto todavía no llegó.
-  if(d.tiene_devolucion && devolProductoLlegoAlVendedor(d)===false){
-    return {cat:'en_camino', label:'🚚 Volviendo a tu depósito', desc:'Mercado Libre ya revisó el producto en su depósito y te lo está enviando.', bg:'rgba(96,165,250,.15)', color:'#60a5fa'};
+  // Estos dos casos se muestran primero, sin importar si el reclamo (claim)
+  // ya figura "closed" — la disputa puede estar resuelta mientras el
+  // trámite físico de la devolución sigue su curso, y eso es lo relevante
+  // para vos acá.
+  const envio = devolFaseEnvio(d);
+  if(envio==='volviendo'){
+    return {cat:'en_camino', label:'🚚 Volviendo a tu depósito', desc:'Mercado Libre ya revisó el producto y te lo está enviando.', bg:'rgba(96,165,250,.15)', color:'#60a5fa'};
+  }
+  if(envio==='en_revision'){
+    // Esto es lo que MeLi muestra como "Otros problemas" en Posventa — no
+    // es una falla, es el depósito de MeLi revisando el producto antes de
+    // decidir qué hacer con él. Va agrupado con "atencion" (misma familia
+    // que "Próximas por atender" en el panel de MeLi) aunque no requiera
+    // una acción tuya todavía.
+    return {cat:'atencion', label:'🔍 En revisión en el depósito de MeLi', desc:'Están comprobando el estado del producto — todavía no definieron el resultado, te van a avisar.', bg:'rgba(167,139,250,.18)', color:'#a78bfa'};
   }
   if(d.claim_status==='closed'){
     if(DEVOL_RESOLUCION_CONCRETADA.has(d.resolution_reason)){
       return {cat:'concretada', label:'✅ Concretada', desc:'La devolución se completó.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
     }
     if(DEVOL_RESOLUCION_NO_CONCRETADA.has(d.resolution_reason)){
-      return {cat:'no_concretada', label:'❌ No concretada', desc:'El caso se cerró sin completarse.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
+      return {cat:'no_concretada', label:'❌ No concretada', desc:'El trámite de devolución no se completó — muchas veces es porque el comprador se arrepintió y vos te quedaste con la plata de la venta.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
     }
     // Motivo ambiguo (p. ej. "warehouse_decision" — MeLi revisó el producto
     // y decidió, pero el nombre solo no dice para qué lado): nos guiamos
@@ -2649,7 +2668,7 @@ function devolFase(d){
   // (p. ej. responder un mensaje con vencimiento) — por eso agrupa todo
   // bajo la misma categoría "atencion" que MeLi llama "Próximas por atender".
   if(d.seller_action_pending){
-    return {cat:'atencion', label:'🔴 Próxima por atender', desc:'Requiere una acción tuya — entrá a Mercado Libre (Reclamos) a resolverla.', bg:'rgba(239,68,68,.18)', color:'#f87171'};
+    return {cat:'atencion', label:'🔴 Para tu revisión', desc:'Requiere una acción tuya — entrá a Mercado Libre (Reclamos) a resolverla.', bg:'rgba(239,68,68,.18)', color:'#f87171'};
   }
   if(d.claim_stage==='dispute'){
     return {cat:'mediacion', label:'⚖️ En revisión por Mercado Libre', desc:'Mercado Libre está interviniendo directamente para resolver el reclamo.', bg:'rgba(167,139,250,.18)', color:'#a78bfa'};
@@ -2700,7 +2719,7 @@ const DEVOL_FILTROS = [
   {value:'en_camino', label:'🚚 En camino'},
   {value:'mediacion', label:'⚖️ En revisión por Mercado Libre'},
   {value:'reclamo_abierto', label:'🗨️ Reclamos sin devolución todavía'},
-  {value:'problema', label:'⚠️ Otros problemas'},
+  {value:'problema', label:'⚠️ Envío con inconvenientes'},
   {value:'concretada', label:'✅ Concretadas'},
   {value:'no_concretada', label:'❌ No concretadas'},
   {value:'cerrado', label:'Cerradas (otro motivo, sin devolución)'},
@@ -2784,7 +2803,7 @@ window.renderDevoluciones = async function(forzar){
   // todavía está viajando hacia el vendedor (revisión en depósito de MeLi
   // antes de despachar) — para vos siguen activos aunque el reclamo en sí
   // ya se haya resuelto.
-  const sigueEnCurso = d => d.claim_status!=='closed' || (d.tiene_devolucion && devolProductoLlegoAlVendedor(d)===false);
+  const sigueEnCurso = d => d.claim_status!=='closed' || (d.tiene_devolucion && (devolFaseEnvio(d)==='volviendo' || devolFaseEnvio(d)==='en_revision'));
   const abiertas = dataFiltrada.filter(sigueEnCurso).sort((a,b)=>{
     const ap=a.seller_action_pending?1:0, bp=b.seller_action_pending?1:0;
     if(ap!==bp) return bp-ap;
