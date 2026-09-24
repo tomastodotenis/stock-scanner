@@ -532,6 +532,7 @@
         <button class="btn btn-ghost btn-sm" onclick="mapaAgregarRef()">+ Referencia</button>
         <button class="btn btn-ghost btn-sm" onclick="mapaDeshacer()">↩️ Deshacer</button>
       </div>
+      <div class="card" id="mapaSelBar" style="display:none;padding:11px 13px;"></div>
       <div class="card" id="mapaHint" style="padding:9px 12px;font-size:.74rem;color:var(--muted);line-height:1.5;">
         Tocá un módulo para ver qué hay cargado ahí. Doble click (o doble tap) para editarlo directamente.
       </div>
@@ -543,7 +544,6 @@
           <button class="btn btn-ghost btn-sm" onclick="mapaZoomReset()">⟳</button>
         </div>
       </div>
-      <div class="card" id="mapaSelBar" style="display:none;padding:11px 13px;"></div>
       <div class="card" id="mapaPanel" style="display:none;padding:11px 13px;"></div>
     </div>
   </div>
@@ -1057,7 +1057,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026092401';
+const APP_BUILD = '2026092402';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2102,6 +2102,7 @@ window.mapaAgregarSector=function(){
   mapaSelected=id;
   renderMapa();
   fbSaveMapa();
+  showToast('👆 Elegí a qué sector real corresponde, arriba del mapa','ok');
 };
 window.mapaAgregarRef=function(){
   if(!depActivo)return;
