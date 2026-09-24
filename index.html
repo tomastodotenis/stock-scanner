@@ -262,7 +262,7 @@
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
     <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">⚙️ Config. Alertas</div>
     <div class="tab" data-tab="promos">🏷️ Promos MeLi</div>
-    <div class="tab" data-tab="devoluciones" id="tabDevoluciones">📦 Devoluciones<span id="devolBadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:.65rem;margin-left:5px;font-weight:700;"></span></div>
+    <div class="tab" data-tab="devoluciones" id="tabDevoluciones">📦 Devoluciones<span id="devolBadge" onclick="event.stopPropagation();verPendientesDevolucion();" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:.65rem;margin-left:5px;font-weight:700;cursor:pointer;"></span></div>
     <div class="tab" data-tab="ranking">🏆 Ranking</div>
     <div class="tab" data-tab="planilla">📄 Planilla</div>
     <div class="tab" data-tab="auditoria" id="tabAuditoria" style="display:none;">🧮 Auditoría</div>
@@ -985,7 +985,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026092104';
+const APP_BUILD = '2026092401';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2869,6 +2869,15 @@ function updateDevolBadge(){
   if(pendientes>0){ badge.style.display='inline-block'; badge.textContent = pendientes; }
   else{ badge.style.display='none'; }
 }
+
+// Tocar el círculo rojo de "pendientes" en la pestaña: entra directo a
+// Devoluciones con el filtro de "Próximas por atender" ya aplicado.
+window.verPendientesDevolucion = function(){
+  devolFiltroActivo = 'atencion';
+  const sel = document.getElementById('devolFiltroSelect');
+  if(sel) sel.value = 'atencion';
+  switchTab('devoluciones');
+};
 
 window.verDetalleDevolucion = function(claimId){
   devolExpandido = (devolExpandido===claimId) ? null : claimId;
