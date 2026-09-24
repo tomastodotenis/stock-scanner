@@ -262,7 +262,7 @@
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
     <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">⚙️ Config. Alertas</div>
     <div class="tab" data-tab="promos">🏷️ Promos MeLi</div>
-    <div class="tab" data-tab="devoluciones" id="tabDevoluciones">📦 Devoluciones<span id="devolBadge" onclick="event.stopPropagation();verPendientesDevolucion();" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:.65rem;margin-left:5px;font-weight:700;cursor:pointer;"></span></div>
+    <div class="tab" data-tab="devoluciones" id="tabDevoluciones">📦 Devoluciones</div>
     <div class="tab" data-tab="ranking">🏆 Ranking</div>
     <div class="tab" data-tab="planilla">📄 Planilla</div>
     <div class="tab" data-tab="auditoria" id="tabAuditoria" style="display:none;">🧮 Auditoría</div>
@@ -985,7 +985,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026092401';
+const APP_BUILD = '2026092402';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2747,7 +2747,6 @@ window.renderDevoluciones = async function(forzar){
     return;
   }
   devolucionesCache = data;
-  updateDevolBadge();
   pintarDevoluciones(data);
 };
 
@@ -2862,23 +2861,6 @@ function pintarDevoluciones(data){
   reenfocarBuscador();
 };
 
-function updateDevolBadge(){
-  const badge = document.getElementById('devolBadge');
-  if(!badge) return;
-  const pendientes = devolucionesCache.filter(d=>d.seller_action_pending).length;
-  if(pendientes>0){ badge.style.display='inline-block'; badge.textContent = pendientes; }
-  else{ badge.style.display='none'; }
-}
-
-// Tocar el círculo rojo de "pendientes" en la pestaña: entra directo a
-// Devoluciones con el filtro de "Próximas por atender" ya aplicado.
-window.verPendientesDevolucion = function(){
-  devolFiltroActivo = 'atencion';
-  const sel = document.getElementById('devolFiltroSelect');
-  if(sel) sel.value = 'atencion';
-  switchTab('devoluciones');
-};
-
 window.verDetalleDevolucion = function(claimId){
   devolExpandido = (devolExpandido===claimId) ? null : claimId;
   renderDevoluciones();
@@ -2901,21 +2883,13 @@ window.copiarNumeroVenta = function(orderId){
   }
 };
 
-// Polling liviano en segundo plano (cada 90s) para que el número en la
-// pestaña esté al día aunque no estés mirándola, y para avisar con un
-// toast si aparece una devolución nueva que necesita revisión.
+// Polling liviano en segundo plano (cada 90s), solo para que la lista esté
+// al día si estás mirando la pestaña Devoluciones en ese momento.
 async function pollDevolucionesBackground(){
   try{
-    const prevPendientes = devolucionesCache.filter(d=>d.seller_action_pending).length;
     const data = await fetchDevoluciones();
     if(data===null) return;
     devolucionesCache = data;
-    updateDevolBadge();
-    const nuevaPendientes = data.filter(d=>d.seller_action_pending).length;
-    if(nuevaPendientes > prevPendientes){
-      showToast('📦 Nueva devolución necesita tu revisión','err');
-      vibrateDevice(false);
-    }
     if(document.getElementById('page-devoluciones')?.classList.contains('active')) renderDevoluciones();
   }catch(e){ /* sin conexión, no pasa nada */ }
 }
