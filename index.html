@@ -213,6 +213,52 @@
     .toast.show{transform:translateX(-50%) translateY(0);}
     .toast.ok{color:var(--accent);border-color:rgba(0,212,170,.4);}
     .toast.err{color:var(--danger);border-color:rgba(239,68,68,.4);}
+    /* MAPA */
+    .mapa-wrap{
+      position:relative; width:min(100%,900px); aspect-ratio:3/4; margin-inline:auto;
+      background:
+        linear-gradient(var(--surface) 1px, transparent 1px) 0 0/100% 40px,
+        linear-gradient(90deg, var(--surface) 1px, transparent 1px) 0 0/40px 100%,
+        var(--bg);
+      border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;
+      touch-action:none;
+    }
+    .mapa-modulo{
+      position:absolute; border-radius:7px; border:1.5px solid transparent;
+      background:var(--surface2); cursor:grab; user-select:none;
+      display:flex; align-items:center; justify-content:center; text-align:center; padding:2px;
+      font-size:.68rem; font-weight:700; color:var(--text); letter-spacing:.01em;
+      transition:box-shadow .15s, border-color .15s, background .15s;
+    }
+    .mapa-modulo:active{cursor:grabbing;}
+    .mapa-modulo.mapa-selected{border-color:var(--accent); box-shadow:0 0 0 3px rgba(200,245,0,.18);}
+    .mapa-modulo.mapa-referencia{
+      background:repeating-linear-gradient(135deg, var(--surface) 0 6px, var(--surface2) 6px 12px);
+      color:var(--muted); border-style:dashed; border-color:var(--border);
+    }
+    .mapa-modulo.mapa-referencia.mapa-selected{border-color:#a78bfa; box-shadow:0 0 0 3px rgba(167,139,250,.18);}
+    .mapa-modulo.mapa-huerfano{border-color:var(--danger); border-style:dashed;}
+    .mapa-modulo.mapa-flash{ animation:mapaFlash 1.1s ease-in-out 2; border-color:#a78bfa !important; }
+    @keyframes mapaFlash{
+      0%,100%{box-shadow:0 0 0 0 rgba(167,139,250,.5);}
+      50%{box-shadow:0 0 0 9px rgba(167,139,250,0);}
+    }
+    .mapa-handle{
+      position:absolute; right:-6px; bottom:-6px; width:16px; height:16px;
+      background:var(--accent); border-radius:50%; border:2px solid var(--bg);
+      cursor:nwse-resize; display:none;
+    }
+    .mapa-modulo.mapa-selected .mapa-handle{display:block;}
+    .mapa-del{
+      position:absolute; left:-6px; top:-6px; width:16px; height:16px;
+      background:var(--danger); color:#fff; border-radius:50%; display:none;
+      align-items:center; justify-content:center; font-size:.7rem; font-weight:700; cursor:pointer;
+    }
+    .mapa-modulo.mapa-selected .mapa-del{display:flex;}
+    #mapaZoomCtrls{position:absolute; right:8px; bottom:8px; display:flex; flex-direction:column; gap:5px;}
+    .mapa-prodrow{padding:7px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:8px; font-size:.8rem;}
+    .mapa-prodrow:last-child{border-bottom:none;}
+    .mapa-prodrow .qty{color:var(--accent); font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap;}
   </style>
 </head>
 <body>
@@ -258,11 +304,11 @@
     <div class="tab" data-tab="stock">📋 Stock</div>
     <div class="tab" data-tab="historial">📜 Historial</div>
     <div class="tab" data-tab="sectores">📍 Sectores</div>
+    <div class="tab" data-tab="mapa">🗺️ Mapa</div>
     <div class="tab" data-tab="empleados" id="tabEmpleados" style="display:none;">👤 Empleados</div>
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
     <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">⚙️ Config. Alertas</div>
     <div class="tab" data-tab="promos">🏷️ Promos MeLi</div>
-    <div class="tab" data-tab="devoluciones" id="tabDevoluciones">📦 Devoluciones</div>
     <div class="tab" data-tab="ranking">🏆 Ranking</div>
     <div class="tab" data-tab="planilla">📄 Planilla</div>
     <div class="tab" data-tab="auditoria" id="tabAuditoria" style="display:none;">🧮 Auditoría</div>
@@ -460,6 +506,45 @@
         </div>
         <div id="secList"><div class="empty"><div class="icon">📍</div><p>Sin sectores.</p></div></div>
       </div>
+    </div>
+  </div>
+
+  <!-- MAPA -->
+  <div class="page" id="page-mapa">
+    <div style="padding:13px 15px;display:flex;flex-direction:column;gap:10px;">
+      <div style="display:flex;gap:6px;">
+        <button class="modo-btn active consulta" id="mapaBtnVer" onclick="setMapaModo('ver')" style="flex:1;justify-content:center;">👁 Ver</button>
+        <button class="modo-btn" id="mapaBtnEditar" onclick="setMapaModo('editar')" style="flex:1;justify-content:center;">✏️ Editar</button>
+      </div>
+      <div id="mapaVerBar">
+        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto (ej: joma triumph)" oninput="mapaBuscarProducto(this.value)" />
+      </div>
+      <div id="mapaEditBar" style="display:none;flex-wrap:wrap;gap:6px;align-items:center;">
+        <button class="btn btn-primary btn-sm" onclick="mapaAgregarSector()">+ Sector</button>
+        <select id="mapaRefPreset" class="inp" style="width:auto;flex:1;min-width:110px;">
+          <option value="Oficina">🏢 Oficina</option>
+          <option value="Baño">🚻 Baño</option>
+          <option value="Cocina">🍽️ Cocina</option>
+          <option value="Escalera">🪜 Escalera</option>
+          <option value="Montacargas">🛗 Montacargas</option>
+          <option value="Otro">➕ Otro</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="mapaAgregarRef()">+ Referencia</button>
+        <button class="btn btn-ghost btn-sm" onclick="mapaDeshacer()">↩️ Deshacer</button>
+      </div>
+      <div class="card" id="mapaHint" style="padding:9px 12px;font-size:.74rem;color:var(--muted);line-height:1.5;">
+        Tocá un módulo para ver qué hay cargado ahí. Doble click (o doble tap) para editarlo directamente.
+      </div>
+      <div class="mapa-wrap" id="mapaPlano">
+        <div id="mapaInner"></div>
+        <div id="mapaZoomCtrls">
+          <button class="btn btn-ghost btn-sm" onclick="mapaZoomBtn(1.25)">+</button>
+          <button class="btn btn-ghost btn-sm" onclick="mapaZoomBtn(0.8)">–</button>
+          <button class="btn btn-ghost btn-sm" onclick="mapaZoomReset()">⟳</button>
+        </div>
+      </div>
+      <div class="card" id="mapaSelBar" style="display:none;padding:11px 13px;"></div>
+      <div class="card" id="mapaPanel" style="display:none;padding:11px 13px;"></div>
     </div>
   </div>
 
@@ -846,19 +931,6 @@
     </div>
   </div>
 
-  <!-- DEVOLUCIONES -->
-  <div class="page" id="page-devoluciones">
-    <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);">Devoluciones y reclamos de MeLi</div>
-        <button class="btn btn-ghost btn-sm" onclick="renderDevoluciones(true)">🔄 Actualizar</button>
-      </div>
-      <div id="devolucionesContent">
-        <div style="text-align:center;padding:20px;color:var(--muted);">Cargando...</div>
-      </div>
-    </div>
-  </div>
-
   <!-- MELI SYNC -->
   <div class="page" id="page-meli">
     <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
@@ -985,7 +1057,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026092402';
+const APP_BUILD = '2026092401';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1009,7 +1081,6 @@ document.addEventListener('visibilitychange', ()=>{
   if(!document.hidden){
     checkForUpdate();
     if(document.getElementById('page-meli')?.classList.contains('active')) adminMeliPanel();
-    if(document.getElementById('page-devoluciones')?.classList.contains('active')) renderDevoluciones();
   }
 });
 setInterval(checkForUpdate, 5*60*1000);
@@ -1019,7 +1090,7 @@ let catalog={}, movimientos=[], empleados={};
 // stock[depId][canonicalKey] = cantidad
 // sectores[depId] = { secId: {id,nombre,codigo} }
 // sectorMap[depId][canonicalKey] = secId
-let stockDB={}, sectoresDB={}, sectorMapDB={};
+let stockDB={}, sectoresDB={}, sectorMapDB={}, mapaDB={}; // mapaDB[depId] = [ {id,tipo:'sector'|'referencia', secId?, icono?, nombreRef?, x,y,w,h} ]
 let depositos={}; // depId -> { id, nombre }
 let depActivo=null; // depósito donde está operando este dispositivo
 
@@ -1073,6 +1144,11 @@ async function fbSaveAlertasConfig(){
 async function fbSaveSectores(){
   if(!currentUser||!depActivo)return;
   try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','sectores_'+depActivo),{sectores:sectoresDB[depActivo]||{},upd:new Date().toISOString()});}catch(e){console.error(e);}
+}
+async function fbSaveMapa(depId){
+  depId=depId||depActivo;
+  if(!currentUser||!depId)return;
+  try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','mapa_'+depId),{modulos:mapaDB[depId]||[],upd:new Date().toISOString()});}catch(e){console.error(e);}
 }
 async function fbSaveEmpleados(){
   if(!currentUser)return;
@@ -1160,6 +1236,7 @@ function fbListenStock(){
         sectorMapDB[depId]=data.sectorMap||{};
         renderStock();
         if(document.getElementById('page-sectores')?.classList.contains('active'))renderSectores();
+        if(depId===depActivo&&document.getElementById('page-mapa')?.classList.contains('active'))mapaRefrescarPanelAbierto();
       });
     });
   }catch(e){console.error(e);}
@@ -1201,6 +1278,8 @@ async function fbLoad(){
       const sc=await getDoc(doc(db,'config','sectores_'+depId));
       if(sc.exists())sectoresDB[depId]=sc.data().sectores||{};
       else sectoresDB[depId]={};
+      const mc=await getDoc(doc(db,'config','mapa_'+depId));
+      mapaDB[depId]=(mc.exists()&&Array.isArray(mc.data().modulos))?mc.data().modulos:[];
     }
     const ec=await getDoc(doc(db,'config','empleados'));
     if(ec.exists())empleados=ec.data().empleados||{};
@@ -1356,6 +1435,13 @@ window.doLogin=async function(){
   catch(ex){err.style.display='block';}
 };
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')doLogin();});
+document.addEventListener('keydown',function(e){
+  const modal=document.getElementById('adminModal');
+  if(!modal||!modal.classList.contains('show'))return;
+  if(e.key>='0'&&e.key<='9'){pinPress(e.key);}
+  else if(e.key==='Backspace'){e.preventDefault();pinPress('←');}
+  else if(e.key==='Escape'){closeAdminModal();}
+});
 window.doLogout=async function(){
   if(!confirm('¿Cerrar sesión?'))return;
   await markOffline();
@@ -1436,7 +1522,7 @@ window.switchTab=function(name){
   if(name==='planilla')renderPlanilla();
   if(name==='auditoria')renderAuditoria();
   if(name==='meli')renderMeliTab();
-  if(name==='devoluciones')renderDevoluciones();
+  if(name==='mapa')renderMapa();
 };
 function switchSub(name){
   document.querySelectorAll('.stab').forEach(t=>t.classList.toggle('active',t.textContent.includes(name==='saldo'?'Saldo':'Mov')));
@@ -1937,6 +2023,439 @@ function renderSectores(){
     </div>`).join('');
 }
 window.verSector=function(id){switchTab('stock');const f=document.getElementById('secFilter');if(f){f.value=id;filterSec=id;renderStock();}};
+
+// ── MAPA DE DEPÓSITO ──
+// Los módulos del mapa NUNCA duplican datos de sectoresDB/stockDB: cada módulo tipo 'sector'
+// solo guarda una referencia (secId) al sector real. Las posiciones (x,y,w,h) viven aparte,
+// en mapaDB, para que mover/borrar algo en el mapa nunca toque un sector ni su stock real.
+const MAPA_CANVAS_FACTOR = 3; // el lienzo real es 3x más grande que lo que se ve por defecto
+const MAPA_CANVAS_MAX = MAPA_CANVAS_FACTOR*100;
+const MAPA_MIN_SCALE = 1/MAPA_CANVAS_FACTOR;
+const MAPA_MAX_SCALE = 4;
+const MAPA_PRESET_ICONS = {Oficina:'🏢','Baño':'🚻',Cocina:'🍽️',Escalera:'🪜',Montacargas:'🛗',Otro:'📍'};
+
+let mapaModo='ver', mapaSelected=null, mapaDrag=null, mapaDividirDir='h', mapaEventosListos=false;
+let mapaHistoryDB={}, mapaViewDB={};
+
+function mapaLayout(){
+  if(!depActivo)return [];
+  if(!mapaDB[depActivo])mapaDB[depActivo]=[];
+  return mapaDB[depActivo];
+}
+function mapaView(){
+  if(!mapaViewDB[depActivo])mapaViewDB[depActivo]={scale:1,tx:0,ty:0};
+  return mapaViewDB[depActivo];
+}
+function mapaHistory(){
+  if(!mapaHistoryDB[depActivo])mapaHistoryDB[depActivo]=[];
+  return mapaHistoryDB[depActivo];
+}
+function mapaSnapshot(){
+  const h=mapaHistory();
+  h.push(JSON.parse(JSON.stringify(mapaLayout())));
+  if(h.length>25)h.shift();
+}
+window.mapaDeshacer=function(){
+  const h=mapaHistory();
+  if(!h.length){showToast('Nada para deshacer','err');return;}
+  mapaDB[depActivo]=h.pop();
+  mapaSelected=null;
+  renderMapa();
+  fbSaveMapa();
+};
+function mapaClamp(v,min,max){return Math.max(min,Math.min(max,v));}
+function mapaAplicarTransform(){
+  const v=mapaView();
+  const inner=document.getElementById('mapaInner');
+  if(inner)inner.style.transform=`translate(${v.tx}px,${v.ty}px) scale(${v.scale})`;
+}
+
+window.setMapaModo=function(modo){
+  mapaModo=modo;
+  mapaSelected=null;
+  document.getElementById('mapaBtnVer').classList.toggle('active',modo==='ver');
+  document.getElementById('mapaBtnEditar').classList.toggle('active',modo==='editar');
+  document.getElementById('mapaVerBar').style.display=modo==='ver'?'block':'none';
+  document.getElementById('mapaEditBar').style.display=modo==='editar'?'flex':'none';
+  document.getElementById('mapaPanel').style.display='none';
+  document.getElementById('mapaHint').textContent = modo==='editar'
+    ? 'El mapa es más grande que lo que ves en pantalla — alejate con "–" para ubicar cosas más lejos. Arrastrá cada módulo para moverlo y el puntito verde para agrandarlo. La cruz roja lo borra.'
+    : 'Tocá un módulo para ver el stock real cargado ahí. Doble click (o doble tap) para editarlo directamente.';
+  renderMapa();
+};
+function mapaEditarModulo(m){
+  mapaModo='editar';
+  mapaSelected=m.id;
+  document.getElementById('mapaBtnVer').classList.remove('active');
+  document.getElementById('mapaBtnEditar').classList.add('active');
+  document.getElementById('mapaVerBar').style.display='none';
+  document.getElementById('mapaEditBar').style.display='flex';
+  document.getElementById('mapaPanel').style.display='none';
+  renderMapa();
+}
+
+window.mapaAgregarSector=function(){
+  if(!depActivo)return;
+  mapaSnapshot();
+  const id='mod_'+Date.now();
+  mapaLayout().push({id,tipo:'sector',secId:null,x:10,y:10,w:30,h:10});
+  mapaSelected=id;
+  renderMapa();
+  fbSaveMapa();
+};
+window.mapaAgregarRef=function(){
+  if(!depActivo)return;
+  mapaSnapshot();
+  const preset=document.getElementById('mapaRefPreset').value;
+  const id='mod_'+Date.now();
+  const wh=(preset==='Escalera'||preset==='Montacargas')?10:20;
+  mapaLayout().push({id,tipo:'referencia',icono:MAPA_PRESET_ICONS[preset]||'📍',nombreRef:preset==='Otro'?'Referencia':preset,x:10,y:10,w:wh,h:14});
+  mapaSelected=id;
+  renderMapa();
+  fbSaveMapa();
+};
+window.mapaVincularSector=function(secId){
+  const m=mapaLayout().find(s=>s.id===mapaSelected);
+  if(!m)return;
+  mapaSnapshot();
+  m.secId=secId||null;
+  renderMapa();
+  fbSaveMapa();
+};
+window.mapaRenombrarRef=function(val){
+  const m=mapaLayout().find(s=>s.id===mapaSelected);
+  if(!m)return;
+  m.nombreRef=val;
+  const el=document.querySelector(`#mapaInner [data-id="${m.id}"] span`);
+  if(el)el.textContent=(m.icono||'📍')+' '+(val||'Referencia');
+};
+window.mapaSetDividirDir=function(dir){
+  mapaDividirDir=dir;
+  mapaUpdateSelBar();
+};
+window.mapaDividir=function(){
+  const m=mapaLayout().find(s=>s.id===mapaSelected);
+  if(!m)return;
+  const n=parseInt(document.getElementById('mapaDividirN').value,10);
+  if(!n||n<2||n>20){showToast('Ingresá un número entre 2 y 20','err');return;}
+  mapaSnapshot();
+  const arr=mapaLayout();
+  const idx=arr.findIndex(s=>s.id===m.id);
+  const horizontal=mapaDividirDir==='h';
+  const base={tipo:m.tipo,secId:m.secId,icono:m.icono,nombreRef:m.nombreRef};
+  const nuevos=[];
+  for(let i=0;i<n;i++){
+    if(horizontal){
+      const mw=m.w/n;
+      nuevos.push({...base,id:m.id+'-m'+(i+1),x:m.x+mw*i,y:m.y,w:mw,h:m.h});
+    }else{
+      const mh=m.h/n;
+      nuevos.push({...base,id:m.id+'-m'+(i+1),x:m.x,y:m.y+mh*i,w:m.w,h:mh});
+    }
+  }
+  arr.splice(idx,1,...nuevos);
+  mapaSelected=null;
+  renderMapa();
+  fbSaveMapa();
+};
+
+function mapaUpdateSelBar(){
+  const bar=document.getElementById('mapaSelBar');
+  if(mapaModo!=='editar'||!mapaSelected){bar.style.display='none';return;}
+  const m=mapaLayout().find(s=>s.id===mapaSelected);
+  if(!m){bar.style.display='none';return;}
+  bar.style.display='block';
+  let html='';
+  if(m.tipo==='sector'){
+    const secs=Object.values(getSectores()).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+    html+='<div style="font-size:.74rem;color:var(--muted);margin-bottom:5px;">Vincular a sector real:</div>';
+    html+=`<select id="mapaSelSector" class="inp" onchange="mapaVincularSector(this.value)" style="margin-bottom:10px;">`;
+    html+='<option value="">— Sin vincular —</option>';
+    html+=secs.map(s=>`<option value="${s.id}"${m.secId===s.id?' selected':''}>${s.nombre}</option>`).join('');
+    html+='</select>';
+    if(!secs.length)html+='<div style="font-size:.72rem;color:var(--muted);margin:-6px 0 10px;">Todavía no cargaste sectores para este depósito — creálos en la pestaña 📍 Sectores.</div>';
+  }else{
+    html+='<div style="font-size:.74rem;color:var(--muted);margin-bottom:5px;">Nombre de la referencia:</div>';
+    html+=`<input id="mapaRefNombre" type="text" class="inp" value="${(m.nombreRef||'').replace(/"/g,'&quot;')}" oninput="mapaRenombrarRef(this.value)" onblur="fbSaveMapa()" style="margin-bottom:10px;">`;
+  }
+  html+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
+  html+='<span style="font-size:.76rem;color:var(--muted);">Dividir en</span>';
+  html+='<input id="mapaDividirN" type="text" inputmode="numeric" value="2" class="inp" style="width:52px;text-align:center;flex:none;">';
+  html+=`<button class="modo-btn${mapaDividirDir==='h'?' active':''}" onclick="mapaSetDividirDir('h')">↔ Horiz.</button>`;
+  html+=`<button class="modo-btn${mapaDividirDir==='v'?' active':''}" onclick="mapaSetDividirDir('v')">↕ Vert.</button>`;
+  html+='<button class="btn btn-primary btn-sm" onclick="mapaDividir()">✂️ Dividir</button>';
+  html+='</div>';
+  bar.innerHTML=html;
+}
+
+function mapaProductosDeSector(secId){
+  const stk=getStock(), sm=getSectorMap();
+  const out=[];
+  Object.keys(stk).forEach(key=>{
+    if((stk[key]||0)<=0)return;
+    if((sm[key]||null)!==secId)return;
+    const entry=catalog[key];
+    if(!entry)return;
+    out.push({nombre:entry.name+(entry.talle?' — Talle '+entry.talle:''),qty:stk[key]});
+  });
+  out.sort((a,b)=>a.nombre.localeCompare(b.nombre));
+  return out;
+}
+function mapaMostrarPanel(m){
+  document.querySelectorAll('.mapa-modulo').forEach(p=>p.classList.remove('mapa-selected'));
+  const elSel=document.querySelector(`#mapaInner [data-id="${m.id}"]`);
+  if(elSel)elSel.classList.add('mapa-selected');
+  const panel=document.getElementById('mapaPanel');
+  let html='';
+  if(m.tipo==='referencia'){
+    html=`<h3 style="margin:0 0 3px;font-size:.88rem;">${m.icono||'📍'} ${m.nombreRef||'Referencia'}</h3>
+      <div class="empty" style="padding:10px 0;"><p>Zona de referencia — no guarda stock.</p></div>`;
+  }else{
+    const secs=getSectores();
+    const sr=m.secId?secs[m.secId]:null;
+    if(!sr){
+      html=`<h3 style="margin:0 0 3px;font-size:.88rem;">⚠️ ${m.secId?'Sector eliminado':'Sin vincular'}</h3>
+        <div class="empty" style="padding:10px 0;"><p>${m.secId?'El sector vinculado ya no existe en Sectores.':'Este módulo todavía no está vinculado a un sector.'} Entrá en modo Editar para vincularlo.</p></div>`;
+    }else{
+      const productos=mapaProductosDeSector(sr.id);
+      html=`<h3 style="margin:0 0 3px;font-size:.88rem;">📍 ${sr.nombre}</h3>
+        <div style="color:var(--muted);font-size:.72rem;margin-bottom:8px;font-family:monospace;">${sr.codigo}</div>`;
+      html+=productos.length
+        ? productos.map(p=>`<div class="mapa-prodrow"><span>${p.nombre}</span><span class="qty">${p.qty} u.</span></div>`).join('')
+        : '<div class="empty" style="padding:10px 0;"><p>No hay productos cargados en este sector.</p></div>';
+    }
+  }
+  panel.innerHTML=html;
+  panel.style.display='block';
+}
+window.mapaRefrescarPanelAbierto=function(){
+  const panel=document.getElementById('mapaPanel');
+  if(!panel||panel.style.display!=='block')return;
+  const sel=document.querySelector('#mapaInner .mapa-modulo.mapa-selected');
+  if(!sel)return;
+  const m=mapaLayout().find(s=>s.id===sel.dataset.id);
+  if(m)mapaMostrarPanel(m);
+};
+
+window.mapaBuscarProducto=function(q){
+  q=(q||'').trim().toLowerCase();
+  document.querySelectorAll('.mapa-modulo').forEach(p=>p.classList.remove('mapa-flash'));
+  if(!q)return;
+  const stk=getStock(), sm=getSectorMap();
+  let secIdEncontrado=null;
+  for(const key in stk){
+    if((stk[key]||0)<=0)continue;
+    const entry=catalog[key];
+    if(!entry)continue;
+    const txt=(entry.name+' '+(entry.sku||'')+' '+(entry.talle||'')).toLowerCase();
+    if(txt.indexOf(q)===-1)continue;
+    if(sm[key]){secIdEncontrado=sm[key];break;}
+  }
+  if(!secIdEncontrado){showToast('No se encontró ese producto ubicado en un sector','err');return;}
+  const modulo=mapaLayout().find(m=>m.tipo==='sector'&&m.secId===secIdEncontrado);
+  if(!modulo){showToast('Ese producto está en un sector que todavía no ubicaste en el mapa','err');return;}
+  const el=document.querySelector(`#mapaInner [data-id="${modulo.id}"]`);
+  if(el){el.classList.add('mapa-flash');el.scrollIntoView({behavior:'smooth',block:'center'});}
+  mapaMostrarPanel(modulo);
+};
+
+function mapaZoomAt(clientX,clientY,factor){
+  const plano=document.getElementById('mapaPlano');
+  const v=mapaView();
+  const rect=plano.getBoundingClientRect();
+  const newScale=mapaClamp(v.scale*factor,MAPA_MIN_SCALE,MAPA_MAX_SCALE);
+  factor=newScale/v.scale;
+  const px=clientX-rect.left, py=clientY-rect.top;
+  v.tx=px-(px-v.tx)*factor;
+  v.ty=py-(py-v.ty)*factor;
+  v.scale=newScale;
+  mapaAplicarTransform();
+}
+window.mapaZoomBtn=function(factor){
+  const plano=document.getElementById('mapaPlano');
+  const r=plano.getBoundingClientRect();
+  mapaZoomAt(r.left+r.width/2,r.top+r.height/2,factor);
+};
+window.mapaZoomReset=function(){
+  const v=mapaView();
+  v.scale=1;v.tx=0;v.ty=0;
+  mapaAplicarTransform();
+};
+
+function mapaInitEventosSiHaceFalta(){
+  if(mapaEventosListos)return;
+  const plano=document.getElementById('mapaPlano');
+  const inner=document.getElementById('mapaInner');
+  if(!plano||!inner)return;
+  mapaEventosListos=true;
+  inner.style.position='absolute';
+  inner.style.left='0';
+  inner.style.top='0';
+  inner.style.transformOrigin='0 0';
+  inner.style.width=(MAPA_CANVAS_FACTOR*100)+'%';
+  inner.style.height=(MAPA_CANVAS_FACTOR*100)+'%';
+
+  plano.addEventListener('pointermove',ev=>{
+    if(!mapaDrag)return;
+    const v=mapaView();
+    const rect=plano.getBoundingClientRect();
+    if(mapaDrag.type==='pan'){
+      v.tx=mapaDrag.otx+(ev.clientX-mapaDrag.startX);
+      v.ty=mapaDrag.oty+(ev.clientY-mapaDrag.startY);
+      mapaAplicarTransform();
+      return;
+    }
+    const dxPct=(ev.clientX-mapaDrag.startX)/(rect.width*v.scale)*100;
+    const dyPct=(ev.clientY-mapaDrag.startY)/(rect.height*v.scale)*100;
+    const m=mapaLayout().find(s=>s.id===mapaDrag.id);
+    if(!m)return;
+    if(mapaDrag.type==='move'){
+      m.x=mapaClamp(mapaDrag.ox+dxPct,0,MAPA_CANVAS_MAX-m.w);
+      m.y=mapaClamp(mapaDrag.oy+dyPct,0,MAPA_CANVAS_MAX-m.h);
+    }else{
+      m.w=mapaClamp(mapaDrag.ow+dxPct,4,MAPA_CANVAS_MAX-m.x);
+      m.h=mapaClamp(mapaDrag.oh+dyPct,4,MAPA_CANVAS_MAX-m.y);
+    }
+    renderMapa();
+  });
+  ['pointerup','pointercancel'].forEach(evt=>{
+    plano.addEventListener(evt,ev=>{
+      const fueDrag=mapaDrag;
+      if(fueDrag&&fueDrag.type==='pan'&&mapaModo==='editar'&&evt==='pointerup'){
+        const dist=Math.hypot((ev.clientX||0)-fueDrag.startX,(ev.clientY||0)-fueDrag.startY);
+        if(dist<6){mapaDrag=null;setMapaModo('ver');return;}
+      }
+      if(fueDrag&&(fueDrag.type==='move'||fueDrag.type==='resize'))fbSaveMapa();
+      mapaDrag=null;
+    });
+  });
+  plano.addEventListener('pointerdown',ev=>{
+    if(ev.target.closest('.mapa-modulo')||ev.target.closest('#mapaZoomCtrls'))return;
+    const v=mapaView();
+    mapaDrag={type:'pan',startX:ev.clientX,startY:ev.clientY,otx:v.tx,oty:v.ty};
+    plano.setPointerCapture(ev.pointerId);
+  });
+  plano.addEventListener('wheel',ev=>{
+    ev.preventDefault();
+    mapaZoomAt(ev.clientX,ev.clientY,ev.deltaY<0?1.12:1/1.12);
+  },{passive:false});
+
+  let pinch=null;
+  plano.addEventListener('pointerdown',ev=>{
+    if(ev.pointerType!=='touch')return;
+    if(!pinch)pinch={};
+    pinch[ev.pointerId]={x:ev.clientX,y:ev.clientY};
+    if(Object.keys(pinch).length===2){
+      mapaDrag=null;
+      const pts=Object.values(pinch);
+      pinch.startDist=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+      pinch.startScale=mapaView().scale;
+      pinch.midX=(pts[0].x+pts[1].x)/2;
+      pinch.midY=(pts[0].y+pts[1].y)/2;
+    }
+  });
+  plano.addEventListener('pointermove',ev=>{
+    if(!pinch||ev.pointerType!=='touch'||!pinch[ev.pointerId])return;
+    pinch[ev.pointerId]={x:ev.clientX,y:ev.clientY};
+    if(Object.keys(pinch).length<3&&pinch.startDist){
+      const ids=Object.keys(pinch).filter(k=>k!=='startDist'&&k!=='startScale'&&k!=='midX'&&k!=='midY');
+      const pts=ids.map(k=>pinch[k]);
+      if(pts.length===2){
+        const dist=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+        const factor=(dist/pinch.startDist);
+        const v=mapaView();
+        const target=mapaClamp(pinch.startScale*factor,MAPA_MIN_SCALE,MAPA_MAX_SCALE);
+        mapaZoomAt(pinch.midX,pinch.midY,target/v.scale);
+      }
+    }
+  });
+  ['pointerup','pointercancel'].forEach(evt=>{
+    plano.addEventListener(evt,ev=>{
+      if(pinch&&ev.pointerType==='touch'){
+        delete pinch[ev.pointerId];
+        if(Object.keys(pinch).filter(k=>!isNaN(k)).length<2)pinch=null;
+      }
+    });
+  });
+}
+
+function renderMapa(){
+  mapaInitEventosSiHaceFalta();
+  const inner=document.getElementById('mapaInner');
+  if(!inner)return;
+  inner.innerHTML='';
+  if(!depActivo){mapaAplicarTransform();return;}
+  const secsReales=getSectores();
+  mapaLayout().forEach(m=>{
+    const el=document.createElement('div');
+    let cls='mapa-modulo';
+    if(m.tipo==='referencia')cls+=' mapa-referencia';
+    let etiqueta, huerfano=false;
+    if(m.tipo==='referencia'){
+      etiqueta=(m.icono||'📍')+' '+(m.nombreRef||'Referencia');
+    }else{
+      const sr=m.secId?secsReales[m.secId]:null;
+      if(sr){etiqueta='📍 '+sr.nombre;}
+      else{etiqueta='⚠️ '+(m.secId?'Sector eliminado':'Sin vincular');huerfano=true;}
+    }
+    if(huerfano)cls+=' mapa-huerfano';
+    if(mapaSelected===m.id)cls+=' mapa-selected';
+    el.className=cls;
+    el.style.left=(m.x/MAPA_CANVAS_FACTOR)+'%';
+    el.style.top=(m.y/MAPA_CANVAS_FACTOR)+'%';
+    el.style.width=(m.w/MAPA_CANVAS_FACTOR)+'%';
+    el.style.height=(m.h/MAPA_CANVAS_FACTOR)+'%';
+    el.dataset.id=m.id;
+    el.innerHTML='<span>'+etiqueta+'</span>';
+
+    if(mapaModo==='editar'){
+      const handle=document.createElement('div');
+      handle.className='mapa-handle';
+      handle.addEventListener('pointerdown',ev=>{
+        ev.stopPropagation();
+        mapaSnapshot();
+        mapaDrag={type:'resize',id:m.id,startX:ev.clientX,startY:ev.clientY,ow:m.w,oh:m.h};
+        el.setPointerCapture(ev.pointerId);
+      });
+      el.appendChild(handle);
+      const del=document.createElement('div');
+      del.className='mapa-del';del.textContent='×';
+      del.addEventListener('pointerdown',ev=>{
+        ev.stopPropagation();
+        mapaSnapshot();
+        const arr=mapaLayout();
+        arr.splice(arr.findIndex(s=>s.id===m.id),1);
+        mapaSelected=null;
+        renderMapa();
+        fbSaveMapa();
+      });
+      el.appendChild(del);
+      el.addEventListener('pointerdown',ev=>{
+        if(ev.target===handle||ev.target===del)return;
+        mapaSnapshot();
+        mapaSelected=m.id;
+        mapaDrag={type:'move',id:m.id,startX:ev.clientX,startY:ev.clientY,ox:m.x,oy:m.y};
+        el.setPointerCapture(ev.pointerId);
+        renderMapa();
+      });
+    }else{
+      el.addEventListener('click',()=>mapaMostrarPanel(m));
+      el.addEventListener('pointerup',ev=>{
+        const ahora=Date.now();
+        const anterior=el._ultimoTap||0;
+        el._ultimoTap=ahora;
+        if(ahora-anterior<350){
+          el._ultimoTap=0;
+          ev.preventDefault();
+          mapaEditarModulo(m);
+        }
+      });
+    }
+    inner.appendChild(el);
+  });
+  mapaUpdateSelBar();
+  mapaAplicarTransform();
+}
 
 // ── HISTORIAL (borrado admin) ──
 window.borrarHistorial=async function(){
@@ -2550,351 +3069,6 @@ async function cargarMeliSinCoincidencia(){
 function renderMeliTab(){
   adminMeliPanel();
 }
-
-// ── DEVOLUCIONES (seguimiento de reclamos/devoluciones de MeLi) ──
-// Reemplaza a los mails que dejaron de llegar: el Worker escucha el
-// webhook de MeLi (tópico post_purchase) y guarda acá un resumen de
-// cada reclamo/devolución. Esta pestaña solo lee ese resumen — no hay
-// Firestore de por medio, es polling directo contra el Worker.
-let devolucionesCache = [];
-let devolExpandido = null;
-
-async function fetchDevoluciones(){
-  try{
-    const res = await fetch(`${MELI_WORKER_URL}/devoluciones/list`);
-    const data = await res.json();
-    return data.devoluciones || [];
-  }catch(e){
-    return null; // null = error de red/servidor, distinto de [] = sin devoluciones
-  }
-}
-
-function devolDiasRestantes(fecha){
-  if(!fecha) return null;
-  return (new Date(fecha).getTime() - Date.now()) / (1000*60*60*24);
-}
-
-const DEVOL_MONEY = { retained:'💰 Dinero retenido', refunded:'💸 Devuelto al comprador', available:'✅ Dinero disponible' };
-
-// Traducción de los envíos individuales (usado en el detalle expandido)
-const DEVOL_ENVIO_ESTADOS = {
-  pending:'Generándose', ready_to_ship:'Etiqueta lista', shipped:'Despachado', not_delivered:'No entregado',
-  delivered:'Entregado', cancelled:'Cancelado',
-};
-
-// Un solo lugar que decide "qué está pasando" con una devolución/reclamo,
-// combinando claim_status + claim_stage + return_status en UN estado
-// entendible (antes se mezclaban las tres cosas y salían términos crudos
-// de la API, tipo "opened" u "label_generated" sin contexto). Cada fase
-// tiene, además del texto corto de la etiqueta, una explicación de una
-// línea y una categoría (cat) que se usa para el filtro desplegable.
-// Motivos de cierre (claim.resolution.reason) que Mercado Libre considera
-// una devolución "concretada" (se completó) vs "no concretada" (se cerró
-// sin completarse) — mismos términos que usa la Central de Vendedores.
-// "warehouse_decision" queda afuera de las dos listas a propósito: es
-// ambiguo (puede terminar en devolución completa o no, depende de qué
-// decidió MeLi al revisar el producto), así que esos casos se resuelven
-// más abajo mirando evidencia real (se movió la plata y volvió el producto).
-const DEVOL_RESOLUCION_CONCRETADA = new Set(['item_returned','payment_refunded','partial_refunded','reimbursed','coverage_decision','change_expired','item_changed']);
-const DEVOL_RESOLUCION_NO_CONCRETADA = new Set(['return_expired','return_canceled','warehouse_timeout','timeout','respondent_timeout','shipment_not_stopped','opened_claim_by_mistake','buyer_claim_opened','buyer_dispute_opened']);
-
-// Algunas devoluciones pasan primero por un depósito de MeLi (revisión/
-// triage) y recién después se despachan hacia el vendedor. Esta función
-// distingue en qué punto de ese trayecto está el producto, mirando los
-// envíos de la devolución (shipments) en vez de un solo campo:
-//   'llego'      → ya está en tus manos (o es una devolución directa, sin
-//                  depósito intermedio, y el envío ya figura entregado).
-//   'volviendo'  → MeLi ya decidió y generó el envío hacia vos, todavía en
-//                  camino (existe un tramo con destino seller_address).
-//   'en_revision'→ el producto llegó al depósito de MeLi pero el tramo
-//                  hacia vos todavía NI SIQUIERA SE GENERÓ — están
-//                  revisando el producto para decidir qué hacer (esto es
-//                  justo lo que MeLi llama "Otros problemas" en su panel:
-//                  no es una falla, es una revisión en curso).
-//   'viajando'   → todavía no llegó ni al depósito de MeLi ni a vos.
-function devolFaseEnvio(d){
-  if(!d.tiene_devolucion) return 'llego'; // reclamo sin devolución física, no aplica
-  const tramosHaciaVendedor = (d.shipments||[]).filter(s=>s.destino==='seller_address');
-  if(tramosHaciaVendedor.length){
-    return tramosHaciaVendedor.every(s=>s.status==='delivered') ? 'llego' : 'volviendo';
-  }
-  // No hay (todavía) un tramo hacia vos. Si el tramo principal ya está
-  // entregado (llegó al depósito de MeLi en un caso con revisión intermedia,
-  // o directo a vos en un caso sin depósito), lo tomamos como "en revisión".
-  if(d.return_status==='delivered') return 'en_revision';
-  return 'viajando';
-}
-
-// Categorías (cat) usadas tanto para el badge de cada tarjeta como para el
-// filtro desplegable. Están alineadas a como Mercado Libre organiza su
-// propio panel de Posventa (Próximas por atender / En camino / En revisión
-// por Mercado Libre / Concretadas / No concretadas / Otros problemas), para
-// no inventar categorías nuevas que no se correspondan con lo que ves ahí.
-function devolFase(d){
-  // Estos dos casos se muestran primero, sin importar si el reclamo (claim)
-  // ya figura "closed" — la disputa puede estar resuelta mientras el
-  // trámite físico de la devolución sigue su curso, y eso es lo relevante
-  // para vos acá.
-  const envio = devolFaseEnvio(d);
-  if(envio==='volviendo'){
-    return {cat:'en_camino', label:'🚚 Volviendo a tu depósito', desc:'Mercado Libre ya revisó el producto y te lo está enviando.', bg:'rgba(96,165,250,.15)', color:'#60a5fa'};
-  }
-  if(envio==='en_revision'){
-    // Esto es lo que MeLi muestra como "Otros problemas" en Posventa — no
-    // es una falla, es el depósito de MeLi revisando el producto antes de
-    // decidir qué hacer con él. Va agrupado con "atencion" (misma familia
-    // que "Próximas por atender" en el panel de MeLi) aunque no requiera
-    // una acción tuya todavía.
-    return {cat:'atencion', label:'🔍 En revisión en el depósito de MeLi', desc:'Están comprobando el estado del producto — todavía no definieron el resultado, te van a avisar.', bg:'rgba(167,139,250,.18)', color:'#a78bfa'};
-  }
-  if(d.claim_status==='closed'){
-    if(DEVOL_RESOLUCION_CONCRETADA.has(d.resolution_reason)){
-      return {cat:'concretada', label:'✅ Concretada', desc:'La devolución se completó.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
-    }
-    if(DEVOL_RESOLUCION_NO_CONCRETADA.has(d.resolution_reason)){
-      return {cat:'no_concretada', label:'❌ No concretada', desc:'El trámite de devolución no se completó — muchas veces es porque el comprador se arrepintió y vos te quedaste con la plata de la venta.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
-    }
-    // Motivo ambiguo (p. ej. "warehouse_decision" — MeLi revisó el producto
-    // y decidió, pero el nombre solo no dice para qué lado): nos guiamos
-    // por si la plata se movió y el producto efectivamente volvió.
-    const devolucionCompleta = d.tiene_devolucion && (d.status_money==='refunded' || d.status_money==='retained');
-    if(devolucionCompleta){
-      return {cat:'concretada', label:'✅ Concretada', desc:'La devolución se completó.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
-    }
-    return {cat:'cerrado', label:'Cerrado', desc:'Este reclamo ya está resuelto y cerrado, sin devolución de por medio.', bg:'rgba(148,163,184,.2)', color:'var(--muted)'};
-  }
-  // "seller_action_pending" cubre tanto la revisión de un producto ya
-  // recibido como cualquier otra acción obligatoria tuya en el reclamo
-  // (p. ej. responder un mensaje con vencimiento) — por eso agrupa todo
-  // bajo la misma categoría "atencion" que MeLi llama "Próximas por atender".
-  if(d.seller_action_pending){
-    return {cat:'atencion', label:'🔴 Para tu revisión', desc:'Requiere una acción tuya — entrá a Mercado Libre (Reclamos) a resolverla.', bg:'rgba(239,68,68,.18)', color:'#f87171'};
-  }
-  if(d.claim_stage==='dispute'){
-    return {cat:'mediacion', label:'⚖️ En revisión por Mercado Libre', desc:'Mercado Libre está interviniendo directamente para resolver el reclamo.', bg:'rgba(167,139,250,.18)', color:'#a78bfa'};
-  }
-  // Estados del envío de la devolución (return.status), tal como los define
-  // la documentación oficial de MeLi — es la lista completa, no hay otros.
-  const rs = d.return_status;
-  const RETURN_FASES = {
-    pending:            {cat:'en_camino', label:'Preparando envío', desc:'La devolución se creó y se está generando el envío.'},
-    label_generated:    {cat:'en_camino', label:'Etiqueta lista', desc:'Falta que el comprador despache el paquete de vuelta.'},
-    shipped:            {cat:'en_camino', label:'En camino', desc:'El comprador ya despachó el paquete — el dinero queda retenido hasta que se complete.'},
-    pending_delivered:  {cat:'en_camino', label:'Por llegar', desc:'Está por marcarse como entregado.'},
-    scheduled:          {cat:'en_camino', label:'Retiro programado', desc:'Hay un retiro coordinado para el paquete.'},
-    pending_cancel:     {cat:'en_camino', label:'Cancelándose', desc:'La devolución se está cancelando.'},
-    pending_expiration: {cat:'en_camino', label:'Por expirar', desc:'El plazo de la devolución está por vencer.'},
-    pending_failure:    {cat:'en_camino', label:'Con problemas', desc:'Se detectó un problema, en proceso de resolución.'},
-    return_to_buyer:    {cat:'en_camino', label:'Volviendo al comprador', desc:'El paquete está volviendo hacia el comprador.'},
-    // "delivered" es, según MeLi, "devolución en manos del vendedor" — o
-    // sea vos. Va en la misma categoría que "atencion" porque en la
-    // práctica implica que tenés que revisarla en Mercado Libre.
-    delivered:          {cat:'atencion', label:'📦 Recibido por vos', desc:'Ya está en tus manos. Revisalo y marcá el resultado en Mercado Libre.'},
-    cancelled:          {cat:'problema', label:'Cancelada', desc:'La devolución fue cancelada, el dinero queda disponible para el comprador.'},
-    not_delivered:      {cat:'problema', label:'No entregado', desc:'El envío de la devolución no llegó a destino.'},
-    expired:            {cat:'problema', label:'Expirada', desc:'El plazo para la devolución venció.'},
-    failed:             {cat:'problema', label:'Con problemas', desc:'No se pudo generar o inicializar el envío de la devolución.'},
-  };
-  if(rs && RETURN_FASES[rs]){
-    const f = RETURN_FASES[rs];
-    const colores = {
-      atencion: {bg:'rgba(239,68,68,.18)', color:'#f87171'},
-      problema: {bg:'rgba(148,163,184,.2)', color:'var(--muted)'},
-      en_camino:{bg:'rgba(96,165,250,.15)', color:'#60a5fa'},
-    };
-    return {...f, ...colores[f.cat]};
-  }
-  if(d.tiene_devolucion){
-    return {cat:'en_camino', label:'En curso', desc:'La devolución está en trámite.', bg:'rgba(96,165,250,.15)', color:'#60a5fa'};
-  }
-  return {cat:'reclamo_abierto', label:'🗨️ Reclamo abierto', desc:'Reclamo recién abierto — todavía no se generó una devolución para este caso.', bg:'rgba(251,191,36,.15)', color:'#fbbf24'};
-}
-
-// Opciones del filtro desplegable (en el orden en que aparecen). Nombradas
-// igual que las secciones del propio panel de Posventa de Mercado Libre,
-// para que sea fácil reconocerlas si ya usás ese panel.
-const DEVOL_FILTROS = [
-  {value:'', label:'Todos los estados'},
-  {value:'atencion', label:'🔴 Próximas por atender'},
-  {value:'en_camino', label:'🚚 En camino'},
-  {value:'mediacion', label:'⚖️ En revisión por Mercado Libre'},
-  {value:'reclamo_abierto', label:'🗨️ Reclamos sin devolución todavía'},
-  {value:'problema', label:'⚠️ Envío con inconvenientes'},
-  {value:'concretada', label:'✅ Concretadas'},
-  {value:'no_concretada', label:'❌ No concretadas'},
-  {value:'cerrado', label:'Cerradas (otro motivo, sin devolución)'},
-];
-let devolFiltroActivo = '';
-let devolBusquedaActiva = '';
-
-function devolEstadoBadge(fase){
-  return `<span style="background:${fase.bg};color:${fase.color};padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap;">${fase.label}</span>`;
-}
-
-// Trae datos frescos del Worker y repinta. Se usa al entrar a la pestaña,
-// al tocar "Actualizar" y en el polling en segundo plano — NO en cada letra
-// tipeada del buscador ni al cambiar el filtro (eso pinta directo desde la
-// caché, ver pintarDevoluciones más abajo).
-window.renderDevoluciones = async function(forzar){
-  const cont = document.getElementById('devolucionesContent');
-  if(!cont) return;
-  if(forzar || devolucionesCache.length===0){
-    cont.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">Cargando...</div>';
-  }
-  const data = await fetchDevoluciones();
-  if(data===null){
-    cont.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);">⚠️ No se pudo conectar con Mercado Libre. Probá de nuevo.</div>';
-    return;
-  }
-  devolucionesCache = data;
-  pintarDevoluciones(data);
-};
-
-// Repinta la lista de devoluciones a partir de datos ya en memoria (sin
-// pegarle al Worker) — la usan el buscador y el filtro desplegable para
-// responder al instante en cada tecla/cambio, y renderDevoluciones la llama
-// después de traer datos frescos.
-function pintarDevoluciones(data){
-  const cont = document.getElementById('devolucionesContent');
-  if(!cont) return;
-
-  if(data.length===0){
-    cont.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">No hay devoluciones ni reclamos registrados todavía. 🎉<br><small>Van a ir apareciendo solas a medida que MeLi las notifique.</small></div>';
-    return;
-  }
-
-  const fmtFecha = f => f ? new Date(f).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
-  const fmtFechaHora = f => f ? new Date(f).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
-
-  const card = d => {
-    const fase = devolFase(d);
-    const dias = devolDiasRestantes(d.seller_action_due);
-    const urgente = dias!==null && dias < 1;
-    const expandido = devolExpandido===d.claim_id;
-    return `
-    <div style="padding:11px;background:var(--surface2);border-radius:8px;margin-bottom:8px;${d.seller_action_pending?'border:1px solid var(--danger);':''}cursor:pointer;" onclick="verDetalleDevolucion('${d.claim_id}')">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-        <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${d.item_title || ('Venta '+(d.order_id||d.claim_id))}</div>
-          <div style="font-size:.68rem;color:var(--muted);margin-top:1px;display:flex;align-items:center;gap:4px;">Reclamo #${d.claim_id}${d.order_id?` · Venta ${d.order_id} <button onclick="event.stopPropagation();copiarNumeroVenta('${d.order_id}')" title="Copiar número de venta" style="background:none;border:none;padding:0 2px;cursor:pointer;color:var(--muted);font-size:.7rem;line-height:1;">📋</button>`:''}</div>
-        </div>
-        ${devolEstadoBadge(fase)}
-      </div>
-      ${fase.desc ? `<div style="font-size:.7rem;color:var(--muted);margin-top:4px;">${fase.desc}</div>` : ''}
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:7px;">
-        ${d.status_money?`<span style="font-size:.68rem;color:var(--muted);">${DEVOL_MONEY[d.status_money]||d.status_money}</span>`:''}
-        ${(d.shipments||[]).filter(s=>s.tracking_number).map(s=>`<span style="font-size:.68rem;color:var(--muted);">📦 ${s.tracking_number}</span>`).join('')}
-        <span style="font-size:.68rem;color:var(--muted);">Actualizado ${fmtFecha(d.claim_last_updated)}</span>
-      </div>
-      ${d.seller_action_pending ? `<div style="margin-top:6px;font-size:.72rem;color:${urgente?'#f87171':'var(--text)'};font-weight:700;">
-        ⏰ ${d.seller_action_due ? (urgente?'¡Vence hoy o ya venció!':'Tenés hasta el '+fmtFecha(d.seller_action_due)) : 'Requiere tu revisión'} — entrá a Mercado Libre (Reclamos) a responder
-      </div>` : (d.revisado_en && d.claim_status!=='closed' ? `<div style="margin-top:6px;font-size:.7rem;color:#4ade80;font-weight:700;">✅ Ya la revisaste el ${fmtFecha(d.revisado_en)}</div>` : '')}
-      ${expandido ? `
-      <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--border);font-size:.72rem;color:var(--muted);display:flex;flex-direction:column;gap:3px;">
-        ${d.subtype?`<div>Tipo: ${d.subtype==='return_total'?'Devolución total':d.subtype==='return_partial'?'Devolución parcial':d.subtype}</div>`:''}
-        ${d.refund_at?`<div>El dinero se devuelve: ${d.refund_at==='shipped'?'al despachar la devolución':d.refund_at==='delivered'?'3 días después de recibirla':d.refund_at}</div>`:''}
-        ${(d.shipments||[]).map(s=>`<div>Envío ${s.tipo==='return_from_triage'?'(revisión intermedia)':''}: ${DEVOL_ENVIO_ESTADOS[s.status]||s.status}${s.destino?' → '+(s.destino==='warehouse'?'depósito MeLi':'tu dirección'):''}</div>`).join('')}
-        <div>Reclamo creado: ${fmtFechaHora(d.claim_date_created)}</div>
-        <div>Última actualización: ${fmtFechaHora(d.claim_last_updated)}</div>
-        <div>Sincronizado con MeLi: ${fmtFechaHora(d.last_synced)}</div>
-      </div>` : ''}
-    </div>`;
-  };
-
-  // Búsqueda por número de venta (o de reclamo) — simple "contiene", sin
-  // distinguir mayúsculas, para no obligar a tipear el número completo.
-  const busqueda = devolBusquedaActiva.trim();
-  const dataBuscada = busqueda
-    ? data.filter(d => String(d.order_id||'').includes(busqueda) || String(d.claim_id||'').includes(busqueda))
-    : data;
-  const dataFiltrada = devolFiltroActivo ? dataBuscada.filter(d=>devolFase(d).cat===devolFiltroActivo) : dataBuscada;
-
-  const buscadorHtml = `
-    <input id="devolBuscadorInput" class="inp" type="search" inputmode="numeric" placeholder="🔎 Buscar por número de venta..." value="${devolBusquedaActiva.replace(/"/g,'&quot;')}" style="margin-bottom:8px;width:100%;" oninput="devolBusquedaActiva=this.value;pintarDevoluciones(devolucionesCache);">`;
-
-  const selectorHtml = `
-    <select id="devolFiltroSelect" onchange="devolFiltroActivo=this.value;pintarDevoluciones(devolucionesCache);" class="inp" style="margin-bottom:10px;width:100%;">
-      ${DEVOL_FILTROS.map(f=>`<option value="${f.value}" ${f.value===devolFiltroActivo?'selected':''}>${f.label}</option>`).join('')}
-    </select>`;
-
-  // Refocaliza el buscador después de repintar el HTML (se pierde el foco
-  // en cada tecla porque reconstruimos el innerHTML entero).
-  const reenfocarBuscador = () => {
-    const inp = document.getElementById('devolBuscadorInput');
-    if(inp && document.activeElement!==inp){
-      inp.focus();
-      const pos = inp.value.length;
-      try{ inp.setSelectionRange(pos, pos); }catch(e){}
-    }
-  };
-
-  if(dataFiltrada.length===0){
-    cont.innerHTML = buscadorHtml + selectorHtml + `<div style="text-align:center;padding:20px;color:var(--muted);">${busqueda ? 'No encontramos ninguna venta con ese número.' : 'No hay devoluciones con ese filtro.'}</div>`;
-    reenfocarBuscador();
-    return;
-  }
-
-  // "En curso" incluye también los reclamos ya cerrados cuyo producto
-  // todavía está viajando hacia el vendedor (revisión en depósito de MeLi
-  // antes de despachar) — para vos siguen activos aunque el reclamo en sí
-  // ya se haya resuelto.
-  const sigueEnCurso = d => d.claim_status!=='closed' || (d.tiene_devolucion && (devolFaseEnvio(d)==='volviendo' || devolFaseEnvio(d)==='en_revision'));
-  const abiertas = dataFiltrada.filter(sigueEnCurso).sort((a,b)=>{
-    const ap=a.seller_action_pending?1:0, bp=b.seller_action_pending?1:0;
-    if(ap!==bp) return bp-ap;
-    return new Date(b.claim_last_updated||0)-new Date(a.claim_last_updated||0);
-  });
-  const cerradas = dataFiltrada.filter(d=>!sigueEnCurso(d)).sort((a,b)=>new Date(b.claim_last_updated||0)-new Date(a.claim_last_updated||0));
-
-  let html = buscadorHtml + selectorHtml;
-  if(abiertas.length){
-    html += `<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:6px;">En curso (${abiertas.length})</div>`;
-    html += abiertas.map(card).join('');
-  }
-  if(cerradas.length){
-    html += `<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin:14px 0 6px;">${busqueda?'Cerradas':'Cerradas recientemente'}</div>`;
-    // Buscando un número puntual mostramos todas las coincidencias; si no
-    // hay búsqueda, seguimos limitando a las 20 más recientes como antes.
-    html += (busqueda ? cerradas : cerradas.slice(0,20)).map(card).join('');
-  }
-  cont.innerHTML = html;
-  reenfocarBuscador();
-};
-
-window.verDetalleDevolucion = function(claimId){
-  devolExpandido = (devolExpandido===claimId) ? null : claimId;
-  renderDevoluciones();
-};
-
-window.copiarNumeroVenta = function(orderId){
-  const hacerToast = ()=>showToast(`Nº de venta ${orderId} copiado 📋`,'ok');
-  if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(String(orderId)).then(hacerToast).catch(()=>{
-      showToast('No se pudo copiar','err');
-    });
-  }else{
-    // Fallback para navegadores/contextos sin Clipboard API
-    const tmp=document.createElement('textarea');
-    tmp.value=String(orderId);
-    tmp.style.position='fixed';tmp.style.opacity='0';
-    document.body.appendChild(tmp);tmp.select();
-    try{ document.execCommand('copy'); hacerToast(); }catch(e){ showToast('No se pudo copiar','err'); }
-    document.body.removeChild(tmp);
-  }
-};
-
-// Polling liviano en segundo plano (cada 90s), solo para que la lista esté
-// al día si estás mirando la pestaña Devoluciones en ese momento.
-async function pollDevolucionesBackground(){
-  try{
-    const data = await fetchDevoluciones();
-    if(data===null) return;
-    devolucionesCache = data;
-    if(document.getElementById('page-devoluciones')?.classList.contains('active')) renderDevoluciones();
-  }catch(e){ /* sin conexión, no pasa nada */ }
-}
-setInterval(pollDevolucionesBackground, 90000);
-setTimeout(pollDevolucionesBackground, 8000); // primer chequeo silencioso al abrir la app
 window.meliToggleSync = async function(){
   meliConfig.syncActiva = !meliConfig.syncActiva;
   await fbSaveMeliConfig();
@@ -3084,6 +3258,7 @@ function updateDepActivoBadge(){
   renderSectores();
   updateSecSelects();
   updateSecBadge();
+  if(document.getElementById('page-mapa')?.classList.contains('active'))renderMapa();
 }
 
 window.cambiarDepActivo=function(depId){
@@ -3129,6 +3304,7 @@ El stock se perderá. ¿Confirmar eliminación?`:`¿Eliminar "${depositos[id]?.n
   delete stockDB[id];
   delete sectorMapDB[id];
   delete sectoresDB[id];
+  delete mapaDB[id];
   if(depActivo===id){
     depActivo=Object.keys(depositos)[0];
     localStorage.setItem('ss_depActivo',depActivo);
@@ -3144,7 +3320,7 @@ window.crearDeposito=function(){
   if(Object.values(depositos).find(d=>d.nombre.toLowerCase()===nombre.toLowerCase())){showToast('Ya existe ese nombre','err');return;}
   const id='dep_'+Date.now();
   depositos[id]={id,nombre};
-  stockDB[id]={};sectorMapDB[id]={};sectoresDB[id]={};
+  stockDB[id]={};sectorMapDB[id]={};sectoresDB[id]={};mapaDB[id]=[];
   if(inp)inp.value='';
   fbSaveDepositos();renderDepositos();renderDepModal();updateSecSelects();
   showToast(`Depósito "${nombre}" creado ✅`,'ok');
@@ -3554,7 +3730,7 @@ window.syncCatalogFromOdoo = async function(silent=false){
   else { if(status) status.textContent = '🔄 Sincronizando en segundo plano...'; }
 
   let offset = 0;
-  const batchSize = 200; // bajado de 500: tandas grandes venían fallando por CPU/timeout del parser XML-RPC del Worker de Odoo
+  const batchSize = 500;
   let totalLoaded = 0;
   let hasMore = true;
   const newCatalog = {};
@@ -3568,22 +3744,8 @@ window.syncCatalogFromOdoo = async function(silent=false){
     label.textContent = `0 / ${total.toLocaleString()} productos`;
 
     while(hasMore){
-      // Reintento con backoff: una página puntual puede fallar por timeout
-      // o límite de CPU del Worker de Odoo con tandas grandes — antes esto
-      // abortaba toda la sincronización, ahora reintenta un par de veces
-      // antes de darse por vencido.
-      let data;
-      for(let intento=1; ; intento++){
-        try{
-          const resp = await fetch(`${ODOO_WORKER_URL}/products?offset=${offset}&limit=${batchSize}`);
-          data = await resp.json();
-          break;
-        }catch(errIntento){
-          if(intento>=3) throw errIntento;
-          if(label) label.textContent = `Reintentando (offset ${offset})...`;
-          await new Promise(r=>setTimeout(r, 900*intento));
-        }
-      }
+      const resp = await fetch(`${ODOO_WORKER_URL}/products?offset=${offset}&limit=${batchSize}`);
+      const data = await resp.json();
       const products = data.results || [];
 
       products.forEach(p => {
