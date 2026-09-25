@@ -527,7 +527,7 @@
     <div style="padding:13px 15px;display:flex;flex-direction:column;gap:10px;">
       <div style="display:flex;gap:6px;">
         <button class="modo-btn active consulta" id="mapaBtnVer" onclick="setMapaModo('ver')" style="flex:1;justify-content:center;">👁 Ver</button>
-        <button class="modo-btn" id="mapaBtnEditar" onclick="setMapaModo('editar')" style="flex:1;justify-content:center;">✏️ Editar</button>
+        <button class="modo-btn" id="mapaBtnEditar" onclick="setMapaModo('editar')" style="flex:1;justify-content:center;display:none;">✏️ Editar</button>
       </div>
       <div id="mapaVerBar">
         <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto (ej: joma triumph)" oninput="mapaBuscarProducto(this.value)" />
@@ -2982,6 +2982,8 @@ window.pinPress = function(key){
         document.getElementById('tabAlertas').style.display='';
         document.getElementById('tabAuditoria').style.display='flex';
         document.getElementById('tabMeli').style.display='flex';
+        const mbe=document.getElementById('mapaBtnEditar');
+        if(mbe)mbe.style.display='flex';
         showToast('Modo administrador activado 🔴','ok');
         openAdminPanel();
       }else{
@@ -3230,6 +3232,9 @@ window.salirAdmin = function(){
   const btnHist=document.getElementById('btnBorrarHist');
   if(btnHist)btnHist.style.display='none';
   document.getElementById('adminBadge').style.display='none';
+  const mbe=document.getElementById('mapaBtnEditar');
+  if(mbe)mbe.style.display='none';
+  if(mapaModo==='editar')setMapaModo('ver');
   // If currently on an admin-only tab, redirect to stock
   const active=document.querySelector('.tab.active');
   if(active&&(active.dataset.tab==='alertas'||active.dataset.tab==='empleados'||active.dataset.tab==='meli')){
