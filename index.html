@@ -255,6 +255,19 @@
       align-items:center; justify-content:center; font-size:.7rem; font-weight:700; cursor:pointer;
     }
     .mapa-modulo.mapa-selected .mapa-del{display:flex;}
+    .mapa-rot{
+      position:absolute; right:-6px; top:-6px; width:16px; height:16px;
+      background:#3b82f6; color:#fff; border-radius:50%; display:none;
+      align-items:center; justify-content:center; font-size:.62rem; font-weight:700; cursor:pointer;
+    }
+    .mapa-modulo.mapa-selected .mapa-rot{display:flex;}
+    .mapa-dup{
+      position:absolute; left:-6px; bottom:-6px; width:16px; height:16px;
+      background:#a78bfa; color:#fff; border-radius:50%; display:none;
+      align-items:center; justify-content:center; font-size:.62rem; font-weight:700; cursor:pointer;
+    }
+    .mapa-modulo.mapa-selected .mapa-dup{display:flex;}
+    .mapa-modulo.mapa-agrupado:not(.mapa-selected){box-shadow:0 0 0 1px rgba(59,130,246,.5) inset;}
     #mapaZoomCtrls{position:absolute; right:8px; bottom:8px; display:flex; flex-direction:column; gap:5px;}
     .mapa-prodrow{padding:7px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:8px; font-size:.8rem;}
     .mapa-prodrow:last-child{border-bottom:none;}
@@ -1057,7 +1070,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026092402';
+const APP_BUILD = '2026092502';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2079,7 +2092,7 @@ window.setMapaModo=function(modo){
   document.getElementById('mapaEditBar').style.display=modo==='editar'?'flex':'none';
   document.getElementById('mapaPanel').style.display='none';
   document.getElementById('mapaHint').textContent = modo==='editar'
-    ? 'El mapa es más grande que lo que ves en pantalla — alejate con "–" para ubicar cosas más lejos. Arrastrá cada módulo para moverlo y el puntito verde para agrandarlo. La cruz roja lo borra.'
+    ? 'El mapa es más grande que lo que ves en pantalla — alejate con "–" para ubicar cosas más lejos. Arrastrá cada módulo para moverlo, el puntito verde para agrandarlo, el azul (↻) para girarlo 90° y el violeta (⧉) para duplicarlo. La cruz roja lo borra.'
     : 'Tocá un módulo para ver el stock real cargado ahí. Doble click (o doble tap) para editarlo directamente.';
   renderMapa();
 };
@@ -2143,7 +2156,8 @@ window.mapaDividir=function(){
   const arr=mapaLayout();
   const idx=arr.findIndex(s=>s.id===m.id);
   const horizontal=mapaDividirDir==='h';
-  const base={tipo:m.tipo,secId:m.secId,icono:m.icono,nombreRef:m.nombreRef};
+  const grupoId='grp_'+Date.now();
+  const base={tipo:m.tipo,secId:m.secId,icono:m.icono,nombreRef:m.nombreRef,grupoId};
   const nuevos=[];
   for(let i=0;i<n;i++){
     if(horizontal){
@@ -2186,8 +2200,25 @@ function mapaUpdateSelBar(){
   html+=`<button class="modo-btn${mapaDividirDir==='v'?' active':''}" onclick="mapaSetDividirDir('v')">↕ Vert.</button>`;
   html+='<button class="btn btn-primary btn-sm" onclick="mapaDividir()">✂️ Dividir</button>';
   html+='</div>';
+  if(m.grupoId){
+    const cant=mapaLayout().filter(s=>s.grupoId===m.grupoId).length;
+    html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`;
+    html+=`<span style="font-size:.74rem;color:var(--muted);">🔗 Agrupado con ${cant-1} módulo${cant-1===1?'':'s'} más — se mueven juntos.</span>`;
+    html+=`<button class="btn btn-ghost btn-sm" onclick="mapaDesagrupar()">🔓 Desagrupar</button>`;
+    html+='</div>';
+  }
   bar.innerHTML=html;
 }
+window.mapaDesagrupar=function(){
+  const m=mapaLayout().find(s=>s.id===mapaSelected);
+  if(!m||!m.grupoId)return;
+  mapaSnapshot();
+  const gid=m.grupoId;
+  mapaLayout().forEach(s=>{if(s.grupoId===gid)delete s.grupoId;});
+  renderMapa();
+  fbSaveMapa();
+  showToast('Módulos desagrupados','ok');
+};
 
 function mapaProductosDeSector(secId){
   const stk=getStock(), sm=getSectorMap();
@@ -2308,6 +2339,24 @@ function mapaInitEventosSiHaceFalta(){
     }
     const dxPct=(ev.clientX-mapaDrag.startX)/(rect.width*v.scale)*100;
     const dyPct=(ev.clientY-mapaDrag.startY)/(rect.height*v.scale)*100;
+    if(mapaDrag.type==='move'&&mapaDrag.grupo){
+      // mueve todo el grupo junto — el límite lo pone la pieza que primero llegue al borde
+      let minDx=-Infinity,maxDx=Infinity,minDy=-Infinity,maxDy=Infinity;
+      mapaDrag.grupo.forEach(g=>{
+        minDx=Math.max(minDx,0-g.ox);
+        maxDx=Math.min(maxDx,MAPA_CANVAS_MAX-g.w-g.ox);
+        minDy=Math.max(minDy,0-g.oy);
+        maxDy=Math.min(maxDy,MAPA_CANVAS_MAX-g.h-g.oy);
+      });
+      const dx=mapaClamp(dxPct,minDx,maxDx);
+      const dy=mapaClamp(dyPct,minDy,maxDy);
+      mapaDrag.grupo.forEach(g=>{
+        const mm=mapaLayout().find(s=>s.id===g.id);
+        if(mm){mm.x=g.ox+dx;mm.y=g.oy+dy;}
+      });
+      renderMapa();
+      return;
+    }
     const m=mapaLayout().find(s=>s.id===mapaDrag.id);
     if(!m)return;
     if(mapaDrag.type==='move'){
@@ -2401,6 +2450,7 @@ function renderMapa(){
     }
     if(huerfano)cls+=' mapa-huerfano';
     if(mapaSelected===m.id)cls+=' mapa-selected';
+    if(m.grupoId)cls+=' mapa-agrupado';
     el.className=cls;
     el.style.left=(m.x/MAPA_CANVAS_FACTOR)+'%';
     el.style.top=(m.y/MAPA_CANVAS_FACTOR)+'%';
@@ -2431,11 +2481,38 @@ function renderMapa(){
         fbSaveMapa();
       });
       el.appendChild(del);
+      const rot=document.createElement('div');
+      rot.className='mapa-rot';rot.innerHTML='↻';rot.title='Girar 90°';
+      rot.addEventListener('pointerdown',ev=>{
+        ev.stopPropagation();
+        mapaSnapshot();
+        const nw=m.h, nh=m.w;
+        m.w=mapaClamp(nw,4,MAPA_CANVAS_MAX-m.x);
+        m.h=mapaClamp(nh,4,MAPA_CANVAS_MAX-m.y);
+        renderMapa();
+        fbSaveMapa();
+      });
+      el.appendChild(rot);
+      const dup=document.createElement('div');
+      dup.className='mapa-dup';dup.innerHTML='⧉';dup.title='Duplicar';
+      dup.addEventListener('pointerdown',ev=>{
+        ev.stopPropagation();
+        mapaSnapshot();
+        const nid='mod_'+Date.now();
+        const nx=mapaClamp(m.x+8,0,MAPA_CANVAS_MAX-m.w);
+        const ny=mapaClamp(m.y+8,0,MAPA_CANVAS_MAX-m.h);
+        mapaLayout().push({...m,id:nid,x:nx,y:ny,grupoId:null});
+        mapaSelected=nid;
+        renderMapa();
+        fbSaveMapa();
+      });
+      el.appendChild(dup);
       el.addEventListener('pointerdown',ev=>{
-        if(ev.target===handle||ev.target===del)return;
+        if(ev.target===handle||ev.target===del||ev.target===rot||ev.target===dup)return;
         mapaSnapshot();
         mapaSelected=m.id;
-        mapaDrag={type:'move',id:m.id,startX:ev.clientX,startY:ev.clientY,ox:m.x,oy:m.y};
+        const grupo=m.grupoId?mapaLayout().filter(s=>s.grupoId===m.grupoId).map(s=>({id:s.id,ox:s.x,oy:s.y,w:s.w,h:s.h})):null;
+        mapaDrag={type:'move',id:m.id,startX:ev.clientX,startY:ev.clientY,ox:m.x,oy:m.y,grupo};
         el.setPointerCapture(ev.pointerId);
         renderMapa();
       });
