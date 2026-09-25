@@ -530,7 +530,7 @@
         <button class="modo-btn" id="mapaBtnEditar" onclick="setMapaModo('editar')" style="flex:1;justify-content:center;display:none;">✏️ Editar</button>
       </div>
       <div id="mapaVerBar">
-        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto" oninput="mapaBuscarProducto(this.value)" />
+        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto (ej: joma triumph)" oninput="mapaBuscarProducto(this.value)" />
       </div>
       <div id="mapaEditBar" style="display:none;flex-wrap:wrap;gap:6px;align-items:center;">
         <button class="btn btn-primary btn-sm" onclick="mapaAgregarSector()">+ Sector</button>
@@ -547,7 +547,7 @@
       </div>
       <div class="card" id="mapaSelBar" style="display:none;padding:11px 13px;"></div>
       <div class="card" id="mapaHint" style="padding:9px 12px;font-size:.74rem;color:var(--muted);line-height:1.5;">
-        Tocá un módulo para ver qué hay cargado ahí.
+        Tocá un módulo para ver qué hay cargado ahí. Doble click (o doble tap) para editarlo directamente.
       </div>
       <div class="mapa-wrap" id="mapaPlano">
         <div id="mapaInner"></div>
@@ -1070,7 +1070,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026092502';
+const APP_BUILD = '2026092504';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1448,6 +1448,13 @@ window.doLogin=async function(){
   catch(ex){err.style.display='block';}
 };
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')doLogin();});
+document.addEventListener('keydown',function(e){
+  const modal=document.getElementById('adminModal');
+  if(!modal||!modal.classList.contains('show'))return;
+  if(e.key>='0'&&e.key<='9'){pinPress(e.key);}
+  else if(e.key==='Backspace'){e.preventDefault();pinPress('←');}
+  else if(e.key==='Escape'){closeAdminModal();}
+});
 window.doLogout=async function(){
   if(!confirm('¿Cerrar sesión?'))return;
   await markOffline();
@@ -2077,6 +2084,7 @@ function mapaAplicarTransform(){
 }
 
 window.setMapaModo=function(modo){
+  if(modo==='editar'&&!isAdmin){showToast('Solo el administrador puede editar el mapa','err');modo='ver';}
   mapaModo=modo;
   mapaSelected=null;
   document.getElementById('mapaBtnVer').classList.toggle('active',modo==='ver');
@@ -2086,10 +2094,13 @@ window.setMapaModo=function(modo){
   document.getElementById('mapaPanel').style.display='none';
   document.getElementById('mapaHint').textContent = modo==='editar'
     ? 'El mapa es más grande que lo que ves en pantalla — alejate con "–" para ubicar cosas más lejos. Arrastrá cada módulo para moverlo, el puntito verde para agrandarlo, el azul (↻) para girarlo 90° y el violeta (⧉) para duplicarlo. La cruz roja lo borra.'
-    : 'Tocá un módulo para ver el stock real cargado ahí. Doble click (o doble tap) para editarlo directamente.';
+    : (isAdmin
+        ? 'Tocá un módulo para ver el stock real cargado ahí. Doble click (o doble tap) para editarlo directamente.'
+        : 'Tocá un módulo para ver el stock real cargado ahí.');
   renderMapa();
 };
 function mapaEditarModulo(m){
+  if(!isAdmin){showToast('Solo el administrador puede editar el mapa','err');return;} // el doble click/tap para editar también queda restringido a admin
   mapaModo='editar';
   mapaSelected=m.id;
   document.getElementById('mapaBtnVer').classList.remove('active');
