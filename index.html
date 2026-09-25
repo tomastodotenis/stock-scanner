@@ -530,7 +530,7 @@
         <button class="modo-btn" id="mapaBtnEditar" onclick="setMapaModo('editar')" style="flex:1;justify-content:center;display:none;">✏️ Editar</button>
       </div>
       <div id="mapaVerBar">
-        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto (ej: joma triumph)" oninput="mapaBuscarProducto(this.value)" />
+        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto" oninput="mapaBuscarProducto(this.value)" />
       </div>
       <div id="mapaEditBar" style="display:none;flex-wrap:wrap;gap:6px;align-items:center;">
         <button class="btn btn-primary btn-sm" onclick="mapaAgregarSector()">+ Sector</button>
@@ -547,7 +547,7 @@
       </div>
       <div class="card" id="mapaSelBar" style="display:none;padding:11px 13px;"></div>
       <div class="card" id="mapaHint" style="padding:9px 12px;font-size:.74rem;color:var(--muted);line-height:1.5;">
-        Tocá un módulo para ver qué hay cargado ahí. Doble click (o doble tap) para editarlo directamente.
+        Tocá un módulo para ver qué hay cargado ahí.
       </div>
       <div class="mapa-wrap" id="mapaPlano">
         <div id="mapaInner"></div>
