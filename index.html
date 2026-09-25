@@ -269,6 +269,9 @@
     .mapa-modulo.mapa-selected .mapa-dup{display:flex;}
     .mapa-modulo.mapa-agrupado:not(.mapa-selected){box-shadow:0 0 0 1px rgba(59,130,246,.5) inset;}
     #mapaZoomCtrls{position:absolute; right:8px; bottom:8px; display:flex; flex-direction:column; gap:5px;}
+    #page-mapa.mapa-claro{
+      --bg:#eef2f6; --surface:#ffffff; --surface2:#e4eaf1; --border:#cdd6df; --text:#101820; --muted:#5c6b7a;
+    }
     .mapa-prodrow{padding:7px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:8px; font-size:.8rem;}
     .mapa-prodrow:last-child{border-bottom:none;}
     .mapa-prodrow .qty{color:var(--accent); font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap;}
@@ -528,9 +531,10 @@
       <div style="display:flex;gap:6px;">
         <button class="modo-btn active consulta" id="mapaBtnVer" onclick="setMapaModo('ver')" style="flex:1;justify-content:center;">👁 Ver</button>
         <button class="modo-btn" id="mapaBtnEditar" onclick="setMapaModo('editar')" style="flex:1;justify-content:center;display:none;">✏️ Editar</button>
+        <button class="modo-btn" id="mapaBtnTema" onclick="mapaToggleTema()" title="Cambiar modo claro/oscuro del mapa" style="flex:none;">🌙</button>
       </div>
       <div id="mapaVerBar">
-        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto" oninput="mapaBuscarProducto(this.value)" />
+        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto (ej: joma triumph)" oninput="mapaBuscarProducto(this.value)" />
       </div>
       <div id="mapaEditBar" style="display:none;flex-wrap:wrap;gap:6px;align-items:center;">
         <button class="btn btn-primary btn-sm" onclick="mapaAgregarSector()">+ Sector</button>
@@ -1448,6 +1452,13 @@ window.doLogin=async function(){
   catch(ex){err.style.display='block';}
 };
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')doLogin();});
+document.addEventListener('keydown',function(e){
+  const modal=document.getElementById('adminModal');
+  if(!modal||!modal.classList.contains('show'))return;
+  if(e.key>='0'&&e.key<='9'){pinPress(e.key);}
+  else if(e.key==='Backspace'){e.preventDefault();pinPress('←');}
+  else if(e.key==='Escape'){closeAdminModal();}
+});
 window.doLogout=async function(){
   if(!confirm('¿Cerrar sesión?'))return;
   await markOffline();
@@ -2308,6 +2319,22 @@ window.mapaZoomReset=function(){
   v.scale=1;v.tx=0;v.ty=0;
   mapaAplicarTransform();
 };
+
+// ── TEMA CLARO/OSCURO DEL MAPA (solo esta sección; el resto de la app sigue oscuro) ──
+function mapaAplicarTema(){
+  const pg=document.getElementById('page-mapa');
+  const btn=document.getElementById('mapaBtnTema');
+  if(!pg)return;
+  const claro=localStorage.getItem('ss_mapaTema')==='claro';
+  pg.classList.toggle('mapa-claro',claro);
+  if(btn)btn.textContent=claro?'☀️':'🌙';
+}
+window.mapaToggleTema=function(){
+  const claro=localStorage.getItem('ss_mapaTema')==='claro';
+  localStorage.setItem('ss_mapaTema',claro?'oscuro':'claro');
+  mapaAplicarTema();
+};
+mapaAplicarTema();
 
 function mapaInitEventosSiHaceFalta(){
   if(mapaEventosListos)return;
