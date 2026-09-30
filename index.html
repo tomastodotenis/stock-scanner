@@ -554,7 +554,6 @@
       </div>
       <div class="card" id="mapaMultiBar" style="display:none;padding:11px 13px;"></div>
       <div class="card" id="mapaSelBar" style="display:none;padding:11px 13px;"></div>
-      <div class="card" id="mapaFaltantes" style="display:none;padding:11px 13px;"></div>
       <div class="card" id="mapaHint" style="padding:9px 12px;font-size:.74rem;color:var(--muted);line-height:1.5;">
         Tocá un módulo para ver qué hay cargado ahí.
       </div>
@@ -1080,7 +1079,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026093007';
+const APP_BUILD = '2026093010';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2144,6 +2143,12 @@ function mapaGetSecIds(m){
   if(m.secIds&&m.secIds.length)return m.secIds;
   return m.secId?[m.secId]:[];
 }
+// Sectores que YA están vinculados a algún otro módulo del mapa (para no poder elegirlos de nuevo por error).
+function mapaSectoresUsadosPorOtros(moduloId){
+  const usados=new Set();
+  mapaLayout().filter(m=>m.tipo==='sector'&&m.id!==moduloId).forEach(m=>mapaGetSecIds(m).forEach(id=>usados.add(id)));
+  return usados;
+}
 window.mapaVincularSector=function(secId){
   const m=mapaLayout().find(s=>s.id===mapaSelected);
   if(!m)return;
@@ -2202,6 +2207,7 @@ function mapaUpdateSelBar(){
   if(m.tipo==='sector'){
     const secs=Object.values(getSectores()).sort((a,b)=>a.nombre.localeCompare(b.nombre,undefined,{numeric:true}));
     const idsActuales=mapaGetSecIds(m);
+    const usadosPorOtros=mapaSectoresUsadosPorOtros(m.id);
     if(idsActuales.length>1){
       const secsObj=getSectores();
       const nombresActuales=idsActuales.map(id=>secsObj[id]?.nombre||'?').join(', ');
@@ -2210,7 +2216,10 @@ function mapaUpdateSelBar(){
       html+='<div style="font-size:.74rem;color:var(--muted);margin-bottom:5px;">Vincular a sector real:</div>';
       html+=`<select id="mapaSelSector" class="inp" onchange="mapaVincularSector(this.value)" style="margin-bottom:8px;">`;
       html+='<option value="">— Sin vincular —</option>';
-      html+=secs.map(s=>`<option value="${s.id}"${m.secId===s.id?' selected':''}>${s.nombre}</option>`).join('');
+      html+=secs.map(s=>{
+        const usado=usadosPorOtros.has(s.id);
+        return `<option value="${s.id}"${m.secId===s.id?' selected':''}${usado?' disabled':''}>${usado?'✕ '+s.nombre+' (ya usado)':s.nombre}</option>`;
+      }).join('');
       html+='</select>';
     }
     if(!secs.length)html+='<div style="font-size:.72rem;color:var(--muted);margin:-6px 0 10px;">Todavía no cargaste sectores para este depósito — creálos en la pestaña 📍 Sectores.</div>';
@@ -2221,9 +2230,17 @@ function mapaUpdateSelBar(){
       const filtrados=mapaVVFiltro?secs.filter(s=>s.nombre.toLowerCase().includes(mapaVVFiltro.toLowerCase())):secs;
       html+=`<div style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">`;
       if(!filtrados.length)html+='<div style="font-size:.72rem;color:var(--muted);">Sin coincidencias.</div>';
-      html+=filtrados.slice(0,200).map(s=>`<label style="display:flex;align-items:center;gap:7px;font-size:.78rem;">
-        <input type="checkbox" class="mapaVVChk" value="${s.id}" ${mapaVVSeleccion.has(s.id)?'checked':''} onchange="mapaVVMarcar('${s.id}',this.checked)"> ${s.nombre}
-      </label>`).join('');
+      html+=filtrados.slice(0,200).map(s=>{
+        const usado=usadosPorOtros.has(s.id);
+        if(usado){
+          return `<label style="display:flex;align-items:center;gap:7px;font-size:.78rem;color:var(--muted);opacity:.55;">
+            <input type="checkbox" disabled> <span style="text-decoration:line-through;">${s.nombre}</span> <span style="font-size:.68rem;">(ya usado)</span>
+          </label>`;
+        }
+        return `<label style="display:flex;align-items:center;gap:7px;font-size:.78rem;">
+          <input type="checkbox" class="mapaVVChk" value="${s.id}" ${mapaVVSeleccion.has(s.id)?'checked':''} onchange="mapaVVMarcar('${s.id}',this.checked)"> ${s.nombre}
+        </label>`;
+      }).join('');
       html+='</div>';
       html+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">`;
       html+=`<span style="font-size:.7rem;color:var(--muted);">${mapaVVSeleccion.size} elegido${mapaVVSeleccion.size===1?'':'s'}</span>`;
@@ -2283,16 +2300,9 @@ window.mapaVVAplicar=function(){
     .sort((a,b)=>a.nombre.localeCompare(b.nombre,undefined,{numeric:true}));
   if(!elegidos.length){showToast('Marcá al menos un sector','err');return;}
   mapaSnapshot();
-  const arr=mapaLayout();
-  if(m.grupoId){
-    // Ya estaba dividido en piezas (de una división manual anterior) — reasigna cada pieza por separado.
-    const grupo=arr.filter(s=>s.grupoId===m.grupoId).sort((a,b)=>(a.y-b.y)||(a.x-b.x));
-    if(grupo.length!==elegidos.length){
-      showToast(`Este bloque ya tiene ${grupo.length} piezas y elegiste ${elegidos.length} sectores — no coinciden.`,'err');
-      return;
-    }
-    grupo.forEach((pieza,i)=>{pieza.secId=elegidos[i].id;delete pieza.secIds;});
-  }else if(elegidos.length===1){
+  // Vincula SIEMPRE el módulo seleccionado (esté o no agrupado con otros para moverse juntos —
+  // el agrupamiento de movimiento es independiente de a qué sector(es) apunta cada pieza).
+  if(elegidos.length===1){
     m.secId=elegidos[0].id;
     delete m.secIds;
   }else{
@@ -2706,7 +2716,6 @@ function renderMapa(){
     inner.appendChild(el);
   });
   mapaUpdateSelBar();
-  mapaRenderFaltantes();
   mapaRenderMultiBar();
   mapaActualizarBtnMulti();
   mapaAplicarTransform();
@@ -2778,66 +2787,6 @@ window.mapaMultiAplicar=function(){
   }
 };
 
-// ── SECTORES SIN UBICAR EN EL MAPA (para no perder de vista ninguno) ──
-function mapaSectoresFaltantes(){
-  if(!depActivo)return[];
-  const secs=getSectores();
-  const usados=new Set();
-  mapaLayout().filter(m=>m.tipo==='sector').forEach(m=>mapaGetSecIds(m).forEach(id=>usados.add(id)));
-  return Object.values(secs).filter(s=>!usados.has(s.id)).sort((a,b)=>a.nombre.localeCompare(b.nombre,undefined,{numeric:true}));
-}
-let mapaFaltantesFiltro='';
-const MAPA_FALTANTES_MAX=60;
-function mapaRenderFaltantes(){
-  const cont=document.getElementById('mapaFaltantes');
-  if(!cont)return;
-  const faltantes=mapaSectoresFaltantes();
-  if(!faltantes.length){cont.style.display='none';cont.innerHTML='';return;}
-  cont.style.display='block';
-  const puedeAgregar=mapaModo==='editar'&&isAdmin;
-
-  if(!puedeAgregar){
-    // En modo Ver (o si no sos admin) no tiene sentido tirar cientos de chips sueltos sin acción posible —
-    // solo un resumen corto.
-    cont.innerHTML=`<div style="font-size:.74rem;color:var(--muted);">⚠️ Hay ${faltantes.length} sector${faltantes.length===1?'':'es'} creado${faltantes.length===1?'':'s'} que todavía no ${faltantes.length===1?'tiene':'tienen'} módulo en este mapa.${isAdmin?' Entrá en ✏️ Editar para agregarlos.':''}</div>`;
-    return;
-  }
-
-  const q=mapaFaltantesFiltro.trim().toLowerCase();
-  const filtrados=q?faltantes.filter(s=>s.nombre.toLowerCase().includes(q)):faltantes;
-  let html=`<div style="font-size:.74rem;color:var(--muted);margin-bottom:6px;">⚠️ Hay ${faltantes.length} sector${faltantes.length===1?'':'es'} creado${faltantes.length===1?'':'s'} que todavía no tiene${faltantes.length===1?'':'n'} módulo en el mapa:</div>`;
-  if(faltantes.length>MAPA_FALTANTES_MAX){
-    html+=`<input type="text" class="inp" placeholder="🔎 Filtrar (ej: 3HB4)" value="${mapaFaltantesFiltro.replace(/"/g,'&quot;')}" oninput="mapaFaltantesFiltrar(this.value)" style="margin-bottom:8px;">`;
-  }
-  html+='<div style="display:flex;flex-wrap:wrap;gap:6px;">';
-  filtrados.slice(0,MAPA_FALTANTES_MAX).forEach(s=>{
-    html+=`<button class="btn btn-ghost btn-sm" onclick="mapaCrearFaltante('${s.id}')">+ ${s.nombre}</button>`;
-  });
-  html+='</div>';
-  if(filtrados.length>MAPA_FALTANTES_MAX){
-    html+=`<div style="font-size:.7rem;color:var(--muted);margin-top:7px;">Mostrando ${MAPA_FALTANTES_MAX} de ${filtrados.length} — usá el buscador para encontrar el resto.</div>`;
-  }else if(!filtrados.length){
-    html+='<div style="font-size:.7rem;color:var(--muted);">Sin coincidencias.</div>';
-  }
-  cont.innerHTML=html;
-}
-window.mapaFaltantesFiltrar=function(v){
-  mapaFaltantesFiltro=v;
-  mapaRenderFaltantes();
-  const cont=document.getElementById('mapaFaltantes');
-  const inp=cont?.querySelector('input');
-  if(inp){inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);}
-};
-window.mapaCrearFaltante=function(secId){
-  if(!depActivo||!isAdmin)return;
-  mapaSnapshot();
-  const id='mod_'+Date.now();
-  mapaLayout().push({id,tipo:'sector',secId,x:10,y:10,w:30,h:10});
-  mapaSelected=id;
-  renderMapa();
-  fbSaveMapa();
-  showToast('Sector agregado — acomodalo donde corresponda','ok');
-};
 
 // ── HISTORIAL (borrado admin) ──
 window.borrarHistorial=async function(){
