@@ -1080,7 +1080,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026093005';
+const APP_BUILD = '2026093007';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2138,11 +2138,18 @@ window.mapaAgregarRef=function(){
   renderMapa();
   fbSaveMapa();
 };
+// Un módulo puede estar vinculado a UN sector (m.secId) o a VARIOS a la vez (m.secIds, ej. los 3
+// estantes de un mismo módulo físico) sin necesidad de dividirlo visualmente en piezas.
+function mapaGetSecIds(m){
+  if(m.secIds&&m.secIds.length)return m.secIds;
+  return m.secId?[m.secId]:[];
+}
 window.mapaVincularSector=function(secId){
   const m=mapaLayout().find(s=>s.id===mapaSelected);
   if(!m)return;
   mapaSnapshot();
   m.secId=secId||null;
+  delete m.secIds;
   renderMapa();
   fbSaveMapa();
 };
@@ -2194,13 +2201,20 @@ function mapaUpdateSelBar(){
   let html='';
   if(m.tipo==='sector'){
     const secs=Object.values(getSectores()).sort((a,b)=>a.nombre.localeCompare(b.nombre,undefined,{numeric:true}));
-    html+='<div style="font-size:.74rem;color:var(--muted);margin-bottom:5px;">Vincular a sector real:</div>';
-    html+=`<select id="mapaSelSector" class="inp" onchange="mapaVincularSector(this.value)" style="margin-bottom:8px;">`;
-    html+='<option value="">— Sin vincular —</option>';
-    html+=secs.map(s=>`<option value="${s.id}"${m.secId===s.id?' selected':''}>${s.nombre}</option>`).join('');
-    html+='</select>';
+    const idsActuales=mapaGetSecIds(m);
+    if(idsActuales.length>1){
+      const secsObj=getSectores();
+      const nombresActuales=idsActuales.map(id=>secsObj[id]?.nombre||'?').join(', ');
+      html+=`<div style="font-size:.74rem;color:var(--muted);margin-bottom:5px;">Este módulo está vinculado a <b style="color:var(--accent);">${idsActuales.length} sectores</b>: ${nombresActuales}</div>`;
+    }else{
+      html+='<div style="font-size:.74rem;color:var(--muted);margin-bottom:5px;">Vincular a sector real:</div>';
+      html+=`<select id="mapaSelSector" class="inp" onchange="mapaVincularSector(this.value)" style="margin-bottom:8px;">`;
+      html+='<option value="">— Sin vincular —</option>';
+      html+=secs.map(s=>`<option value="${s.id}"${m.secId===s.id?' selected':''}>${s.nombre}</option>`).join('');
+      html+='</select>';
+    }
     if(!secs.length)html+='<div style="font-size:.72rem;color:var(--muted);margin:-6px 0 10px;">Todavía no cargaste sectores para este depósito — creálos en la pestaña 📍 Sectores.</div>';
-    html+=`<button class="btn btn-ghost btn-sm" onclick="mapaVVToggle()" style="margin-bottom:10px;">${mapaVVAbierto?'✕ Cerrar selección múltiple':'☑️ Elegir varios (dividir y agrupar automático)'}</button>`;
+    html+=`<button class="btn btn-ghost btn-sm" onclick="mapaVVToggle()" style="margin-bottom:10px;">${mapaVVAbierto?'✕ Cerrar selección múltiple':(idsActuales.length>1?'✏️ Editar sectores combinados':'☑️ Elegir varios (combinar en este módulo)')}</button>`;
     if(mapaVVAbierto){
       html+=`<div class="card" style="padding:9px 11px;margin-bottom:10px;">`;
       html+=`<input id="mapaVVFiltro" type="text" class="inp" placeholder="Filtrar (ej: 3HB4B)" value="${mapaVVFiltro.replace(/"/g,'&quot;')}" oninput="mapaVVFiltrar(this.value)" style="margin-bottom:8px;">`;
@@ -2240,7 +2254,12 @@ function mapaUpdateSelBar(){
 }
 window.mapaVVToggle=function(){
   mapaVVAbierto=!mapaVVAbierto;
-  if(mapaVVAbierto){mapaVVFiltro='';mapaVVSeleccion=new Set();mapaVVModuloId=mapaSelected;}
+  if(mapaVVAbierto){
+    mapaVVFiltro='';
+    mapaVVModuloId=mapaSelected;
+    const m=mapaLayout().find(s=>s.id===mapaSelected);
+    mapaVVSeleccion=new Set(m?mapaGetSecIds(m):[]);
+  }
   mapaUpdateSelBar();
 };
 window.mapaVVFiltrar=function(v){
@@ -2265,37 +2284,27 @@ window.mapaVVAplicar=function(){
   if(!elegidos.length){showToast('Marcá al menos un sector','err');return;}
   mapaSnapshot();
   const arr=mapaLayout();
-  if(elegidos.length===1){
-    m.secId=elegidos[0].id;
-  }else if(m.grupoId){
+  if(m.grupoId){
+    // Ya estaba dividido en piezas (de una división manual anterior) — reasigna cada pieza por separado.
     const grupo=arr.filter(s=>s.grupoId===m.grupoId).sort((a,b)=>(a.y-b.y)||(a.x-b.x));
     if(grupo.length!==elegidos.length){
       showToast(`Este bloque ya tiene ${grupo.length} piezas y elegiste ${elegidos.length} sectores — no coinciden.`,'err');
       return;
     }
-    grupo.forEach((pieza,i)=>{pieza.secId=elegidos[i].id;});
+    grupo.forEach((pieza,i)=>{pieza.secId=elegidos[i].id;delete pieza.secIds;});
+  }else if(elegidos.length===1){
+    m.secId=elegidos[0].id;
+    delete m.secIds;
   }else{
-    const idx=arr.findIndex(s=>s.id===m.id);
-    const horizontal=mapaDividirDir==='h';
-    const grupoId='grp_'+Date.now();
-    const n=elegidos.length;
-    const nuevos=[];
-    for(let i=0;i<n;i++){
-      if(horizontal){
-        const mw=m.w/n;
-        nuevos.push({tipo:'sector',grupoId,id:m.id+'-m'+(i+1),x:m.x+mw*i,y:m.y,w:mw,h:m.h,secId:elegidos[i].id});
-      }else{
-        const mh=m.h/n;
-        nuevos.push({tipo:'sector',grupoId,id:m.id+'-m'+(i+1),x:m.x,y:m.y+mh*i,w:m.w,h:mh,secId:elegidos[i].id});
-      }
-    }
-    arr.splice(idx,1,...nuevos);
-    mapaSelected=nuevos[0].id;
+    // Combina todos los sectores elegidos en ESTE MISMO módulo (sin dividirlo visualmente).
+    // Al tocarlo en modo Ver, se muestra el stock de cada uno por separado.
+    m.secIds=elegidos.map(e=>e.id);
+    delete m.secId;
   }
   mapaVVAbierto=false;mapaVVSeleccion=new Set();
   renderMapa();
   fbSaveMapa();
-  showToast(`✅ Vinculado${elegidos.length>1?'s '+elegidos.length+' sectores, agrupados':''}`,'ok');
+  showToast(`✅ Vinculado${elegidos.length>1?'s '+elegidos.length+' sectores en este módulo':''}`,'ok');
 };
 window.mapaVincularSecuencia=function(){
   if(!isAdmin)return;
@@ -2361,17 +2370,33 @@ function mapaMostrarPanel(m){
       <div class="empty" style="padding:10px 0;"><p>Zona de referencia — no guarda stock.</p></div>`;
   }else{
     const secs=getSectores();
-    const sr=m.secId?secs[m.secId]:null;
-    if(!sr){
-      html=`<h3 style="margin:0 0 3px;font-size:.88rem;">⚠️ ${m.secId?'Sector eliminado':'Sin vincular'}</h3>
-        <div class="empty" style="padding:10px 0;"><p>${m.secId?'El sector vinculado ya no existe en Sectores.':'Este módulo todavía no está vinculado a un sector.'} Entrá en modo Editar para vincularlo.</p></div>`;
-    }else{
+    const ids=mapaGetSecIds(m);
+    const srs=ids.map(id=>secs[id]).filter(Boolean);
+    if(!srs.length){
+      html=`<h3 style="margin:0 0 3px;font-size:.88rem;">⚠️ ${ids.length?'Sector eliminado':'Sin vincular'}</h3>
+        <div class="empty" style="padding:10px 0;"><p>${ids.length?'El/los sector(es) vinculado(s) ya no existen en Sectores.':'Este módulo todavía no está vinculado a un sector.'} Entrá en modo Editar para vincularlo.</p></div>`;
+    }else if(srs.length===1){
+      const sr=srs[0];
       const productos=mapaProductosDeSector(sr.id);
       html=`<h3 style="margin:0 0 3px;font-size:.88rem;">📍 ${sr.nombre}</h3>
         <div style="color:var(--muted);font-size:.72rem;margin-bottom:8px;font-family:monospace;">${sr.codigo}</div>`;
       html+=productos.length
         ? productos.map(p=>`<div class="mapa-prodrow"><span>${p.nombre}</span><span class="qty">${p.qty} u.</span></div>`).join('')
         : '<div class="empty" style="padding:10px 0;"><p>No hay productos cargados en este sector.</p></div>';
+    }else{
+      // Módulo vinculado a varios sectores (ej: los 3 estantes de un mismo módulo físico) —
+      // se muestra cada uno por separado, no mezclado.
+      html=`<h3 style="margin:0 0 3px;font-size:.88rem;">📍 ${srs.map(s=>s.nombre).join(' + ')}</h3>
+        <div style="color:var(--muted);font-size:.72rem;margin-bottom:8px;">${srs.length} estantes/sectores en este módulo</div>`;
+      srs.forEach(sr=>{
+        const productos=mapaProductosDeSector(sr.id);
+        html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+          <div style="font-size:.78rem;font-weight:700;margin-bottom:5px;">${sr.nombre} <span style="color:var(--muted);font-weight:400;font-family:monospace;font-size:.7rem;">${sr.codigo}</span></div>`;
+        html+=productos.length
+          ? productos.map(p=>`<div class="mapa-prodrow"><span>${p.nombre}</span><span class="qty">${p.qty} u.</span></div>`).join('')
+          : '<div class="empty" style="padding:6px 0;"><p style="font-size:.76rem;">Sin productos cargados.</p></div>';
+        html+='</div>';
+      });
     }
   }
   panel.innerHTML=html;
@@ -2401,7 +2426,7 @@ window.mapaBuscarProducto=function(q){
     if(sm[key]){secIdEncontrado=sm[key];break;}
   }
   if(!secIdEncontrado){showToast('No se encontró ese producto ubicado en un sector','err');return;}
-  const modulo=mapaLayout().find(m=>m.tipo==='sector'&&m.secId===secIdEncontrado);
+  const modulo=mapaLayout().find(m=>m.tipo==='sector'&&mapaGetSecIds(m).includes(secIdEncontrado));
   if(!modulo){showToast('Ese producto está en un sector que todavía no ubicaste en el mapa','err');return;}
   const el=document.querySelector(`#mapaInner [data-id="${modulo.id}"]`);
   if(el){el.classList.add('mapa-flash');el.scrollIntoView({behavior:'smooth',block:'center'});}
@@ -2577,9 +2602,15 @@ function renderMapa(){
     if(m.tipo==='referencia'){
       etiqueta=(m.icono||'📍')+' '+(m.nombreRef||'Referencia');
     }else{
-      const sr=m.secId?secsReales[m.secId]:null;
-      if(sr){etiqueta='📍 '+sr.nombre;}
-      else{etiqueta='⚠️ '+(m.secId?'Sector eliminado':'Sin vincular');huerfano=true;}
+      const idsLinkeados=mapaGetSecIds(m);
+      const nombres=idsLinkeados.map(id=>secsReales[id]?.nombre).filter(Boolean);
+      if(nombres.length&&nombres.length===idsLinkeados.length){
+        etiqueta='📍 '+(nombres.length===1?nombres[0]:(nombres.length<=2?nombres.join(' + '):nombres[0]+' +'+(nombres.length-1)));
+      }else if(nombres.length){
+        etiqueta='⚠️ '+nombres.join(' + ')+' (falta uno)';huerfano=true;
+      }else{
+        etiqueta='⚠️ '+(idsLinkeados.length?'Sector eliminado':'Sin vincular');huerfano=true;
+      }
     }
     if(huerfano)cls+=' mapa-huerfano';
     if(mapaSelected===m.id)cls+=' mapa-selected';
@@ -2751,29 +2782,52 @@ window.mapaMultiAplicar=function(){
 function mapaSectoresFaltantes(){
   if(!depActivo)return[];
   const secs=getSectores();
-  const usados=new Set(mapaLayout().filter(m=>m.tipo==='sector'&&m.secId).map(m=>m.secId));
-  return Object.values(secs).filter(s=>!usados.has(s.id)).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+  const usados=new Set();
+  mapaLayout().filter(m=>m.tipo==='sector').forEach(m=>mapaGetSecIds(m).forEach(id=>usados.add(id)));
+  return Object.values(secs).filter(s=>!usados.has(s.id)).sort((a,b)=>a.nombre.localeCompare(b.nombre,undefined,{numeric:true}));
 }
+let mapaFaltantesFiltro='';
+const MAPA_FALTANTES_MAX=60;
 function mapaRenderFaltantes(){
   const cont=document.getElementById('mapaFaltantes');
   if(!cont)return;
   const faltantes=mapaSectoresFaltantes();
   if(!faltantes.length){cont.style.display='none';cont.innerHTML='';return;}
   cont.style.display='block';
-  let html=`<div style="font-size:.74rem;color:var(--muted);margin-bottom:6px;">⚠️ Hay ${faltantes.length} sector${faltantes.length===1?'':'es'} creado${faltantes.length===1?'':'s'} que todavía no tiene${faltantes.length===1?'':'n'} módulo en el mapa:</div>`;
-  html+='<div style="display:flex;flex-wrap:wrap;gap:6px;">';
   const puedeAgregar=mapaModo==='editar'&&isAdmin;
-  faltantes.forEach(s=>{
-    if(puedeAgregar){
-      html+=`<button class="btn btn-ghost btn-sm" onclick="mapaCrearFaltante('${s.id}')">+ ${s.nombre}</button>`;
-    }else{
-      html+=`<span class="modo-btn" style="cursor:default;">${s.nombre}</span>`;
-    }
+
+  if(!puedeAgregar){
+    // En modo Ver (o si no sos admin) no tiene sentido tirar cientos de chips sueltos sin acción posible —
+    // solo un resumen corto.
+    cont.innerHTML=`<div style="font-size:.74rem;color:var(--muted);">⚠️ Hay ${faltantes.length} sector${faltantes.length===1?'':'es'} creado${faltantes.length===1?'':'s'} que todavía no ${faltantes.length===1?'tiene':'tienen'} módulo en este mapa.${isAdmin?' Entrá en ✏️ Editar para agregarlos.':''}</div>`;
+    return;
+  }
+
+  const q=mapaFaltantesFiltro.trim().toLowerCase();
+  const filtrados=q?faltantes.filter(s=>s.nombre.toLowerCase().includes(q)):faltantes;
+  let html=`<div style="font-size:.74rem;color:var(--muted);margin-bottom:6px;">⚠️ Hay ${faltantes.length} sector${faltantes.length===1?'':'es'} creado${faltantes.length===1?'':'s'} que todavía no tiene${faltantes.length===1?'':'n'} módulo en el mapa:</div>`;
+  if(faltantes.length>MAPA_FALTANTES_MAX){
+    html+=`<input type="text" class="inp" placeholder="🔎 Filtrar (ej: 3HB4)" value="${mapaFaltantesFiltro.replace(/"/g,'&quot;')}" oninput="mapaFaltantesFiltrar(this.value)" style="margin-bottom:8px;">`;
+  }
+  html+='<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+  filtrados.slice(0,MAPA_FALTANTES_MAX).forEach(s=>{
+    html+=`<button class="btn btn-ghost btn-sm" onclick="mapaCrearFaltante('${s.id}')">+ ${s.nombre}</button>`;
   });
   html+='</div>';
-  if(!puedeAgregar&&isAdmin)html+='<div style="font-size:.7rem;color:var(--muted);margin-top:7px;">Entrá en ✏️ Editar y tocá cada uno para agregarlo al mapa.</div>';
+  if(filtrados.length>MAPA_FALTANTES_MAX){
+    html+=`<div style="font-size:.7rem;color:var(--muted);margin-top:7px;">Mostrando ${MAPA_FALTANTES_MAX} de ${filtrados.length} — usá el buscador para encontrar el resto.</div>`;
+  }else if(!filtrados.length){
+    html+='<div style="font-size:.7rem;color:var(--muted);">Sin coincidencias.</div>';
+  }
   cont.innerHTML=html;
 }
+window.mapaFaltantesFiltrar=function(v){
+  mapaFaltantesFiltro=v;
+  mapaRenderFaltantes();
+  const cont=document.getElementById('mapaFaltantes');
+  const inp=cont?.querySelector('input');
+  if(inp){inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);}
+};
 window.mapaCrearFaltante=function(secId){
   if(!depActivo||!isAdmin)return;
   mapaSnapshot();
