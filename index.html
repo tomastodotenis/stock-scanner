@@ -1080,7 +1080,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026093004';
+const APP_BUILD = '2026093005';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1458,13 +1458,8 @@ window.doLogin=async function(){
   catch(ex){err.style.display='block';}
 };
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')doLogin();});
-document.addEventListener('keydown',function(e){
-  const modal=document.getElementById('adminModal');
-  if(!modal||!modal.classList.contains('show'))return;
-  if(e.key>='0'&&e.key<='9'){pinPress(e.key);}
-  else if(e.key==='Backspace'){e.preventDefault();pinPress('←');}
-  else if(e.key==='Escape'){closeAdminModal();}
-});
+// (el listener de teclado del PIN de admin vive más abajo, unificado con el del disyuntor de MeLi —
+// tenerlo acá duplicado hacía que cada tecla contara el dígito dos veces)
 window.doLogout=async function(){
   if(!confirm('¿Cerrar sesión?'))return;
   await markOffline();
