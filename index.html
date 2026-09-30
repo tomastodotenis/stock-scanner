@@ -268,6 +268,8 @@
     }
     .mapa-modulo.mapa-selected .mapa-dup{display:flex;}
     .mapa-modulo.mapa-agrupado:not(.mapa-selected){box-shadow:0 0 0 1px rgba(59,130,246,.5) inset;}
+    .mapa-modulo.mapa-multi-elegido{border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.28);}
+    .mapa-modulo .mapa-multi-badge{position:absolute; top:-7px; left:-7px; width:18px; height:18px; background:#3b82f6; color:#fff; border-radius:50%; font-size:.62rem; font-weight:800; display:flex; align-items:center; justify-content:center;}
     #mapaZoomCtrls{position:absolute; right:8px; bottom:8px; display:flex; flex-direction:column; gap:5px;}
     #page-mapa.mapa-claro{
       --bg:#eef2f6; --surface:#ffffff; --surface2:#e4eaf1; --border:#cdd6df; --text:#101820; --muted:#5c6b7a;
@@ -534,7 +536,7 @@
         <button class="modo-btn" id="mapaBtnTema" onclick="mapaToggleTema()" title="Cambiar modo claro/oscuro del mapa" style="flex:none;">🌙</button>
       </div>
       <div id="mapaVerBar">
-        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto" oninput="mapaBuscarProducto(this.value)" />
+        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto (ej: joma triumph)" oninput="mapaBuscarProducto(this.value)" />
       </div>
       <div id="mapaEditBar" style="display:none;flex-wrap:wrap;gap:6px;align-items:center;">
         <button class="btn btn-primary btn-sm" onclick="mapaAgregarSector()">+ Sector</button>
@@ -548,8 +550,11 @@
         </select>
         <button class="btn btn-ghost btn-sm" onclick="mapaAgregarRef()">+ Referencia</button>
         <button class="btn btn-ghost btn-sm" onclick="mapaDeshacer()">↩️ Deshacer</button>
+        <button class="btn btn-ghost btn-sm" id="mapaMultiBtn" onclick="mapaMultiToggle()">🔗 Vincular varios</button>
       </div>
+      <div class="card" id="mapaMultiBar" style="display:none;padding:11px 13px;"></div>
       <div class="card" id="mapaSelBar" style="display:none;padding:11px 13px;"></div>
+      <div class="card" id="mapaFaltantes" style="display:none;padding:11px 13px;"></div>
       <div class="card" id="mapaHint" style="padding:9px 12px;font-size:.74rem;color:var(--muted);line-height:1.5;">
         Tocá un módulo para ver qué hay cargado ahí.
       </div>
@@ -900,6 +905,7 @@
             <div class="card" style="padding:10px 13px;">
               <div style="font-size:.75rem;color:var(--muted);">Contando en depósito: <b style="color:var(--accent);" id="auditDepLabel">—</b></div>
             </div>
+            <div class="card" id="auditPendientes" style="display:none;padding:10px 13px;"></div>
             <div class="card">
               <h3 style="font-size:.83rem;font-weight:600;margin-bottom:9px;">🔢 Pistola / Manual</h3>
               <div style="display:flex;gap:7px;">
@@ -1074,7 +1080,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026092509';
+const APP_BUILD = '2026093004';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1452,6 +1458,13 @@ window.doLogin=async function(){
   catch(ex){err.style.display='block';}
 };
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')doLogin();});
+document.addEventListener('keydown',function(e){
+  const modal=document.getElementById('adminModal');
+  if(!modal||!modal.classList.contains('show'))return;
+  if(e.key>='0'&&e.key<='9'){pinPress(e.key);}
+  else if(e.key==='Backspace'){e.preventDefault();pinPress('←');}
+  else if(e.key==='Escape'){closeAdminModal();}
+});
 window.doLogout=async function(){
   if(!confirm('¿Cerrar sesión?'))return;
   await markOffline();
@@ -2045,6 +2058,8 @@ const MAPA_MAX_SCALE = 4;
 const MAPA_PRESET_ICONS = {Oficina:'🏢','Baño':'🚻',Cocina:'🍽️',Escalera:'🪜',Montacargas:'🛗',Otro:'📍'};
 
 let mapaModo='ver', mapaSelected=null, mapaDrag=null, mapaDividirDir='h', mapaEventosListos=false;
+let mapaVVAbierto=false, mapaVVFiltro='', mapaVVSeleccion=new Set(), mapaVVModuloId=null;
+let mapaMultiModo=false, mapaMultiSeleccion=[];
 let mapaHistoryDB={}, mapaViewDB={};
 
 function mapaLayout(){
@@ -2084,6 +2099,7 @@ window.setMapaModo=function(modo){
   if(modo==='editar'&&!isAdmin){showToast('Solo el administrador puede editar el mapa','err');modo='ver';}
   mapaModo=modo;
   mapaSelected=null;
+  if(modo!=='editar'){mapaMultiModo=false;mapaMultiSeleccion=[];}
   document.getElementById('mapaBtnVer').classList.toggle('active',modo==='ver');
   document.getElementById('mapaBtnEditar').classList.toggle('active',modo==='editar');
   document.getElementById('mapaVerBar').style.display=modo==='ver'?'block':'none';
@@ -2178,16 +2194,34 @@ function mapaUpdateSelBar(){
   if(mapaModo!=='editar'||!mapaSelected){bar.style.display='none';return;}
   const m=mapaLayout().find(s=>s.id===mapaSelected);
   if(!m){bar.style.display='none';return;}
+  if(mapaVVAbierto&&mapaVVModuloId!==mapaSelected){mapaVVAbierto=false;mapaVVSeleccion=new Set();}
   bar.style.display='block';
   let html='';
   if(m.tipo==='sector'){
-    const secs=Object.values(getSectores()).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+    const secs=Object.values(getSectores()).sort((a,b)=>a.nombre.localeCompare(b.nombre,undefined,{numeric:true}));
     html+='<div style="font-size:.74rem;color:var(--muted);margin-bottom:5px;">Vincular a sector real:</div>';
-    html+=`<select id="mapaSelSector" class="inp" onchange="mapaVincularSector(this.value)" style="margin-bottom:10px;">`;
+    html+=`<select id="mapaSelSector" class="inp" onchange="mapaVincularSector(this.value)" style="margin-bottom:8px;">`;
     html+='<option value="">— Sin vincular —</option>';
     html+=secs.map(s=>`<option value="${s.id}"${m.secId===s.id?' selected':''}>${s.nombre}</option>`).join('');
     html+='</select>';
     if(!secs.length)html+='<div style="font-size:.72rem;color:var(--muted);margin:-6px 0 10px;">Todavía no cargaste sectores para este depósito — creálos en la pestaña 📍 Sectores.</div>';
+    html+=`<button class="btn btn-ghost btn-sm" onclick="mapaVVToggle()" style="margin-bottom:10px;">${mapaVVAbierto?'✕ Cerrar selección múltiple':'☑️ Elegir varios (dividir y agrupar automático)'}</button>`;
+    if(mapaVVAbierto){
+      html+=`<div class="card" style="padding:9px 11px;margin-bottom:10px;">`;
+      html+=`<input id="mapaVVFiltro" type="text" class="inp" placeholder="Filtrar (ej: 3HB4B)" value="${mapaVVFiltro.replace(/"/g,'&quot;')}" oninput="mapaVVFiltrar(this.value)" style="margin-bottom:8px;">`;
+      const filtrados=mapaVVFiltro?secs.filter(s=>s.nombre.toLowerCase().includes(mapaVVFiltro.toLowerCase())):secs;
+      html+=`<div style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">`;
+      if(!filtrados.length)html+='<div style="font-size:.72rem;color:var(--muted);">Sin coincidencias.</div>';
+      html+=filtrados.slice(0,200).map(s=>`<label style="display:flex;align-items:center;gap:7px;font-size:.78rem;">
+        <input type="checkbox" class="mapaVVChk" value="${s.id}" ${mapaVVSeleccion.has(s.id)?'checked':''} onchange="mapaVVMarcar('${s.id}',this.checked)"> ${s.nombre}
+      </label>`).join('');
+      html+='</div>';
+      html+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">`;
+      html+=`<span style="font-size:.7rem;color:var(--muted);">${mapaVVSeleccion.size} elegido${mapaVVSeleccion.size===1?'':'s'}</span>`;
+      html+=`<button class="btn btn-primary btn-sm" onclick="mapaVVAplicar()">✅ Aplicar</button>`;
+      html+='</div>';
+      html+='</div>';
+    }
   }else{
     html+='<div style="font-size:.74rem;color:var(--muted);margin-bottom:5px;">Nombre de la referencia:</div>';
     html+=`<input id="mapaRefNombre" type="text" class="inp" value="${(m.nombreRef||'').replace(/"/g,'&quot;')}" oninput="mapaRenombrarRef(this.value)" onblur="fbSaveMapa()" style="margin-bottom:10px;">`;
@@ -2204,10 +2238,99 @@ function mapaUpdateSelBar(){
     html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`;
     html+=`<span style="font-size:.74rem;color:var(--muted);">🔗 Agrupado con ${cant-1} módulo${cant-1===1?'':'s'} más — se mueven juntos.</span>`;
     html+=`<button class="btn btn-ghost btn-sm" onclick="mapaDesagrupar()">🔓 Desagrupar</button>`;
+    html+=`<button class="btn btn-primary btn-sm" onclick="mapaVincularSecuencia()">🔢 Vincular en secuencia</button>`;
     html+='</div>';
   }
   bar.innerHTML=html;
 }
+window.mapaVVToggle=function(){
+  mapaVVAbierto=!mapaVVAbierto;
+  if(mapaVVAbierto){mapaVVFiltro='';mapaVVSeleccion=new Set();mapaVVModuloId=mapaSelected;}
+  mapaUpdateSelBar();
+};
+window.mapaVVFiltrar=function(v){
+  mapaVVFiltro=v;
+  mapaUpdateSelBar();
+  const inp=document.getElementById('mapaVVFiltro');
+  if(inp){inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);}
+};
+window.mapaVVMarcar=function(id,checked){
+  if(checked)mapaVVSeleccion.add(id);else mapaVVSeleccion.delete(id);
+  // actualiza sólo el contador sin re-renderizar todo (evita perder el foco del checkbox/filtro)
+  const contEl=[...document.querySelectorAll('#mapaSelBar span')].find(s=>/elegido/.test(s.textContent));
+  if(contEl)contEl.textContent=`${mapaVVSeleccion.size} elegido${mapaVVSeleccion.size===1?'':'s'}`;
+};
+window.mapaVVAplicar=function(){
+  if(!isAdmin)return;
+  const m=mapaLayout().find(s=>s.id===mapaSelected);
+  if(!m)return;
+  const secs=getSectores();
+  const elegidos=[...mapaVVSeleccion].map(id=>secs[id]).filter(Boolean)
+    .sort((a,b)=>a.nombre.localeCompare(b.nombre,undefined,{numeric:true}));
+  if(!elegidos.length){showToast('Marcá al menos un sector','err');return;}
+  mapaSnapshot();
+  const arr=mapaLayout();
+  if(elegidos.length===1){
+    m.secId=elegidos[0].id;
+  }else if(m.grupoId){
+    const grupo=arr.filter(s=>s.grupoId===m.grupoId).sort((a,b)=>(a.y-b.y)||(a.x-b.x));
+    if(grupo.length!==elegidos.length){
+      showToast(`Este bloque ya tiene ${grupo.length} piezas y elegiste ${elegidos.length} sectores — no coinciden.`,'err');
+      return;
+    }
+    grupo.forEach((pieza,i)=>{pieza.secId=elegidos[i].id;});
+  }else{
+    const idx=arr.findIndex(s=>s.id===m.id);
+    const horizontal=mapaDividirDir==='h';
+    const grupoId='grp_'+Date.now();
+    const n=elegidos.length;
+    const nuevos=[];
+    for(let i=0;i<n;i++){
+      if(horizontal){
+        const mw=m.w/n;
+        nuevos.push({tipo:'sector',grupoId,id:m.id+'-m'+(i+1),x:m.x+mw*i,y:m.y,w:mw,h:m.h,secId:elegidos[i].id});
+      }else{
+        const mh=m.h/n;
+        nuevos.push({tipo:'sector',grupoId,id:m.id+'-m'+(i+1),x:m.x,y:m.y+mh*i,w:m.w,h:mh,secId:elegidos[i].id});
+      }
+    }
+    arr.splice(idx,1,...nuevos);
+    mapaSelected=nuevos[0].id;
+  }
+  mapaVVAbierto=false;mapaVVSeleccion=new Set();
+  renderMapa();
+  fbSaveMapa();
+  showToast(`✅ Vinculado${elegidos.length>1?'s '+elegidos.length+' sectores, agrupados':''}`,'ok');
+};
+window.mapaVincularSecuencia=function(){
+  if(!isAdmin)return;
+  const m=mapaLayout().find(s=>s.id===mapaSelected);
+  if(!m||!m.grupoId)return;
+  const grupo=mapaLayout().filter(s=>s.grupoId===m.grupoId).slice().sort((a,b)=>(a.y-b.y)||(a.x-b.x));
+  const prefijo=prompt(`Vincular en secuencia los ${grupo.length} módulos agrupados.\n\nPrefijo del sector (ej: 3HB4B):`);
+  if(!prefijo)return;
+  const inicioStr=prompt(`¿En qué número de estante empieza? (van a ser ${prefijo}${1}, ${prefijo}${2}... en orden de arriba/izquierda a abajo/derecha)`,'1');
+  const inicio=parseInt(inicioStr,10);
+  if(isNaN(inicio)){showToast('Número inválido','err');return;}
+  const secs=getSectores();
+  const porNombre={};
+  Object.values(secs).forEach(s=>{porNombre[s.nombre]=s.id;});
+  mapaSnapshot();
+  const noEncontrados=[];
+  grupo.forEach((pieza,i)=>{
+    const nombre=prefijo+(inicio+i);
+    const secId=porNombre[nombre];
+    if(secId)pieza.secId=secId;
+    else noEncontrados.push(nombre);
+  });
+  renderMapa();
+  fbSaveMapa();
+  if(noEncontrados.length){
+    showToast(`Vinculados ${grupo.length-noEncontrados.length}/${grupo.length}. No existen: ${noEncontrados.join(', ')}`,'err');
+  }else{
+    showToast(`✅ ${grupo.length} módulos vinculados en secuencia`,'ok');
+  }
+};
 window.mapaDesagrupar=function(){
   const m=mapaLayout().find(s=>s.id===mapaSelected);
   if(!m||!m.grupoId)return;
@@ -2466,15 +2589,25 @@ function renderMapa(){
     if(huerfano)cls+=' mapa-huerfano';
     if(mapaSelected===m.id)cls+=' mapa-selected';
     if(m.grupoId)cls+=' mapa-agrupado';
+    const multiIdx=mapaMultiModo?mapaMultiSeleccion.indexOf(m.id):-1;
+    if(multiIdx>=0)cls+=' mapa-multi-elegido';
     el.className=cls;
     el.style.left=(m.x/MAPA_CANVAS_FACTOR)+'%';
     el.style.top=(m.y/MAPA_CANVAS_FACTOR)+'%';
     el.style.width=(m.w/MAPA_CANVAS_FACTOR)+'%';
     el.style.height=(m.h/MAPA_CANVAS_FACTOR)+'%';
     el.dataset.id=m.id;
-    el.innerHTML='<span>'+etiqueta+'</span>';
+    el.innerHTML='<span>'+etiqueta+'</span>'+(multiIdx>=0?`<div class="mapa-multi-badge">${multiIdx+1}</div>`:'');
 
-    if(mapaModo==='editar'){
+    if(mapaModo==='editar'&&mapaMultiModo&&m.tipo==='sector'){
+      el.addEventListener('pointerdown',ev=>{
+        ev.stopPropagation();
+        const i=mapaMultiSeleccion.indexOf(m.id);
+        if(i>=0)mapaMultiSeleccion.splice(i,1);
+        else mapaMultiSeleccion.push(m.id);
+        renderMapa();
+      });
+    }else if(mapaModo==='editar'){
       const handle=document.createElement('div');
       handle.className='mapa-handle';
       handle.addEventListener('pointerdown',ev=>{
@@ -2547,8 +2680,115 @@ function renderMapa(){
     inner.appendChild(el);
   });
   mapaUpdateSelBar();
+  mapaRenderFaltantes();
+  mapaRenderMultiBar();
+  mapaActualizarBtnMulti();
   mapaAplicarTransform();
 }
+
+// ── VINCULAR VARIOS MÓDULOS YA EXISTENTES, SIN DIVIDIR ──
+window.mapaMultiToggle=function(){
+  if(!isAdmin)return;
+  mapaMultiModo=!mapaMultiModo;
+  mapaMultiSeleccion=[];
+  mapaSelected=null;
+  mapaActualizarBtnMulti();
+  renderMapa();
+};
+function mapaActualizarBtnMulti(){
+  const btn=document.getElementById('mapaMultiBtn');
+  if(!btn)return;
+  btn.className='btn btn-sm '+(mapaMultiModo?'btn-primary':'btn-ghost');
+  btn.textContent=mapaMultiModo?'✕ Cancelar vincular varios':'🔗 Vincular varios';
+}
+function mapaRenderMultiBar(){
+  const bar=document.getElementById('mapaMultiBar');
+  if(!bar)return;
+  if(!mapaMultiModo){bar.style.display='none';bar.innerHTML='';return;}
+  bar.style.display='block';
+  const n=mapaMultiSeleccion.length;
+  let html=`<div style="font-size:.74rem;color:var(--muted);margin-bottom:8px;">🔗 Modo vincular varios: tocá los módulos <b>en el orden</b> en que van los sectores (${n} elegido${n===1?'':'s'}).</div>`;
+  html+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">';
+  html+=`<button class="btn btn-ghost btn-sm" onclick="mapaMultiLimpiar()">🧹 Limpiar selección</button>`;
+  html+=`<button class="btn btn-primary btn-sm" ${n?'':'disabled style="opacity:.4"'} onclick="mapaMultiAplicar()">🔢 Vincular en secuencia</button>`;
+  html+='</div>';
+  bar.innerHTML=html;
+}
+window.mapaMultiLimpiar=function(){
+  mapaMultiSeleccion=[];
+  renderMapa();
+};
+window.mapaMultiAplicar=function(){
+  if(!isAdmin||!mapaMultiSeleccion.length)return;
+  const prefijo=prompt(`Vincular los ${mapaMultiSeleccion.length} módulos elegidos, en el orden en que los tocaste.\n\nPrefijo del sector (ej: 3HB4B):`);
+  if(!prefijo)return;
+  const inicioStr=prompt(`¿En qué número empieza? (van a quedar ${prefijo}${1}, ${prefijo}${2}... en el orden en que tocaste los módulos)`,'1');
+  const inicio=parseInt(inicioStr,10);
+  if(isNaN(inicio)){showToast('Número inválido','err');return;}
+  const secs=getSectores();
+  const porNombre={};
+  Object.values(secs).forEach(s=>{porNombre[s.nombre]=s.id;});
+  mapaSnapshot();
+  const arr=mapaLayout();
+  const noEncontrados=[];
+  mapaMultiSeleccion.forEach((id,i)=>{
+    const pieza=arr.find(s=>s.id===id);
+    if(!pieza)return;
+    const nombre=prefijo+(inicio+i);
+    const secId=porNombre[nombre];
+    if(secId)pieza.secId=secId;
+    else noEncontrados.push(nombre);
+  });
+  const cant=mapaMultiSeleccion.length;
+  mapaMultiSeleccion=[];
+  mapaMultiModo=false;
+  mapaActualizarBtnMulti();
+  renderMapa();
+  fbSaveMapa();
+  if(noEncontrados.length){
+    showToast(`Vinculados ${cant-noEncontrados.length}/${cant}. No existen: ${noEncontrados.join(', ')}`,'err');
+  }else{
+    showToast(`✅ ${cant} módulos vinculados en secuencia`,'ok');
+  }
+};
+
+// ── SECTORES SIN UBICAR EN EL MAPA (para no perder de vista ninguno) ──
+function mapaSectoresFaltantes(){
+  if(!depActivo)return[];
+  const secs=getSectores();
+  const usados=new Set(mapaLayout().filter(m=>m.tipo==='sector'&&m.secId).map(m=>m.secId));
+  return Object.values(secs).filter(s=>!usados.has(s.id)).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+}
+function mapaRenderFaltantes(){
+  const cont=document.getElementById('mapaFaltantes');
+  if(!cont)return;
+  const faltantes=mapaSectoresFaltantes();
+  if(!faltantes.length){cont.style.display='none';cont.innerHTML='';return;}
+  cont.style.display='block';
+  let html=`<div style="font-size:.74rem;color:var(--muted);margin-bottom:6px;">⚠️ Hay ${faltantes.length} sector${faltantes.length===1?'':'es'} creado${faltantes.length===1?'':'s'} que todavía no tiene${faltantes.length===1?'':'n'} módulo en el mapa:</div>`;
+  html+='<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+  const puedeAgregar=mapaModo==='editar'&&isAdmin;
+  faltantes.forEach(s=>{
+    if(puedeAgregar){
+      html+=`<button class="btn btn-ghost btn-sm" onclick="mapaCrearFaltante('${s.id}')">+ ${s.nombre}</button>`;
+    }else{
+      html+=`<span class="modo-btn" style="cursor:default;">${s.nombre}</span>`;
+    }
+  });
+  html+='</div>';
+  if(!puedeAgregar&&isAdmin)html+='<div style="font-size:.7rem;color:var(--muted);margin-top:7px;">Entrá en ✏️ Editar y tocá cada uno para agregarlo al mapa.</div>';
+  cont.innerHTML=html;
+}
+window.mapaCrearFaltante=function(secId){
+  if(!depActivo||!isAdmin)return;
+  mapaSnapshot();
+  const id='mod_'+Date.now();
+  mapaLayout().push({id,tipo:'sector',secId,x:10,y:10,w:30,h:10});
+  mapaSelected=id;
+  renderMapa();
+  fbSaveMapa();
+  showToast('Sector agregado — acomodalo donde corresponda','ok');
+};
 
 // ── HISTORIAL (borrado admin) ──
 window.borrarHistorial=async function(){
@@ -3367,6 +3607,7 @@ window.cambiarDepActivo=function(depId){
   updateDepActivoBadge();
   renderStock();
   fbListenStock();
+  if(auditoria.activa)renderAuditPendientes();
   showToast(`Depósito: ${depositos[depId].nombre}`,'ok');
 };
 
@@ -4538,8 +4779,41 @@ async function processAuditCode(rawCode){
     </div>`;
   flashBorder(re,'var(--accent)');playBeep(true);vibrateDevice(true);
   showToast(`+1 ${entry.name}`,'ok');
+  renderAuditPendientes();
 }
 
+function auditSectoresPendientes(depId){
+  if(!depId||!auditoria.activa)return[];
+  const secs=sectoresDB[depId]||{};
+  const snap=auditoria.snapshot[depId]||{};
+  const cont=auditoria.conteo[depId]||{};
+  const sm=sectorMapDB[depId]||{};
+  const secConStock=new Set();
+  Object.keys(snap).forEach(can=>{
+    if((snap[can]||0)<=0)return;
+    const secId=sm[can];
+    if(secId)secConStock.add(secId);
+  });
+  const secContados=new Set();
+  Object.keys(cont).forEach(can=>{
+    if((cont[can]||0)<=0)return;
+    const secId=sm[can];
+    if(secId)secContados.add(secId);
+  });
+  return Object.values(secs)
+    .filter(s=>secConStock.has(s.id)&&!secContados.has(s.id))
+    .sort((a,b)=>a.nombre.localeCompare(b.nombre));
+}
+function renderAuditPendientes(){
+  const cont=document.getElementById('auditPendientes');
+  if(!cont)return;
+  if(!auditoria.activa||!depActivo){cont.style.display='none';cont.innerHTML='';return;}
+  const pend=auditSectoresPendientes(depActivo);
+  if(!pend.length){cont.style.display='none';cont.innerHTML='';return;}
+  cont.style.display='block';
+  cont.innerHTML=`<div style="font-size:.74rem;color:var(--muted);margin-bottom:6px;">🧭 Todavía no contaste nada en ${pend.length} sector${pend.length===1?'':'es'} de este depósito (tienen stock en el sistema):</div>`
+    +`<div style="display:flex;flex-wrap:wrap;gap:6px;">${pend.map(s=>`<span class="modo-btn" style="cursor:default;">${s.nombre}</span>`).join('')}</div>`;
+}
 function computeAuditDiffs(){
   const combos=new Set();
   Object.keys(auditoria.snapshot||{}).forEach(d=>Object.keys(auditoria.snapshot[d]||{}).forEach(c=>combos.add(d+'|'+c)));
@@ -4574,6 +4848,7 @@ function renderAuditoria(){
   const fecha=auditoria.fechaInicio?new Date(auditoria.fechaInicio).toLocaleString('es-AR'):'';
   document.getElementById('auditMeta').textContent=`Iniciada por ${auditoria.iniciadoPor||'—'} · ${fecha}`;
   document.getElementById('auditDepLabel').textContent=depositos[depActivo]?.nombre||'— elegí un depósito —';
+  renderAuditPendientes();
   const scanVisible=document.getElementById('auditScanView').style.display!=='none';
   if(!scanVisible)renderAuditResults();
 }
