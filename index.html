@@ -1008,6 +1008,18 @@
   </div>
 </div>
 
+<!-- TEXT PROMPT MODAL (reemplaza prompt() nativo, que no abre teclado en iOS instalado como ícono de Inicio) -->
+<div class="admin-modal" id="textPromptModal">
+  <div class="admin-card">
+    <h2 id="textPromptTitle">Anotación</h2>
+    <textarea id="textPromptInput" class="inp" rows="3" style="resize:vertical;"></textarea>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" style="flex:1;" onclick="closeTextPrompt()">Cancelar</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="confirmTextPrompt()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- PROFILE MODAL -->
 <div class="profile-modal" id="profileModal">
   <div class="profile-card">
@@ -1079,7 +1091,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100101';
+const APP_BUILD = '2026100102';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1826,11 +1838,31 @@ function renderNF(){
     </div>
   `).join('');
 }
+let _textPromptCallback=null;
+window.showTextPrompt=function(title,defaultValue,cb){
+  document.getElementById('textPromptTitle').textContent=title;
+  const inp=document.getElementById('textPromptInput');
+  inp.value=defaultValue||'';
+  _textPromptCallback=cb;
+  document.getElementById('textPromptModal').classList.add('show');
+  setTimeout(()=>{inp.focus();},50);
+};
+window.closeTextPrompt=function(){
+  document.getElementById('textPromptModal').classList.remove('show');
+  _textPromptCallback=null;
+};
+window.confirmTextPrompt=function(){
+  const val=document.getElementById('textPromptInput').value;
+  const cb=_textPromptCallback;
+  document.getElementById('textPromptModal').classList.remove('show');
+  _textPromptCallback=null;
+  if(cb)cb(val);
+};
 window.anotarNF=function(id){
   const actual=notFoundLog.find(x=>x.id===id);
-  const nota=prompt('Anotación para corregir en Odoo (ej: "es talle 42, no está cargado"):', actual?.nota||'');
-  if(nota===null)return; // canceló
-  fbSaveNotaNF(id,nota.trim());
+  showTextPrompt('Anotación para corregir en Odoo (ej: "es talle 42, no está cargado"):',actual?.nota||'',nota=>{
+    fbSaveNotaNF(id,nota.trim());
+  });
 };
 window.clearNF=function(){
   if(!notFoundLog.length)return;
