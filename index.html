@@ -536,7 +536,7 @@
         <button class="modo-btn" id="mapaBtnTema" onclick="mapaToggleTema()" title="Cambiar modo claro/oscuro del mapa" style="flex:none;">🌙</button>
       </div>
       <div id="mapaVerBar">
-        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto" oninput="mapaBuscarProducto(this.value)" />
+        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto (ej: joma triumph)" oninput="mapaBuscarProducto(this.value)" />
       </div>
       <div id="mapaEditBar" style="display:none;flex-wrap:wrap;gap:6px;align-items:center;">
         <button class="btn btn-primary btn-sm" onclick="mapaAgregarSector()">+ Sector</button>
@@ -1079,7 +1079,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026093010';
+const APP_BUILD = '2026100101';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1787,17 +1787,19 @@ async function startCam(){
       vp.insertBefore(video,vp.firstChild);
     }
     zxingReader=new ZXing.BrowserMultiFormatReader();
-    const devices=await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
-    const backCam=devices.find(d=>
-      d.label.toLowerCase().includes('back')||
-      d.label.toLowerCase().includes('trasera')||
-      d.label.toLowerCase().includes('rear')||
-      d.label.toLowerCase().includes('environment')
-    );
-    const deviceId=backCam?backCam.deviceId:(devices[devices.length-1]?.deviceId);
-    await zxingReader.decodeFromVideoDevice(deviceId,video,(result,err)=>{
-      if(result) processCode(result.getText(),true);
-    });
+    // Pedimos la cámara trasera directo por constraint en vez de enumerar dispositivos primero:
+    // en algunos iPhone (sobre todo con la app agregada como ícono de Inicio) listVideoInputDevices()
+    // devuelve la lista vacía antes de tener permiso concedido, y nunca llegaba a abrir la cámara.
+    try{
+      await zxingReader.decodeFromConstraints({video:{facingMode:{ideal:'environment'}}},video,(result,err)=>{
+        if(result) processCode(result.getText(),true);
+      });
+    }catch(e1){
+      // Fallback por si el navegador no soporta ese constraint puntual
+      await zxingReader.decodeFromVideoDevice(undefined,video,(result,err)=>{
+        if(result) processCode(result.getText(),true);
+      });
+    }
   }catch(e){showToast('No se pudo acceder a la cámara','err');stopCam();}
 }
 function stopCam(){
