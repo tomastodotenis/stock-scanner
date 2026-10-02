@@ -535,8 +535,9 @@
         <button class="modo-btn" id="mapaBtnEditar" onclick="setMapaModo('editar')" style="flex:1;justify-content:center;display:none;">✏️ Editar</button>
         <button class="modo-btn" id="mapaBtnTema" onclick="mapaToggleTema()" title="Cambiar modo claro/oscuro del mapa" style="flex:none;">🌙</button>
       </div>
-      <div id="mapaVerBar">
-        <input id="mapaBuscar" type="text" class="inp" placeholder="🔎 Buscar producto (ej: joma triumph)" oninput="mapaBuscarProducto(this.value)" />
+      <div id="mapaVerBar" style="display:flex;gap:6px;">
+        <input id="mapaBuscar" type="text" class="inp" style="flex:1;" placeholder="🔎 Buscar o escanear código" oninput="mapaBuscarProducto(this.value)" />
+        <button class="btn btn-ghost btn-sm" style="flex:none;" onclick="abrirScanRapido(mapaBuscarCodigoExacto)">📷</button>
       </div>
       <div id="mapaEditBar" style="display:none;flex-wrap:wrap;gap:6px;align-items:center;">
         <button class="btn btn-primary btn-sm" onclick="mapaAgregarSector()">+ Sector</button>
@@ -616,7 +617,11 @@
       <!-- Paso 1: Origen -->
       <div class="tst" id="tStep1" style="opacity:.4;pointer-events:none;">
         <div class="tst-label">Paso 1 — Origen</div>
-        <div id="tOrigenVal" style="color:var(--muted);font-size:.83rem;">Seleccioná depósito y sector de origen:</div>
+        <div id="tOrigenVal" style="color:var(--muted);font-size:.83rem;">Escaneá el cartel del sector o seleccioná:</div>
+        <div style="display:flex;gap:7px;margin-top:7px;">
+          <input type="text" id="tOrigenScanInput" class="inp" placeholder="Escaneá el código del sector..." autocomplete="off" />
+          <button class="btn btn-ghost btn-sm" onclick="abrirScanRapido(tScanOrigen)">📷</button>
+        </div>
         <select id="tSelOrigenDep" class="inp" style="margin-top:7px;" onchange="setOrigenDep(this.value)">
           <option value="">— Depósito origen —</option>
         </select>
@@ -638,7 +643,11 @@
       <!-- Paso 3: Destino -->
       <div class="tst" id="tStep3" style="opacity:.4;pointer-events:none;">
         <div class="tst-label">Paso 3 — Destino</div>
-        <div id="tDestinoVal" style="color:var(--muted);font-size:.83rem;">Seleccioná depósito y sector destino:</div>
+        <div id="tDestinoVal" style="color:var(--muted);font-size:.83rem;">Escaneá el cartel del sector o seleccioná:</div>
+        <div style="display:flex;gap:7px;margin-top:7px;">
+          <input type="text" id="tDestinoScanInput" class="inp" placeholder="Escaneá el código del sector..." autocomplete="off" />
+          <button class="btn btn-ghost btn-sm" onclick="abrirScanRapido(tScanDestino)">📷</button>
+        </div>
         <select id="tSelDestinoDep" class="inp" style="margin-top:7px;" onchange="setDestinoDep(this.value)">
           <option value="">— Depósito destino —</option>
         </select>
@@ -1020,6 +1029,15 @@
   </div>
 </div>
 
+<!-- SCAN RÁPIDO MODAL (cámara reutilizable: Mapa, Traslados, etc.) -->
+<div class="admin-modal" id="scanRapidoModal">
+  <div class="admin-card" style="max-width:380px;">
+    <h2>📷 Escaneá el código</h2>
+    <div id="scanRapidoViewport" style="width:100%;aspect-ratio:1/1;background:#000;border-radius:10px;overflow:hidden;"></div>
+    <button class="btn btn-ghost" onclick="cerrarScanRapido()">Cancelar</button>
+  </div>
+</div>
+
 <!-- PROFILE MODAL -->
 <div class="profile-modal" id="profileModal">
   <div class="profile-card">
@@ -1091,7 +1109,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100102';
+const APP_BUILD = '2026100204';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1662,8 +1680,13 @@ async function processCode(rawCode,fromCam){
     return;
   }
   // Traslado mode?
-  if(traslado.origen&&document.getElementById('page-traslados').classList.contains('active')){
-    processTScan(code);return;
+  // Si estás en Traslados (incluso escaneando desde la cámara de Escanear sin cambiar de pestaña),
+  // los códigos se enrutan según el paso: sin origen todavía -> intenta tomarlo como el cartel
+  // del sector origen; con origen ya elegido -> sigue el flujo normal (destino o productos).
+  if(document.getElementById('page-traslados').classList.contains('active')){
+    if(!traslado.origenSec)tScanOrigen(code);
+    else processTScan(code);
+    return;
   }
   const re=document.getElementById('scanResult'),rh=document.getElementById('srh'),rb=document.getElementById('srb');
   let entry=catalog[code];
@@ -1781,6 +1804,14 @@ window.setModo=function(modo){
 
 window.manScan=function(){const v=document.getElementById('manInput').value.trim();if(v){processCode(v,false);document.getElementById('manInput').value='';}};
 document.getElementById('manInput').addEventListener('keydown',e=>{if(e.key==='Enter')manScan();});
+// Pistola lectora en el buscador del Mapa: al tipear+Enter (como hace cualquier lector físico),
+// busca por código exacto (sector o producto) en vez de la búsqueda de texto parcial.
+document.getElementById('mapaBuscar')?.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    e.preventDefault();
+    mapaBuscarCodigoExacto(e.target.value.trim());
+  }
+});
 document.getElementById('btnCam').addEventListener('click',()=>cameraActive?stopCam():startCam());
 let zxingReader=null;
 async function startCam(){
@@ -1798,12 +1829,23 @@ async function startCam(){
       video.muted=true;
       vp.insertBefore(video,vp.firstChild);
     }
-    zxingReader=new ZXing.BrowserMultiFormatReader();
+    // Limitamos los formatos a los de código de barras 1D que usan los productos (EAN/UPC/Code128/etc.)
+    // en vez de dejar que pruebe TODOS los formatos (QR, DataMatrix, PDF417...) en cada cuadro —
+    // eso lo hacía bastante más lento para leer, tanto en iOS como en Android.
+    const hints=new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
+      ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.CODE_128,ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.ITF,ZXing.BarcodeFormat.CODABAR,
+    ]);
+    zxingReader=new ZXing.BrowserMultiFormatReader(hints);
     // Pedimos la cámara trasera directo por constraint en vez de enumerar dispositivos primero:
     // en algunos iPhone (sobre todo con la app agregada como ícono de Inicio) listVideoInputDevices()
     // devuelve la lista vacía antes de tener permiso concedido, y nunca llegaba a abrir la cámara.
+    // También pedimos una resolución razonable (no la máxima del celu) para que decodifique más rápido.
     try{
-      await zxingReader.decodeFromConstraints({video:{facingMode:{ideal:'environment'}}},video,(result,err)=>{
+      await zxingReader.decodeFromConstraints({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}},video,(result,err)=>{
         if(result) processCode(result.getText(),true);
       });
     }catch(e1){
@@ -1857,6 +1899,44 @@ window.confirmTextPrompt=function(){
   document.getElementById('textPromptModal').classList.remove('show');
   _textPromptCallback=null;
   if(cb)cb(val);
+};
+// ── ESCANEO RÁPIDO (cámara) — modal reutilizable para Mapa, Traslados, etc. ──
+let qsReader=null;
+const SCAN_HINTS=(()=>{
+  const h=new Map();
+  h.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
+    ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.UPC_E,
+    ZXing.BarcodeFormat.CODE_128,ZXing.BarcodeFormat.CODE_39,
+    ZXing.BarcodeFormat.ITF,ZXing.BarcodeFormat.CODABAR,
+  ]);
+  return h;
+})();
+window.abrirScanRapido=function(onResult){
+  const modal=document.getElementById('scanRapidoModal');
+  const vp=document.getElementById('scanRapidoViewport');
+  vp.innerHTML='';
+  const video=document.createElement('video');
+  video.style.cssText='width:100%;height:100%;object-fit:cover;';
+  video.setAttribute('playsinline','true');
+  video.muted=true;
+  vp.appendChild(video);
+  modal.classList.add('show');
+  try{
+    qsReader=new ZXing.BrowserMultiFormatReader(SCAN_HINTS);
+    qsReader.decodeFromConstraints({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}},video,(result)=>{
+      if(result){
+        const code=result.getText();
+        cerrarScanRapido();
+        onResult(code);
+      }
+    }).catch(()=>{showToast('No se pudo acceder a la cámara','err');cerrarScanRapido();});
+  }catch(e){showToast('No se pudo acceder a la cámara','err');cerrarScanRapido();}
+};
+window.cerrarScanRapido=function(){
+  try{if(qsReader){qsReader.reset();qsReader=null;}}catch(e){}
+  const modal=document.getElementById('scanRapidoModal');
+  if(modal)modal.classList.remove('show');
 };
 window.anotarNF=function(id){
   const actual=notFoundLog.find(x=>x.id===id);
@@ -2434,12 +2514,18 @@ function mapaMostrarPanel(m){
         <div style="color:var(--muted);font-size:.72rem;margin-bottom:8px;">${srs.length} estantes/sectores en este módulo</div>`;
       srs.forEach(sr=>{
         const productos=mapaProductosDeSector(sr.id);
-        html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-          <div style="font-size:.78rem;font-weight:700;margin-bottom:5px;">${sr.nombre} <span style="color:var(--muted);font-weight:400;font-family:monospace;font-size:.7rem;">${sr.codigo}</span></div>`;
+        const totalU=productos.reduce((s,p)=>s+(p.qty||0),0);
+        html+=`<details style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+          <summary style="cursor:pointer;list-style:revert;">
+            <span style="font-size:.78rem;font-weight:700;">${sr.nombre}</span>
+            <span style="color:var(--muted);font-weight:400;font-family:monospace;font-size:.7rem;"> ${sr.codigo}</span>
+            <span style="color:var(--muted);font-weight:400;font-size:.72rem;"> — ${productos.length} producto${productos.length===1?'':'s'}${totalU?' · '+totalU+' u.':''}</span>
+          </summary>
+          <div style="margin-top:6px;">`;
         html+=productos.length
           ? productos.map(p=>`<div class="mapa-prodrow"><span>${p.nombre}</span><span class="qty">${p.qty} u.</span></div>`).join('')
           : '<div class="empty" style="padding:6px 0;"><p style="font-size:.76rem;">Sin productos cargados.</p></div>';
-        html+='</div>';
+        html+='</div></details>';
       });
     }
   }
@@ -2455,6 +2541,15 @@ window.mapaRefrescarPanelAbierto=function(){
   if(m)mapaMostrarPanel(m);
 };
 
+function mapaIrASector(secId){
+  const modulo=mapaLayout().find(m=>m.tipo==='sector'&&mapaGetSecIds(m).includes(secId));
+  if(!modulo){showToast('Ese sector todavía no está ubicado en el mapa','err');return false;}
+  document.querySelectorAll('.mapa-modulo').forEach(p=>p.classList.remove('mapa-flash'));
+  const el=document.querySelector(`#mapaInner [data-id="${modulo.id}"]`);
+  if(el){el.classList.add('mapa-flash');el.scrollIntoView({behavior:'smooth',block:'center'});}
+  mapaMostrarPanel(modulo);
+  return true;
+}
 window.mapaBuscarProducto=function(q){
   q=(q||'').trim().toLowerCase();
   document.querySelectorAll('.mapa-modulo').forEach(p=>p.classList.remove('mapa-flash'));
@@ -2470,11 +2565,30 @@ window.mapaBuscarProducto=function(q){
     if(sm[key]){secIdEncontrado=sm[key];break;}
   }
   if(!secIdEncontrado){showToast('No se encontró ese producto ubicado en un sector','err');return;}
-  const modulo=mapaLayout().find(m=>m.tipo==='sector'&&mapaGetSecIds(m).includes(secIdEncontrado));
-  if(!modulo){showToast('Ese producto está en un sector que todavía no ubicaste en el mapa','err');return;}
-  const el=document.querySelector(`#mapaInner [data-id="${modulo.id}"]`);
-  if(el){el.classList.add('mapa-flash');el.scrollIntoView({behavior:'smooth',block:'center'});}
-  mapaMostrarPanel(modulo);
+  mapaIrASector(secIdEncontrado);
+};
+// Búsqueda exacta por código escaneado (cámara o pistola lectora): puede ser el código
+// de un sector (cartel) o el código de barras de un producto — en ambos casos ubica el
+// sector correspondiente en el mapa.
+window.mapaBuscarCodigoExacto=function(code){
+  code=(code||'').trim();
+  if(!code)return;
+  const secDirecto=Object.values(getSectores()).find(s=>s.codigo===code);
+  if(secDirecto){
+    playBeep(true);vibrateDevice(true);
+    mapaIrASector(secDirecto.id);
+    return;
+  }
+  const entry=catalog[code];
+  if(entry){
+    const key=entry.canonical;
+    const secId=getSectorForProduct(key);
+    if(!secId){showToast('Ese producto no tiene sector asignado en este depósito','err');return;}
+    playBeep(true);vibrateDevice(true);
+    mapaIrASector(secId);
+    return;
+  }
+  showToast('No se encontró ese código','err');
 };
 
 function mapaZoomAt(clientX,clientY,factor){
@@ -2776,13 +2890,31 @@ function mapaRenderMultiBar(){
   if(!mapaMultiModo){bar.style.display='none';bar.innerHTML='';return;}
   bar.style.display='block';
   const n=mapaMultiSeleccion.length;
-  let html=`<div style="font-size:.74rem;color:var(--muted);margin-bottom:8px;">🔗 Modo vincular varios: tocá los módulos <b>en el orden</b> en que van los sectores (${n} elegido${n===1?'':'s'}).</div>`;
+  let html=`<div style="font-size:.74rem;color:var(--muted);margin-bottom:8px;">🔗 Modo selección múltiple: tocá los módulos <b>en el orden</b> en que van los sectores (${n} elegido${n===1?'':'s'}).</div>`;
   html+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">';
   html+=`<button class="btn btn-ghost btn-sm" onclick="mapaMultiLimpiar()">🧹 Limpiar selección</button>`;
   html+=`<button class="btn btn-primary btn-sm" ${n?'':'disabled style="opacity:.4"'} onclick="mapaMultiAplicar()">🔢 Vincular en secuencia</button>`;
+  html+=`<button class="btn btn-ghost btn-sm" ${n>1?'':'disabled style="opacity:.4"'} onclick="mapaMultiAgrupar()">🧲 Agrupar (mover juntos)</button>`;
   html+='</div>';
   bar.innerHTML=html;
 }
+window.mapaMultiAgrupar=function(){
+  if(!isAdmin||mapaMultiSeleccion.length<2)return;
+  mapaSnapshot();
+  const gid='grp_'+Date.now();
+  const arr=mapaLayout();
+  mapaMultiSeleccion.forEach(id=>{
+    const pieza=arr.find(s=>s.id===id);
+    if(pieza)pieza.grupoId=gid;
+  });
+  const cant=mapaMultiSeleccion.length;
+  mapaMultiSeleccion=[];
+  mapaMultiModo=false;
+  mapaActualizarBtnMulti();
+  renderMapa();
+  fbSaveMapa();
+  showToast(`✅ ${cant} módulos agrupados para moverse juntos`,'ok');
+};
 window.mapaMultiLimpiar=function(){
   mapaMultiSeleccion=[];
   renderMapa();
@@ -2963,14 +3095,48 @@ window.setDestinoDep=function(depId,silent){
   }
   if(!silent)showToast(`Destino: ${depositos[depId]?.nombre}`,'ok');
 };
+function buscarSectorPorCodigo(code){
+  const allSecs=Object.entries(sectoresDB).flatMap(([did,secs])=>Object.values(secs).map(s=>({...s,depId:did})));
+  return allSecs.find(s=>s.codigo===code)||null;
+}
+// Escanear (cámara o pistola) el cartel del sector de ORIGEN — Paso 1.
+window.tScanOrigen=function(code){
+  code=(code||'').trim();if(!code)return;
+  const matchSec=buscarSectorPorCodigo(code);
+  if(!matchSec){showToast('No se encontró ningún sector con ese código','err');return;}
+  playBeep(true);vibrateDevice(true);
+  setOrigenDep(matchSec.depId);
+  const dSel=document.getElementById('tSelOrigenDep');if(dSel)dSel.value=matchSec.depId;
+  setTimeout(()=>{
+    setOrigen(matchSec.id);
+    const sSel=document.getElementById('tSelOrigen');if(sSel)sSel.value=matchSec.id;
+  },100);
+  const inp=document.getElementById('tOrigenScanInput');if(inp)inp.value='';
+};
+document.getElementById('tOrigenScanInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();tScanOrigen(e.target.value);}});
+// Escanear (cámara o pistola) el cartel del sector de DESTINO — Paso 3.
+window.tScanDestino=function(code){
+  code=(code||'').trim();if(!code)return;
+  if(!traslado.origenSec){showToast('Elegí primero el origen','err');return;}
+  const matchSec=buscarSectorPorCodigo(code);
+  if(!matchSec){showToast('No se encontró ningún sector con ese código','err');return;}
+  playBeep(true);vibrateDevice(true);
+  setDestinoDep(matchSec.depId,true);
+  const dSel=document.getElementById('tSelDestinoDep');if(dSel)dSel.value=matchSec.depId;
+  setTimeout(()=>{
+    setDestino(matchSec.id);
+    const sSel=document.getElementById('tSelDestino');if(sSel)sSel.value=matchSec.id;
+  },100);
+  const inp=document.getElementById('tDestinoScanInput');if(inp)inp.value='';
+};
+document.getElementById('tDestinoScanInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();tScanDestino(e.target.value);}});
 window.tManScan=function(){const v=document.getElementById('tManInput').value.trim();if(v){processTScan(v);document.getElementById('tManInput').value='';}};
 document.getElementById('tManInput').addEventListener('keydown',e=>{if(e.key==='Enter')tManScan();});
 function processTScan(code){
-  // Check sector code for destino
+  // Check sector code for destino (compatibilidad: si escanean el cartel de destino acá también funciona)
   if(traslado.origenSec){
-    const allSecs=Object.entries(sectoresDB).flatMap(([did,secs])=>Object.values(secs).map(s=>({...s,depId:did})));
-    const matchSec=allSecs.find(s=>s.codigo===code);
-    if(matchSec){setDestinoDep(matchSec.depId);setTimeout(()=>setDestino(matchSec.id),100);return;}
+    const matchSec=buscarSectorPorCodigo(code);
+    if(matchSec){setDestinoDep(matchSec.depId,true);setTimeout(()=>setDestino(matchSec.id),100);return;}
   }
   if(!traslado.origenSec){showToast('Seleccioná el sector de origen primero','err');return;}
   const entry=catalog[code];
@@ -3060,11 +3226,12 @@ A: ${dn}?`))return;
   resetTraslado();
 };
 window.resetTraslado=function(){
-  traslado={responsable:null,origen:null,destino:null,productos:[]};
+  traslado={responsable:null,origenDep:null,origenSec:null,destinoDep:null,destinoSec:null,productos:[]};
   const respInput=document.getElementById('tResp');respInput.value='';respInput.disabled=false;
   document.getElementById('respConf').style.display='none';
-  document.getElementById('tOrigenVal').textContent='Escaneá el cartel o seleccioná:';
-  document.getElementById('tDestinoVal').textContent='Escaneá el cartel o seleccioná:';
+  document.getElementById('tOrigenVal').textContent='Escaneá el cartel del sector o seleccioná:';
+  document.getElementById('tDestinoVal').textContent='Escaneá el cartel del sector o seleccioná:';
+  document.getElementById('tOrigenScanInput').value='';document.getElementById('tDestinoScanInput').value='';
   document.getElementById('tSelOrigen').value='';document.getElementById('tSelDestino').value='';
   document.getElementById('tStep1').classList.remove('done','active-step');
   ['tStep1','tStep2','tStep3'].forEach(id=>{const el=document.getElementById(id);el.style.opacity='.4';el.style.pointerEvents='none';el.classList.remove('done');});
