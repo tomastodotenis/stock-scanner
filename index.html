@@ -463,6 +463,10 @@
         <option value="">Todos los sectores</option>
       </select>
       </div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="stockScanInput" class="inp" style="flex:1;" placeholder="🔎 Escaneá el código del sector..." autocomplete="off" />
+        <button class="btn btn-ghost btn-sm" style="flex:none;" onclick="abrirScanRapido(stockScanSector)">📷</button>
+      </div>
       <div class="stabs">
         <div class="stab active" onclick="switchSub('saldo')">📦 Saldo actual</div>
         <div class="stab" onclick="switchSub('movs')">📋 Movimientos</div>
@@ -519,10 +523,16 @@
         <select id="secActivoSel" class="inp" onchange="setSectorActivo(this.value)"><option value="">— Sin sector —</option></select>
       </div>
       <div class="stbl">
-        <div style="padding:8px 13px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);">
-          <span class="slabel">Sectores</span><span id="secCnt" style="color:var(--accent);font-size:.78rem;font-weight:700;">0</span>
+        <div style="padding:8px 13px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleSecList()">
+          <span class="slabel">📍 Sectores (<span id="secCnt">0</span>)</span>
+          <span id="secListToggleIcon" style="color:var(--muted);font-size:.9rem;">▸ Ver lista</span>
         </div>
-        <div id="secList"><div class="empty"><div class="icon">📍</div><p>Sin sectores.</p></div></div>
+        <div id="secListBody" style="display:none;border-top:1px solid var(--border);">
+          <div style="padding:8px 13px;">
+            <input id="secListSearch" type="text" class="inp" placeholder="🔎 Buscar sector por nombre o código..." oninput="renderSectores()" />
+          </div>
+          <div id="secList"><div class="empty"><div class="icon">📍</div><p>Sin sectores.</p></div></div>
+        </div>
       </div>
     </div>
   </div>
@@ -1109,7 +1119,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100204';
+const APP_BUILD = '2026100205';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2134,18 +2144,36 @@ window.cambiarSectorDesdeScanner=function(id){
 function updateSecSelects(){
   const secs=getSectores();
   const opts=Object.values(secs).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(s=>`<option value="${s.id}"${sectorActivo===s.id?' selected':''}>${s.nombre}</option>`).join('');
-  [['secActivoSel','<option value="">— Sin sector —</option>'],['secFilter','<option value="">Todos los sectores</option>']].forEach(([id,def])=>{const el=document.getElementById(id);if(el)el.innerHTML=def+opts;});
+  const el=document.getElementById('secActivoSel');if(el)el.innerHTML='<option value="">— Sin sector —</option>'+opts;
+  // Sector filter del Stock: si hay un depósito filtrado, mostrar los sectores de ESE depósito
+  // (no siempre el depósito activo), para que coincida con lo que se está filtrando/escaneando.
+  const secsFiltro=filterDep?(sectoresDB[filterDep]||{}):secs;
+  const optsFiltro=Object.values(secsFiltro).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(s=>`<option value="${s.id}"${filterSec===s.id?' selected':''}>${s.nombre}</option>`).join('');
+  const sf=document.getElementById('secFilter');if(sf)sf.innerHTML='<option value="">Todos los sectores</option>'+optsFiltro;
   // Dep filter
   const depOpts=Object.values(depositos).map(d=>`<option value="${d.id}"${filterDep===d.id?' selected':''}>${d.nombre}</option>`).join('');
   const df=document.getElementById('depFilter');if(df)df.innerHTML='<option value="">Todos los depósitos</option>'+depOpts;
 }
+let secListOpen=false;
+window.toggleSecList=function(){
+  secListOpen=!secListOpen;
+  const b=document.getElementById('secListBody'),icon=document.getElementById('secListToggleIcon');
+  if(b)b.style.display=secListOpen?'':'none';
+  if(icon)icon.textContent=secListOpen?'▾ Ocultar lista':'▸ Ver lista';
+  if(secListOpen)renderSectores();
+};
 function renderSectores(){
   const l=document.getElementById('secList'),c=document.getElementById('secCnt');
   const secs=getSectores();const sm=getSectorMap();const stk=getStock();
   const keys=Object.keys(secs);if(c)c.textContent=keys.length;
+  if(!secListOpen)return; // la lista está colapsada: no hace falta pintar las filas hasta que se abra
   if(!keys.length){l.innerHTML='<div class="empty"><div class="icon">📍</div><p>Sin sectores en este depósito.</p></div>';return;}
+  const q=(document.getElementById('secListSearch')?.value||'').trim().toLowerCase();
   const cnt={};Object.entries(sm).forEach(([k,sid])=>{if((stk[k]||0)>0)cnt[sid]=(cnt[sid]||0)+1;});
-  l.innerHTML=Object.values(secs).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(s=>`
+  let lista=Object.values(secs).sort((a,b)=>a.nombre.localeCompare(b.nombre,undefined,{numeric:true}));
+  if(q)lista=lista.filter(s=>s.nombre.toLowerCase().includes(q)||(s.codigo||'').toLowerCase().includes(q));
+  if(!lista.length){l.innerHTML='<div class="empty"><div class="icon">🔎</div><p>No hay sectores que coincidan con la búsqueda.</p></div>';return;}
+  l.innerHTML=lista.map(s=>`
     <div class="sec-row">
       <div style="flex:1;"><div class="sec-name">📍 ${s.nombre}</div><div class="sec-meta">${s.codigo} · ${cnt[s.id]||0} productos</div></div>
       <button class="btn btn-ghost btn-sm" onclick="verSector('${s.id}')">Ver</button>
@@ -2154,6 +2182,20 @@ function renderSectores(){
     </div>`).join('');
 }
 window.verSector=function(id){switchTab('stock');const f=document.getElementById('secFilter');if(f){f.value=id;filterSec=id;renderStock();}};
+// Escanear (cámara o pistola) el cartel de un sector en Stock, para filtrar directo por ese sector.
+window.stockScanSector=function(code){
+  code=(code||'').trim();if(!code)return;
+  const matchSec=buscarSectorPorCodigo(code);
+  if(!matchSec){showToast('No se encontró ningún sector con ese código','err');return;}
+  playBeep(true);vibrateDevice(true);
+  filterDep=matchSec.depId;filterSec=matchSec.id;
+  updateSecSelects();renderStock();
+  const df=document.getElementById('depFilter');if(df)df.value=matchSec.depId;
+  const sf=document.getElementById('secFilter');if(sf)sf.value=matchSec.id;
+  const inp=document.getElementById('stockScanInput');if(inp)inp.value='';
+  showToast(`Filtrando por sector: ${matchSec.nombre}`,'ok');
+};
+document.getElementById('stockScanInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();stockScanSector(e.target.value);}});
 
 // ── MAPA DE DEPÓSITO ──
 // Los módulos del mapa NUNCA duplican datos de sectoresDB/stockDB: cada módulo tipo 'sector'
@@ -2564,7 +2606,7 @@ window.mapaBuscarProducto=function(q){
     if(txt.indexOf(q)===-1)continue;
     if(sm[key]){secIdEncontrado=sm[key];break;}
   }
-  if(!secIdEncontrado){showToast('No se encontró ese producto ubicado en un sector','err');return;}
+  if(!secIdEncontrado)return; // búsqueda en vivo mientras se tipea/escanea: sin resultado aún, no es error
   mapaIrASector(secIdEncontrado);
 };
 // Búsqueda exacta por código escaneado (cámara o pistola lectora): puede ser el código
