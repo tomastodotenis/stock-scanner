@@ -1119,7 +1119,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100205';
+const APP_BUILD = '2026100206';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1885,6 +1885,7 @@ function renderNF(){
         <code>${i.code}</code>
         <span style="color:var(--muted);font-size:.7rem;">${i.time}</span>
         <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:.7rem;" onclick="anotarNF('${i.id}')">📝 ${i.nota?'Editar nota':'Anotar'}</button>
+        <button class="btn btn-danger btn-sm" style="padding:3px 8px;font-size:.7rem;" onclick="eliminarNF('${i.id}')">🗑</button>
       </div>
       ${i.nota?`<div style="font-size:.75rem;color:var(--accent);background:rgba(200,245,0,.08);border-radius:6px;padding:4px 7px;">📝 ${i.nota}</div>`:''}
     </div>
@@ -1959,6 +1960,11 @@ window.clearNF=function(){
   if(!confirm('¿Borrar toda la lista de no encontrados (incluidas las anotaciones)?'))return;
   fbClearNoEncontrados();
 };
+window.eliminarNF=function(id){
+  const item=notFoundLog.find(x=>x.id===id);
+  if(!confirm(`¿Eliminar "${item?.code||id}" de no encontrados?`))return;
+  fbDeleteNoEncontrado(id);
+};
 
 async function fbAddNoEncontrado(code){
   if(!currentUser)return;
@@ -1978,6 +1984,13 @@ async function fbSaveNotaNF(id,nota){
     const{db,doc,setDoc}=fb();
     await setDoc(doc(db,'noEncontrados',id),{nota},{merge:true});
   }catch(e){console.error(e);}
+}
+async function fbDeleteNoEncontrado(id){
+  if(!currentUser)return;
+  try{
+    const{db,doc,deleteDoc}=fb();
+    await deleteDoc(doc(db,'noEncontrados',id));
+  }catch(e){console.error(e);showToast('No se pudo eliminar','err');}
 }
 async function fbClearNoEncontrados(){
   if(!currentUser)return;
