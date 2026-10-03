@@ -899,7 +899,7 @@
           <div style="border-right:1px solid var(--border);">Producto / Variante</div>
           <div style="border-right:1px solid var(--border);">Depósito</div>
           <div style="border-right:1px solid var(--border);">Sector</div>
-          <div></div>
+          <div>Salida</div>
         </div>
         <div id="planillaList" style="min-width:690px;"></div>
       </div>
@@ -1143,7 +1143,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100306';
+const APP_BUILD = '2026100307';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
