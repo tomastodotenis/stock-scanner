@@ -1119,7 +1119,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100206';
+const APP_BUILD = '2026100301';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -4845,9 +4845,17 @@ function processPlanillaFile(file){
     try{
       const wb=XLSX.read(e.target.result,{type:'array'});
       const ws=wb.Sheets[wb.SheetNames[0]];
-      // La fila 1 del export de MeLi trae categorías agrupadas (Ventas, Envíos, etc);
-      // la fila 2 tiene los encabezados reales, los datos arrancan en la fila 3.
-      const rows=XLSX.utils.sheet_to_json(ws,{range:1,defval:''});
+      // El export de MeLi trae varias filas de encabezado/promo arriba (varían según el reporte
+      // y cambian de vez en cuando) antes de la fila real de columnas. En vez de asumir un número
+      // fijo de filas, buscamos la fila que contiene la columna "SKU" y arrancamos desde ahí.
+      const rawRows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      const headerIdx=rawRows.findIndex(r=>r.some(cell=>String(cell||'').trim().toUpperCase()==='SKU'));
+      if(headerIdx===-1){
+        st.style.display='block';st.className='ist err';
+        st.innerHTML='❌ No se encontró la columna "SKU" en el archivo. ¿Es el reporte de Ventas de Mercado Libre?';
+        return;
+      }
+      const rows=XLSX.utils.sheet_to_json(ws,{range:headerIdx,defval:''});
       const out=[];
       rows.forEach(row=>{
         const sku=String(row['SKU']||'').trim();
