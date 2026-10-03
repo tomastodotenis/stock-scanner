@@ -868,16 +868,21 @@
         <input type="text" id="planillaSearch" class="inp" placeholder="Buscar por SKU o título..." style="padding-left:36px;" oninput="renderPlanilla()" />
       </div>
       <div style="display:none;gap:8px;" id="planillaActions">
-        <button class="btn btn-ghost btn-sm" onclick="exportPlanillaXLSX()" style="flex:1;justify-content:center;">⬇️ Exportar Excel</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportPlanillaXLSX()" style="flex:1;justify-content:center;">⬇️ Excel</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportPlanillaCSV()" style="flex:1;justify-content:center;">⬇️ CSV (Google Sheets)</button>
         <button class="btn btn-danger btn-sm" onclick="clearPlanilla()" style="flex:1;justify-content:center;">🗑 Limpiar</button>
       </div>
 
       <!-- Tabla -->
-      <div class="stbl" id="planillaTbl" style="display:none;">
-        <div class="stbl-hdr" style="grid-template-columns:44px 1fr 90px 90px;">
-          <div>Unid.</div><div>Producto</div><div>Depósito</div><div>Sector</div>
+      <div class="stbl" id="planillaTbl" style="display:none;overflow-x:auto;">
+        <div class="stbl-hdr" style="grid-template-columns:50px 110px 1fr 160px 120px;min-width:640px;">
+          <div style="border-right:1px solid var(--border);">Unid.</div>
+          <div style="border-right:1px solid var(--border);">SKU</div>
+          <div style="border-right:1px solid var(--border);">Producto / Variante</div>
+          <div style="border-right:1px solid var(--border);">Depósito</div>
+          <div>Sector</div>
         </div>
-        <div id="planillaList"></div>
+        <div id="planillaList" style="min-width:640px;"></div>
       </div>
       <div class="stbl" id="planillaEmpty">
         <div class="empty"><div class="icon">📄</div><p>Subí un Excel de ventas de MeLi para empezar.</p></div>
@@ -1119,7 +1124,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100301';
+const APP_BUILD = '2026100302';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -4909,13 +4914,14 @@ function renderPlanilla(){
     return;
   }
   list.innerHTML=filtered.map(r=>`
-    <div class="stbl-row" style="grid-template-columns:44px 1fr 90px 90px;">
-      <div class="rqty">${r.unidades}</div>
-      <div>
+    <div class="stbl-row" style="grid-template-columns:50px 110px 1fr 160px 120px;min-width:640px;">
+      <div class="rqty" style="border-right:1px solid var(--border);">${r.unidades}</div>
+      <div class="rsku" style="border-right:1px solid var(--border);">${r.sku}</div>
+      <div style="border-right:1px solid var(--border);">
         <div class="rname">${r.titulo||'—'}</div>
-        <div class="rsku">${r.sku}${r.variante?' · '+r.variante:''}</div>
+        ${r.variante?`<div class="rsku">${r.variante}</div>`:''}
       </div>
-      <div class="rsec" style="${r.sinUbicar?'color:var(--danger);':''}">${r.deposito}</div>
+      <div class="rsec" style="border-right:1px solid var(--border);${r.sinUbicar?'color:var(--danger);':''}">${r.deposito}</div>
       <div class="rsec">${r.sector}</div>
     </div>`).join('');
 }
@@ -4930,6 +4936,20 @@ function exportPlanillaXLSX(){
   ws['!cols']=[{wch:9},{wch:20},{wch:45},{wch:30},{wch:22},{wch:18}];
   XLSX.utils.book_append_sheet(wb,ws,'Ventas');
   XLSX.writeFile(wb,`planilla_busqueda_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function exportPlanillaCSV(){
+  if(!planillaData.length)return;
+  const rows=planillaData.map(r=>({
+    'Unidades':r.unidades,'SKU':r.sku,'Título de la publicación':r.titulo,
+    'Variante':r.variante,'Depósito':r.deposito,'Sector':r.sector
+  }));
+  const h=Object.keys(rows[0]);
+  const csv=[h.join(','),...rows.map(r=>h.map(k=>`"${String(r[k]).replace(/"/g,'""')}"`).join(','))].join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download=`planilla_busqueda_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+  showToast('CSV descargado ✅ — subilo a Google Drive y abrilo con Google Sheets','ok');
 }
 
 function clearPlanilla(){
