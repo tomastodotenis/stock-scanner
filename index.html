@@ -863,9 +863,14 @@
       </div>
 
       <!-- Buscador + acciones -->
-      <div style="position:relative;display:none;" id="planillaSearchWrap">
-        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);">🔍</span>
-        <input type="text" id="planillaSearch" class="inp" placeholder="Buscar por SKU o título..." style="padding-left:36px;" oninput="renderPlanilla()" />
+      <div style="display:none;gap:8px;" id="planillaSearchWrap">
+        <div style="position:relative;flex:1;">
+          <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);">🔍</span>
+          <input type="text" id="planillaSearch" class="inp" placeholder="Buscar por SKU o título..." style="padding-left:36px;" oninput="renderPlanilla()" />
+        </div>
+        <select id="planillaDepFilter" class="inp" style="flex:none;width:auto;min-width:150px;" onchange="renderPlanilla()">
+          <option value="">Todos los depósitos</option>
+        </select>
       </div>
       <div style="display:none;gap:8px;" id="planillaActions">
         <button class="btn btn-ghost btn-sm" onclick="exportPlanillaXLSX()" style="flex:1;justify-content:center;">⬇️ Excel</button>
@@ -1124,7 +1129,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100302';
+const APP_BUILD = '2026100303';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -4824,7 +4829,7 @@ function normPlanilla(s){ return String(s||'').toLowerCase().normalize('NFD').re
 // Busca en qué depósito(s)/sector(es) hay stock de un SKU de MeLi (=canonical en el catálogo)
 function ubicarSku(sku){
   const entry=catalog[String(sku).trim()];
-  if(!entry) return {deposito:'❓ No está en el catálogo',sector:'—',sinUbicar:true};
+  if(!entry) return {deposito:'❓ No está en el catálogo',sector:'—',sinUbicar:true,depIds:[]};
   const can=entry.canonical;
   const matches=[];
   Object.keys(depositos).forEach(depId=>{
@@ -4833,13 +4838,14 @@ function ubicarSku(sku){
     const secId=(sectorMapDB[depId]||{})[can];
     const secNombre=secId&&sectoresDB[depId]&&sectoresDB[depId][secId]?sectoresDB[depId][secId].nombre:'Sin sector';
     const depNombre=depositos[depId]?.nombre||depId;
-    matches.push({depNombre,secNombre,qty});
+    matches.push({depId,depNombre,secNombre,qty});
   });
-  if(!matches.length) return {deposito:'⚠️ Sin stock',sector:'—',sinUbicar:true};
+  if(!matches.length) return {deposito:'⚠️ Sin stock',sector:'—',sinUbicar:true,depIds:[]};
   return {
     deposito:matches.map(m=>`${m.depNombre} (${m.qty})`).join(' + '),
     sector:matches.map(m=>m.secNombre).join(' + '),
-    sinUbicar:false
+    sinUbicar:false,
+    depIds:matches.map(m=>m.depId)
   };
 }
 
@@ -4869,7 +4875,7 @@ function processPlanillaFile(file){
         const titulo=String(row['Título de la publicación']||'').trim();
         const variante=String(row['Variante']||'').trim();
         const ub=ubicarSku(sku);
-        out.push({unidades,sku,titulo,variante,deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar});
+        out.push({unidades,sku,titulo,variante,deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar,depIds:ub.depIds});
       });
       if(!out.length){
         st.style.display='block';st.className='ist err';
@@ -4880,6 +4886,12 @@ function processPlanillaFile(file){
       st.style.display='block';st.className='ist ok';
       st.innerHTML=`✅ <b>${out.length} ventas</b> procesadas`;
       showToast(`${out.length} ventas procesadas`,'ok');
+      const df=document.getElementById('planillaDepFilter');
+      if(df){
+        const depOpts=Object.entries(depositos).map(([id,d])=>`<option value="${id}">${d.nombre}</option>`).join('');
+        df.innerHTML='<option value="">Todos los depósitos</option>'+depOpts;
+        df.value='';
+      }
       renderPlanilla();
     }catch(err){
       st.style.display='block';st.className='ist err';
@@ -4892,14 +4904,16 @@ function processPlanillaFile(file){
 function renderPlanilla(){
   const hasData=planillaData.length>0;
   document.getElementById('planillaStats').style.display=hasData?'grid':'none';
-  document.getElementById('planillaSearchWrap').style.display=hasData?'block':'none';
+  document.getElementById('planillaSearchWrap').style.display=hasData?'flex':'none';
   document.getElementById('planillaActions').style.display=hasData?'flex':'none';
   document.getElementById('planillaTbl').style.display=hasData?'block':'none';
   document.getElementById('planillaEmpty').style.display=hasData?'none':'block';
   if(!hasData)return;
 
   const q=normPlanilla(document.getElementById('planillaSearch')?.value||'');
+  const depSel=document.getElementById('planillaDepFilter')?.value||'';
   const filtered=planillaData.filter(r=>{
+    if(depSel&&!(r.depIds||[]).includes(depSel))return false;
     if(!q)return true;
     return normPlanilla(r.sku).includes(q)||normPlanilla(r.titulo).includes(q)||normPlanilla(r.variante).includes(q);
   });
@@ -4957,6 +4971,7 @@ function clearPlanilla(){
   pfi.value='';
   document.getElementById('planillaStatus').style.display='none';
   const s=document.getElementById('planillaSearch');if(s)s.value='';
+  const df=document.getElementById('planillaDepFilter');if(df)df.value='';
   renderPlanilla();
 }
 
