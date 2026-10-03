@@ -837,12 +837,15 @@
         <div style="font-size:.72rem;color:var(--muted);margin-top:2px;">Subí el Excel de ventas de MeLi para ubicar cada producto en el depósito</div>
       </div>
 
+      <!-- Traer directo de MeLi (reemplaza el Excel manual) -->
+      <button class="btn btn-primary btn-sm" style="width:100%;justify-content:center;" onclick="actualizarPendientesImprimir()">🔄 Actualizar pendientes de imprimir (MeLi)</button>
+
       <!-- Import zone -->
       <div class="import-zone" id="planillaZone">
         <input type="file" id="planillaFileInput" accept=".xlsx,.xls,.csv" />
         <div class="icon">📥</div>
         <h3>Importar reporte de ventas MeLi</h3>
-        <p>Arrastrá o tocá para seleccionar el Excel que descargás de Mercado Libre</p>
+        <p>O arrastrá/tocá para subir el Excel manualmente</p>
       </div>
       <div class="ist" id="planillaStatus"></div>
 
@@ -4929,6 +4932,49 @@ function processPlanillaFile(file){
     }
   };
   r.readAsArrayBuffer(file);
+}
+
+// Trae directo de la API de Mercado Libre los pedidos "listos para imprimir"
+// (vía el endpoint /ordenes/pendientes-imprimir del Worker meli-proxy), para
+// no depender de que alguien suba el Excel manual todos los días.
+async function actualizarPendientesImprimir(){
+  const st=document.getElementById('planillaStatus');
+  st.style.display='block';st.className='ist';st.innerHTML='⏳ Consultando pedidos pendientes de imprimir en Mercado Libre...';
+  try{
+    const res=await fetch(MELI_WORKER_URL+'/ordenes/pendientes-imprimir');
+    const data=await res.json();
+    if(data.error){
+      st.className='ist err';st.innerHTML=`❌ ${data.error}`;
+      return;
+    }
+    if(!data.pedidos||!data.pedidos.length){
+      st.className='ist err';st.innerHTML='❌ No hay pedidos pendientes de imprimir en este momento.';
+      return;
+    }
+    const out=[];
+    let pid=0;
+    data.pedidos.forEach(p=>{
+      const sku=String(p.sku||'').trim();
+      if(!sku)return; // sin SKU cargado en MeLi, no se puede ubicar
+      const ub=ubicarSku(sku);
+      out.push({id:'p'+(pid++),unidades:Number(p.cantidad)||1,sku,titulo:p.titulo||'',variante:'',deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar,depIds:ub.depIds,checked:false,salidaHecha:false});
+    });
+    if(!out.length){
+      st.className='ist err';st.innerHTML='❌ Los pedidos pendientes no tienen SKU cargado en Mercado Libre.';
+      return;
+    }
+    planillaData=out;
+    st.className='ist ok';
+    st.innerHTML=`✅ <b>${out.length} ventas</b> traídas de Mercado Libre`;
+    showToast(`${out.length} ventas traídas de MeLi`,'ok');
+    fbSavePlanilla();
+    const df=document.getElementById('planillaDepFilter');
+    if(df)df.value='';
+    renderPlanilla();
+  }catch(err){
+    st.style.display='block';st.className='ist err';
+    st.innerHTML=`❌ ${err.message}`;
+  }
 }
 
 // Devuelve las filas de la planilla que coinciden con el buscador y el depósito elegidos
