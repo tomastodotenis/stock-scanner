@@ -1143,7 +1143,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100305';
+const APP_BUILD = '2026100306';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -4908,7 +4908,7 @@ function processPlanillaFile(file){
         const titulo=String(row['Título de la publicación']||'').trim();
         const variante=String(row['Variante']||'').trim();
         const ub=ubicarSku(sku);
-        out.push({id:'p'+(pid++),unidades,sku,titulo,variante,deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar,depIds:ub.depIds,checked:false});
+        out.push({id:'p'+(pid++),unidades,sku,titulo,variante,deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar,depIds:ub.depIds,checked:false,salidaHecha:false});
       });
       if(!out.length){
         st.style.display='block';st.className='ist err';
@@ -4998,7 +4998,7 @@ function renderPlanilla(){
       </div>
       <div class="rsec" style="border-right:1px solid var(--border);${r.sinUbicar?'color:var(--danger);':''}">${r.deposito}</div>
       <div class="rsec" style="border-right:1px solid var(--border);">${r.sector}</div>
-      <div style="text-align:center;">${r.sinUbicar?'':`<button class="btn btn-danger btn-sm" style="padding:3px 6px;font-size:.75rem;" onclick="planillaDescontarStock('${r.id}')" title="Descontar stock (salida)">📤</button>`}</div>
+      <div style="text-align:center;">${r.salidaHecha?'<span style="color:var(--accent);font-size:.68rem;font-weight:700;" title="Ya se descontó del stock">✓ Descontado</span>':(r.sinUbicar?'':`<button class="btn btn-danger btn-sm" style="padding:3px 6px;font-size:.75rem;" onclick="planillaDescontarStock('${r.id}')" title="Descontar stock (salida)">📤</button>`)}</div>
     </div>`).join('');
 }
 
@@ -5076,6 +5076,7 @@ window.planillaScanCode=function(code){
 window.planillaDescontarStock=function(rowId){
   const r=planillaData.find(x=>x.id===rowId);
   if(!r)return;
+  if(r.salidaHecha){showToast('Esa fila ya se descontó del stock','err');return;}
   const entry=catalog[r.sku];
   if(!entry){showToast('Producto no está en el catálogo','err');return;}
   const key=entry.canonical;
@@ -5097,6 +5098,7 @@ async function planillaHacerSalida(key,entry,depId,desc,row){
   updateHeader();renderStock();
   pushStockToMeli(key,entry);
   row.checked=true;
+  row.salidaHecha=true;
   flashScr(true);playBeep(true);vibrateDevice(true);
   showToast(`📤 Salida registrada: ${desc} ud. de ${entry.name}`,'ok');
   renderPlanilla();
