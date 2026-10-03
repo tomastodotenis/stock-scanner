@@ -847,7 +847,7 @@
       <div class="ist" id="planillaStatus"></div>
 
       <!-- Stats -->
-      <div style="display:none;grid-template-columns:1fr 1fr 1fr;gap:8px;" id="planillaStats">
+      <div style="display:none;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;" id="planillaStats">
         <div class="card" style="padding:10px;text-align:center;">
           <div style="font-size:1.3rem;font-weight:700;color:var(--accent);" id="planillaTotalUnid">0</div>
           <div style="font-size:.68rem;color:var(--muted);">Unidades</div>
@@ -859,6 +859,19 @@
         <div class="card" style="padding:10px;text-align:center;">
           <div style="font-size:1.3rem;font-weight:700;color:var(--danger);" id="planillaSinUbicar">0</div>
           <div style="font-size:.68rem;color:var(--muted);">Sin ubicar</div>
+        </div>
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:1.3rem;font-weight:700;color:#4ade80;" id="planillaJuntadas">0</div>
+          <div style="font-size:.68rem;color:var(--muted);">Juntadas</div>
+        </div>
+      </div>
+
+      <!-- Escanear para ir marcando lo que ya se juntó -->
+      <div class="card" style="display:none;padding:10px 13px;" id="planillaScanWrap">
+        <div class="slabel" style="margin-bottom:7px;">📦 Escaneá para marcar como juntado</div>
+        <div style="display:flex;gap:7px;">
+          <input type="text" id="planillaScanInput" class="inp" placeholder="Código de barras o SKU..." autocomplete="off" />
+          <button class="btn btn-ghost btn-sm" style="flex:none;" onclick="abrirScanRapido(planillaScanCode)">📷</button>
         </div>
       </div>
 
@@ -1129,7 +1142,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100303';
+const APP_BUILD = '2026100304';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -4875,7 +4888,7 @@ function processPlanillaFile(file){
         const titulo=String(row['Título de la publicación']||'').trim();
         const variante=String(row['Variante']||'').trim();
         const ub=ubicarSku(sku);
-        out.push({unidades,sku,titulo,variante,deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar,depIds:ub.depIds});
+        out.push({unidades,sku,titulo,variante,deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar,depIds:ub.depIds,checked:false});
       });
       if(!out.length){
         st.style.display='block';st.className='ist err';
@@ -4901,26 +4914,34 @@ function processPlanillaFile(file){
   r.readAsArrayBuffer(file);
 }
 
+// Devuelve las filas de la planilla que coinciden con el buscador y el depósito elegidos
+// (lo mismo que se ve en pantalla) — usado tanto para pintar la tabla como para exportar.
+function planillaFiltradas(){
+  const q=normPlanilla(document.getElementById('planillaSearch')?.value||'');
+  const depSel=document.getElementById('planillaDepFilter')?.value||'';
+  return planillaData.filter(r=>{
+    if(depSel&&!(r.depIds||[]).includes(depSel))return false;
+    if(!q)return true;
+    return normPlanilla(r.sku).includes(q)||normPlanilla(r.titulo).includes(q)||normPlanilla(r.variante).includes(q);
+  });
+}
+
 function renderPlanilla(){
   const hasData=planillaData.length>0;
   document.getElementById('planillaStats').style.display=hasData?'grid':'none';
+  document.getElementById('planillaScanWrap').style.display=hasData?'block':'none';
   document.getElementById('planillaSearchWrap').style.display=hasData?'flex':'none';
   document.getElementById('planillaActions').style.display=hasData?'flex':'none';
   document.getElementById('planillaTbl').style.display=hasData?'block':'none';
   document.getElementById('planillaEmpty').style.display=hasData?'none':'block';
   if(!hasData)return;
 
-  const q=normPlanilla(document.getElementById('planillaSearch')?.value||'');
-  const depSel=document.getElementById('planillaDepFilter')?.value||'';
-  const filtered=planillaData.filter(r=>{
-    if(depSel&&!(r.depIds||[]).includes(depSel))return false;
-    if(!q)return true;
-    return normPlanilla(r.sku).includes(q)||normPlanilla(r.titulo).includes(q)||normPlanilla(r.variante).includes(q);
-  });
+  const filtered=planillaFiltradas();
 
   document.getElementById('planillaTotalUnid').textContent=planillaData.reduce((s,r)=>s+r.unidades,0).toLocaleString('es-AR');
   document.getElementById('planillaTotalFilas').textContent=planillaData.length;
   document.getElementById('planillaSinUbicar').textContent=planillaData.filter(r=>r.sinUbicar).length;
+  document.getElementById('planillaJuntadas').textContent=planillaData.filter(r=>r.checked).length;
 
   const list=document.getElementById('planillaList');
   if(!filtered.length){
@@ -4928,10 +4949,10 @@ function renderPlanilla(){
     return;
   }
   list.innerHTML=filtered.map(r=>`
-    <div class="stbl-row" style="grid-template-columns:50px 110px 1fr 160px 120px;min-width:640px;">
-      <div class="rqty" style="border-right:1px solid var(--border);">${r.unidades}</div>
-      <div class="rsku" style="border-right:1px solid var(--border);">${r.sku}</div>
-      <div style="border-right:1px solid var(--border);">
+    <div class="stbl-row" style="grid-template-columns:50px 110px 1fr 160px 120px;min-width:640px;${r.checked?'opacity:.45;':''}">
+      <div class="rqty" style="border-right:1px solid var(--border);">${r.checked?'✅':r.unidades}</div>
+      <div class="rsku" style="border-right:1px solid var(--border);${r.checked?'text-decoration:line-through;':''}">${r.sku}</div>
+      <div style="border-right:1px solid var(--border);${r.checked?'text-decoration:line-through;':''}">
         <div class="rname">${r.titulo||'—'}</div>
         ${r.variante?`<div class="rsku">${r.variante}</div>`:''}
       </div>
@@ -4941,22 +4962,24 @@ function renderPlanilla(){
 }
 
 function exportPlanillaXLSX(){
-  if(!planillaData.length)return;
-  const rows=planillaData.map(r=>({
+  const data=planillaFiltradas();
+  if(!data.length)return;
+  const rows=data.map(r=>({
     'Unidades':r.unidades,'SKU':r.sku,'Título de la publicación':r.titulo,
-    'Variante':r.variante,'Depósito':r.deposito,'Sector':r.sector
+    'Variante':r.variante,'Depósito':r.deposito,'Sector':r.sector,'Juntado':r.checked?'Sí':'No'
   }));
   const wb=XLSX.utils.book_new();const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:9},{wch:20},{wch:45},{wch:30},{wch:22},{wch:18}];
+  ws['!cols']=[{wch:9},{wch:20},{wch:45},{wch:30},{wch:22},{wch:18},{wch:9}];
   XLSX.utils.book_append_sheet(wb,ws,'Ventas');
   XLSX.writeFile(wb,`planilla_busqueda_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
 function exportPlanillaCSV(){
-  if(!planillaData.length)return;
-  const rows=planillaData.map(r=>({
+  const data=planillaFiltradas();
+  if(!data.length)return;
+  const rows=data.map(r=>({
     'Unidades':r.unidades,'SKU':r.sku,'Título de la publicación':r.titulo,
-    'Variante':r.variante,'Depósito':r.deposito,'Sector':r.sector
+    'Variante':r.variante,'Depósito':r.deposito,'Sector':r.sector,'Juntado':r.checked?'Sí':'No'
   }));
   const h=Object.keys(rows[0]);
   const csv=[h.join(','),...rows.map(r=>h.map(k=>`"${String(r[k]).replace(/"/g,'""')}"`).join(','))].join('\n');
@@ -4972,8 +4995,38 @@ function clearPlanilla(){
   document.getElementById('planillaStatus').style.display='none';
   const s=document.getElementById('planillaSearch');if(s)s.value='';
   const df=document.getElementById('planillaDepFilter');if(df)df.value='';
+  const si=document.getElementById('planillaScanInput');if(si)si.value='';
   renderPlanilla();
 }
+
+// Escanear (cámara o pistola) para marcar como "ya juntado" un producto de la planilla,
+// sin tocar el stock. Verde + sonido si matchea una fila pendiente, rojo + sonido si no.
+window.planillaScanCode=function(code){
+  code=(code||'').trim();
+  const si=document.getElementById('planillaScanInput');if(si)si.value='';
+  if(!code)return;
+  const entry=catalog[code];
+  const can=entry?entry.canonical:null;
+  // Busca, entre las filas NO marcadas todavía, una cuyo SKU resuelva al mismo producto escaneado.
+  const match=planillaData.find(r=>{
+    if(r.checked)return false;
+    if(r.sku===code)return true;
+    if(!can)return false;
+    const rEntry=catalog[r.sku];
+    return rEntry&&rEntry.canonical===can;
+  });
+  if(match){
+    match.checked=true;
+    flashScr(true);playBeep(true);vibrateDevice(true);
+    showToast(`✅ Juntado: ${match.titulo||match.sku}`,'ok');
+    renderPlanilla();
+  }else{
+    flashScr(false);playBeep(false);vibrateDevice(false);
+    const yaEstaba=entry&&planillaData.some(r=>r.checked&&(r.sku===code||catalog[r.sku]?.canonical===can));
+    showToast(yaEstaba?'Ese producto ya estaba marcado':'No está pendiente en esta planilla','err');
+  }
+};
+document.getElementById('planillaScanInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();planillaScanCode(e.target.value);}});
 
 // ── AUDITORÍA DE STOCK ──
 window.iniciarAuditoria=function(){
