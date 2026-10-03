@@ -893,14 +893,15 @@
 
       <!-- Tabla -->
       <div class="stbl" id="planillaTbl" style="display:none;overflow-x:auto;">
-        <div class="stbl-hdr" style="grid-template-columns:50px 110px 1fr 160px 120px;min-width:640px;">
+        <div class="stbl-hdr" style="grid-template-columns:50px 110px 1fr 160px 120px 50px;min-width:690px;">
           <div style="border-right:1px solid var(--border);">Unid.</div>
           <div style="border-right:1px solid var(--border);">SKU</div>
           <div style="border-right:1px solid var(--border);">Producto / Variante</div>
           <div style="border-right:1px solid var(--border);">Depósito</div>
-          <div>Sector</div>
+          <div style="border-right:1px solid var(--border);">Sector</div>
+          <div></div>
         </div>
-        <div id="planillaList" style="min-width:640px;"></div>
+        <div id="planillaList" style="min-width:690px;"></div>
       </div>
       <div class="stbl" id="planillaEmpty">
         <div class="empty"><div class="icon">📄</div><p>Subí un Excel de ventas de MeLi para empezar.</p></div>
@@ -1142,7 +1143,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100304';
+const APP_BUILD = '2026100305';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1238,6 +1239,23 @@ async function fbSaveMapa(depId){
 async function fbSaveEmpleados(){
   if(!currentUser)return;
   try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','empleados'),{empleados,upd:new Date().toISOString()});}catch(e){console.error(e);}
+}
+// Comparte la Planilla de Búsqueda (ventas importadas + qué se fue marcando como "juntado")
+// entre todos los dispositivos conectados — se sube desde la compu y se ve en el celu, y viceversa.
+async function fbSavePlanilla(){
+  if(!currentUser)return;
+  try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','planilla'),{data:planillaData,upd:new Date().toISOString(),por:getDisplayName()});}catch(e){console.error(e);}
+}
+function fbListenPlanilla(){
+  try{
+    const{db,doc,onSnapshot}=fb();
+    if(unsubPlanilla)unsubPlanilla();
+    unsubPlanilla=onSnapshot(doc(db,'config','planilla'),snap=>{
+      if(!snap.exists())return;
+      planillaData=snap.data().data||[];
+      renderPlanilla();
+    });
+  }catch(e){console.error(e);}
 }
 async function fbAddMov(mov){
   if(!currentUser)return;
@@ -1498,7 +1516,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         const sh=document.getElementById('appShell');sh.style.display='flex';
         updateDisplayName();
         await fbLoadProfile();
-        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();fbListenUltimoMov();fbListenNoEncontrados();
+        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();fbListenUltimoMov();fbListenNoEncontrados();fbListenPlanilla();
         // Auto-sync catalog every 30 minutes
         autoSyncCatalog();
         startPresence();
@@ -4830,6 +4848,7 @@ function renderRanking(){
 
 // ── PLANILLA DE BÚSQUEDA (ventas MeLi → sector/depósito) ──
 let planillaData=[];
+let unsubPlanilla=null;
 const pz=document.getElementById('planillaZone'),pfi=document.getElementById('planillaFileInput');
 pz.addEventListener('click',()=>pfi.click());
 pz.addEventListener('dragover',e=>{e.preventDefault();pz.style.borderColor='var(--accent)';});
@@ -4881,6 +4900,7 @@ function processPlanillaFile(file){
       }
       const rows=XLSX.utils.sheet_to_json(ws,{range:headerIdx,defval:''});
       const out=[];
+      let pid=0;
       rows.forEach(row=>{
         const sku=String(row['SKU']||'').trim();
         if(!sku)return; // filas de estado sin producto (cambios/reclamos)
@@ -4888,7 +4908,7 @@ function processPlanillaFile(file){
         const titulo=String(row['Título de la publicación']||'').trim();
         const variante=String(row['Variante']||'').trim();
         const ub=ubicarSku(sku);
-        out.push({unidades,sku,titulo,variante,deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar,depIds:ub.depIds,checked:false});
+        out.push({id:'p'+(pid++),unidades,sku,titulo,variante,deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar,depIds:ub.depIds,checked:false});
       });
       if(!out.length){
         st.style.display='block';st.className='ist err';
@@ -4899,12 +4919,9 @@ function processPlanillaFile(file){
       st.style.display='block';st.className='ist ok';
       st.innerHTML=`✅ <b>${out.length} ventas</b> procesadas`;
       showToast(`${out.length} ventas procesadas`,'ok');
+      fbSavePlanilla();
       const df=document.getElementById('planillaDepFilter');
-      if(df){
-        const depOpts=Object.entries(depositos).map(([id,d])=>`<option value="${id}">${d.nombre}</option>`).join('');
-        df.innerHTML='<option value="">Todos los depósitos</option>'+depOpts;
-        df.value='';
-      }
+      if(df)df.value='';
       renderPlanilla();
     }catch(err){
       st.style.display='block';st.className='ist err';
@@ -4926,6 +4943,28 @@ function planillaFiltradas(){
   });
 }
 
+// Repuebla el desplegable de depósito sin perder lo elegido (se llama en cada render porque los
+// datos pueden llegar de otro dispositivo, no solo de una importación hecha acá mismo).
+function planillaPoblarDepFiltro(){
+  const df=document.getElementById('planillaDepFilter');
+  if(!df)return;
+  const cur=df.value;
+  const depOpts=Object.entries(depositos).map(([id,d])=>`<option value="${id}">${d.nombre}</option>`).join('');
+  df.innerHTML='<option value="">Todos los depósitos</option>'+depOpts;
+  df.value=(cur&&depositos[cur])?cur:'';
+}
+
+// Resalta "Talle : ..." dentro del texto de variante con el mismo color que sector/depósito,
+// para que se vea de un vistazo al juntar el pedido.
+function planillaVarianteHTML(variante){
+  if(!variante)return '';
+  const m=variante.match(/Talle\s*:\s*[^|]+/i);
+  if(!m)return variante;
+  const resto=(variante.slice(0,m.index)+variante.slice(m.index+m[0].length)).replace(/\s*\|\s*\|\s*/,' | ').replace(/^\s*\|\s*|\s*\|\s*$/g,'');
+  const talleHTML=`<span class="rsec">${m[0].trim()}</span>`;
+  return resto?`${talleHTML} · ${resto}`:talleHTML;
+}
+
 function renderPlanilla(){
   const hasData=planillaData.length>0;
   document.getElementById('planillaStats').style.display=hasData?'grid':'none';
@@ -4936,6 +4975,7 @@ function renderPlanilla(){
   document.getElementById('planillaEmpty').style.display=hasData?'none':'block';
   if(!hasData)return;
 
+  planillaPoblarDepFiltro();
   const filtered=planillaFiltradas();
 
   document.getElementById('planillaTotalUnid').textContent=planillaData.reduce((s,r)=>s+r.unidades,0).toLocaleString('es-AR');
@@ -4949,15 +4989,16 @@ function renderPlanilla(){
     return;
   }
   list.innerHTML=filtered.map(r=>`
-    <div class="stbl-row" style="grid-template-columns:50px 110px 1fr 160px 120px;min-width:640px;${r.checked?'opacity:.45;':''}">
+    <div class="stbl-row" style="grid-template-columns:50px 110px 1fr 160px 120px 50px;min-width:690px;${r.checked?'opacity:.45;':''}">
       <div class="rqty" style="border-right:1px solid var(--border);">${r.checked?'✅':r.unidades}</div>
       <div class="rsku" style="border-right:1px solid var(--border);${r.checked?'text-decoration:line-through;':''}">${r.sku}</div>
       <div style="border-right:1px solid var(--border);${r.checked?'text-decoration:line-through;':''}">
         <div class="rname">${r.titulo||'—'}</div>
-        ${r.variante?`<div class="rsku">${r.variante}</div>`:''}
+        ${r.variante?`<div class="rsku">${planillaVarianteHTML(r.variante)}</div>`:''}
       </div>
       <div class="rsec" style="border-right:1px solid var(--border);${r.sinUbicar?'color:var(--danger);':''}">${r.deposito}</div>
-      <div class="rsec">${r.sector}</div>
+      <div class="rsec" style="border-right:1px solid var(--border);">${r.sector}</div>
+      <div style="text-align:center;">${r.sinUbicar?'':`<button class="btn btn-danger btn-sm" style="padding:3px 6px;font-size:.75rem;" onclick="planillaDescontarStock('${r.id}')" title="Descontar stock (salida)">📤</button>`}</div>
     </div>`).join('');
 }
 
@@ -4997,6 +5038,7 @@ function clearPlanilla(){
   const df=document.getElementById('planillaDepFilter');if(df)df.value='';
   const si=document.getElementById('planillaScanInput');if(si)si.value='';
   renderPlanilla();
+  fbSavePlanilla();
 }
 
 // Escanear (cámara o pistola) para marcar como "ya juntado" un producto de la planilla,
@@ -5020,12 +5062,46 @@ window.planillaScanCode=function(code){
     flashScr(true);playBeep(true);vibrateDevice(true);
     showToast(`✅ Juntado: ${match.titulo||match.sku}`,'ok');
     renderPlanilla();
+    fbSavePlanilla();
   }else{
     flashScr(false);playBeep(false);vibrateDevice(false);
     const yaEstaba=entry&&planillaData.some(r=>r.checked&&(r.sku===code||catalog[r.sku]?.canonical===can));
     showToast(yaEstaba?'Ese producto ya estaba marcado':'No está pendiente en esta planilla','err');
   }
 };
+
+// Descuenta stock (registra una SALIDA) directo desde una fila de la planilla, sin tener
+// que ir a Escanear. Si el producto tiene stock en varios depósitos, prioriza el depósito
+// activo; si no, usa el primero donde haya stock.
+window.planillaDescontarStock=function(rowId){
+  const r=planillaData.find(x=>x.id===rowId);
+  if(!r)return;
+  const entry=catalog[r.sku];
+  if(!entry){showToast('Producto no está en el catálogo','err');return;}
+  const key=entry.canonical;
+  const depId=(r.depIds||[]).includes(depActivo)?depActivo:(r.depIds||[])[0];
+  if(!depId){showToast('No hay stock de este producto para descontar','err');return;}
+  const curQ=getStockInDep(depId,key);
+  if(curQ<=0){showToast(`Sin stock en ${depositos[depId]?.nombre||depId}`,'err');return;}
+  const desc=Math.min(r.unidades||1,curQ);
+  if(!confirm(`¿Descontar ${desc} unidad(es) de "${entry.name}" del depósito ${depositos[depId]?.nombre||depId}?`))return;
+  planillaHacerSalida(key,entry,depId,desc,r);
+};
+async function planillaHacerSalida(key,entry,depId,desc,row){
+  const prevDep=depActivo;
+  depActivo=depId;
+  setStockVal(key,getStockVal(key)-desc);
+  fbAddMov(makeMov(key,entry,'salida',desc,'Salida desde Planilla de Búsqueda'));
+  await fbSaveStock();
+  depActivo=prevDep;
+  updateHeader();renderStock();
+  pushStockToMeli(key,entry);
+  row.checked=true;
+  flashScr(true);playBeep(true);vibrateDevice(true);
+  showToast(`📤 Salida registrada: ${desc} ud. de ${entry.name}`,'ok');
+  renderPlanilla();
+  fbSavePlanilla();
+}
 document.getElementById('planillaScanInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();planillaScanCode(e.target.value);}});
 
 // ── AUDITORÍA DE STOCK ──
