@@ -861,7 +861,7 @@
         </div>
         <div class="card" style="padding:10px;text-align:center;">
           <div style="font-size:1.3rem;font-weight:700;color:var(--danger);" id="planillaSinUbicar">0</div>
-          <div style="font-size:.68rem;color:var(--muted);">Sin ubicar</div>
+          <div style="font-size:.68rem;color:var(--muted);" id="planillaSinUbicarLabel">Sin ubicar</div>
         </div>
         <div class="card" style="padding:10px;text-align:center;">
           <div style="font-size:1.3rem;font-weight:700;color:#4ade80;" id="planillaJuntadas">0</div>
@@ -5023,11 +5023,28 @@ function renderPlanilla(){
 
   planillaPoblarDepFiltro();
   const filtered=planillaFiltradas();
+  const depSel=document.getElementById('planillaDepFilter')?.value||'';
 
   document.getElementById('planillaTotalUnid').textContent=planillaData.reduce((s,r)=>s+r.unidades,0).toLocaleString('es-AR');
   document.getElementById('planillaTotalFilas').textContent=planillaData.length;
-  document.getElementById('planillaSinUbicar').textContent=planillaData.filter(r=>r.sinUbicar).length;
   document.getElementById('planillaJuntadas').textContent=planillaData.filter(r=>r.checked).length;
+
+  // El 3er cuadrito muestra "Sin ubicar" normalmente, pero si hay un depósito
+  // elegido pasa a mostrar cuánto falta juntar (unidades pendientes) en ESE
+  // depósito puntual — es el dato que sirve cuando vas a buscar en un lugar.
+  const sinUbicarTile=document.getElementById('planillaSinUbicar');
+  const sinUbicarLabel=document.getElementById('planillaSinUbicarLabel');
+  if(depSel){
+    const depNombre=depositos[depSel]?.nombre||depSel;
+    const aBuscar=planillaData.filter(r=>!r.checked&&(r.depIds||[]).includes(depSel)).reduce((s,r)=>s+r.unidades,0);
+    sinUbicarTile.textContent=aBuscar.toLocaleString('es-AR');
+    sinUbicarTile.style.color='var(--accent)';
+    sinUbicarLabel.textContent=`A buscar en ${depNombre}`;
+  }else{
+    sinUbicarTile.textContent=planillaData.filter(r=>r.sinUbicar).length;
+    sinUbicarTile.style.color='var(--danger)';
+    sinUbicarLabel.textContent='Sin ubicar';
+  }
 
   const list=document.getElementById('planillaList');
   if(!filtered.length){
