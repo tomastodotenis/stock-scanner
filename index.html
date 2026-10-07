@@ -1146,7 +1146,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100709';
+const APP_BUILD = '2026100710';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -3754,8 +3754,20 @@ function meliSyncExistenteRender(sinCatalogo){
     <div style="max-height:260px;overflow:auto;border:1px solid var(--border,#334);border-radius:8px;margin-bottom:8px;">
       <table style="width:100%;font-size:.72rem;border-collapse:collapse;"><thead><tr style="text-align:left;color:var(--muted);"><th style="padding:4px 6px;">Producto</th><th style="padding:4px 6px;text-align:right;">App</th><th style="padding:4px 6px;text-align:right;">MeLi</th><th style="padding:4px 6px;"></th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="padding:8px;">Todo coincide.</td></tr>'}</tbody></table>
     </div>
-    <button class="btn btn-primary btn-sm" style="width:100%;justify-content:center;" onclick="meliSyncExistenteConfirmar()" ${aEnviar.length?'':'disabled'}>✅ Enviar ${aEnviar.length} cambio(s) a MeLi</button>`;
+    <button class="btn btn-primary btn-sm" style="width:100%;justify-content:center;" onclick="meliSyncExistenteConfirmar()" ${aEnviar.length?'':'disabled'}>✅ Enviar ${aEnviar.length} cambio(s) a MeLi</button>
+    <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;margin-top:6px;" onclick="meliSyncDescargarExcel()">📥 Descargar Excel (sin mapear, suben y todos)</button>`;
 }
+window.meliSyncDescargarExcel=function(){
+  const L=window._syncPrev||[];
+  if(!L.length){showToast('Primero corré la vista previa','err');return;}
+  const txt={igual:'Coincide',sube:'Sube',baja:'Baja',sin_mapear:'Sin mapear (SKU no está en MeLi)',error:'Error'};
+  const mk=arr=>XLSX.utils.json_to_sheet(arr.map(i=>({SKU:i.sku,Producto:i.name,Talle:i.talle,'Codigo en app':i.key,'Stock en app':i.app,'Stock en MeLi':i.meli===undefined?'':i.meli,Estado:txt[i.estado]||i.estado})));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,mk(L.filter(i=>i.estado==='sin_mapear')),'Sin mapear');
+  XLSX.utils.book_append_sheet(wb,mk(L.filter(i=>i.estado==='sube'||i.estado==='baja')),'Suben y bajan');
+  XLSX.utils.book_append_sheet(wb,mk(L),'Todos');
+  XLSX.writeFile(wb,`Sync_stock_MeLi_${new Date().toISOString().slice(0,10)}.xlsx`);
+};
 window.meliSyncExistenteConfirmar=async function(){
   if(!meliConfig.syncActiva){showToast('Primero activá la sincronización de stock (arriba)','err');return;}
   const box=document.getElementById('syncExistenteResultado');
