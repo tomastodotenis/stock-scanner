@@ -1146,7 +1146,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100307';
+const APP_BUILD = '2026100708';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1278,10 +1278,8 @@ async function pushStockToMeli(key,entry){
   console.log('[MeLi] pushStockToMeli llamado. syncActiva=',meliConfig.syncActiva,'sku=',entry?.sku);
   if(!meliConfig.syncActiva){
     console.log('[MeLi] Sincronización apagada, no se manda nada.');
-    showToast('🔧 DEBUG: sync apagada, no se intentó nada','err');
     return;
   }
-  showToast('🔧 DEBUG: intentando sincronizar con MeLi...','ok');
   const sku=entry.sku||entry.barcode;
   if(!sku)return;
   const qty=getTotalStock(key);
@@ -3602,6 +3600,8 @@ window.adminMeliPanel = async function(){
     ${conectado ? `<button class="btn btn-ghost btn-sm" onclick="reiniciarListadoMeli()" style="justify-content:center;width:100%;margin-top:4px;font-size:.68rem;color:var(--danger);">↺ Reiniciar ese listado desde cero</button>` : ''}
     <button class="btn btn-primary btn-sm" onclick="compararCatalogoMeli()" style="justify-content:center;width:100%;margin-top:6px;" ${!conectado?'disabled title="Conectá primero"':''}>📊 2) Comparar mis publicaciones de MeLi vs. Odoo</button>
     <div id="comparacionResultado" style="font-size:.78rem;color:var(--muted);margin-top:8px;"></div>
+    <button class="btn btn-ghost btn-sm" onclick="meliSyncExistentePreview()" style="justify-content:center;width:100%;margin-top:10px;border:1px solid var(--accent);" ${!conectado?'disabled title="Conectá primero"':''}>📤 3) Sincronizar stock existente con MeLi (vista previa)</button>
+    <div id="syncExistenteResultado" style="font-size:.78rem;color:var(--muted);margin-top:8px;"></div>
     <div style="margin-top:14px;">
       <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">SKU sin coincidencia en MeLi</div>
       <div id="meliSinCoincidenciaList" style="font-size:.75rem;color:var(--muted);">Cargando...</div>
@@ -3702,6 +3702,82 @@ async function cargarMeliSinCoincidencia(){
 function renderMeliTab(){
   adminMeliPanel();
 }
+
+// ── SINCRONIZAR STOCK EXISTENTE CON MELI (vista previa → confirmar) ──
+// Compara, para cada producto con stock en la app, lo que hay en la app contra lo que MeLi tiene hoy,
+// y recién después de que confirmes manda las diferencias. Por defecto NO manda los casos en que la app
+// tiene MENOS que MeLi (suelen ser productos con el stock cargado a medias).
+function _esc(t){return String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+window.meliSyncExistentePreview=async function(){
+  const box=document.getElementById('syncExistenteResultado');
+  if(!box)return;
+  const totales={};
+  Object.values(stockDB).forEach(d=>Object.entries(d||{}).forEach(([k,q])=>{totales[k]=(totales[k]||0)+q;}));
+  const items=[];let sinCatalogo=0;
+  for(const [key,q] of Object.entries(totales)){
+    if(q<=0)continue;
+    const e=catalog[key];const sku=e&&(e.sku||e.barcode);
+    if(!sku){sinCatalogo++;continue;}
+    items.push({key,sku,name:e.name||sku,talle:e.talle||'',app:q});
+  }
+  if(!items.length){box.textContent='No hay productos con stock en la app.';return;}
+  window._syncPrev=[];
+  for(let i=0;i<items.length;i++){
+    box.innerHTML=`⏳ Consultando MeLi... ${i+1} de ${items.length}`;
+    const it=items[i];
+    try{
+      const r=await fetch(`${MELI_WORKER_URL}/stock/consultar?sku=${encodeURIComponent(it.sku)}`);
+      const d=await r.json();
+      if(d.ok){it.meli=d.available_quantity;it.estado=it.app===it.meli?'igual':(it.app>it.meli?'sube':'baja');}
+      else{it.estado='sin_mapear';}
+    }catch(e){it.estado='error';}
+    window._syncPrev.push(it);
+    await new Promise(r=>setTimeout(r,120));
+  }
+  meliSyncExistenteRender(sinCatalogo);
+};
+function meliSyncExistenteRender(sinCatalogo){
+  const box=document.getElementById('syncExistenteResultado');
+  const L=window._syncPrev||[];
+  const c={igual:0,sube:0,baja:0,sin_mapear:0,error:0};
+  L.forEach(i=>c[i.estado]++);
+  const incluirBaja=!!document.getElementById('syncIncluirBaja')?.checked;
+  const aEnviar=L.filter(i=>i.estado==='sube'||(incluirBaja&&i.estado==='baja'));
+  const rows=L.filter(i=>i.estado!=='igual').map(i=>{
+    const col=i.estado==='sube'?'var(--accent)':i.estado==='baja'?'#fbbf24':'var(--danger)';
+    const txt=i.estado==='sube'?'sube':i.estado==='baja'?'baja':i.estado==='sin_mapear'?'sin mapear':'error';
+    return `<tr><td style="padding:2px 6px;">${_esc(i.name)}${i.talle?' ('+_esc(i.talle)+')':''}<br><code style="font-size:.65rem;">${_esc(i.sku)}</code></td><td style="padding:2px 6px;text-align:right;">${i.app}</td><td style="padding:2px 6px;text-align:right;">${i.meli===undefined?'—':i.meli}</td><td style="padding:2px 6px;color:${col};font-weight:700;">${txt}</td></tr>`;
+  }).join('');
+  box.innerHTML=`
+    <div style="color:var(--text);margin-bottom:6px;"><b>${L.length}</b> productos con stock en la app: ${c.igual} ya coinciden · <b style="color:var(--accent);">${c.sube} suben</b> · <b style="color:#fbbf24;">${c.baja} bajan</b> (la app tiene menos que MeLi) · ${c.sin_mapear} sin mapear · ${c.error} con error${sinCatalogo?` · ${sinCatalogo} sin SKU en catálogo`:''}</div>
+    <label style="display:flex;gap:6px;align-items:center;margin-bottom:6px;"><input type="checkbox" id="syncIncluirBaja" onchange="meliSyncExistenteRender(${sinCatalogo||0})" ${incluirBaja?'checked':''}> Incluir también los que BAJAN (⚠️ puede ser stock cargado a medias)</label>
+    <div style="max-height:260px;overflow:auto;border:1px solid var(--border,#334);border-radius:8px;margin-bottom:8px;">
+      <table style="width:100%;font-size:.72rem;border-collapse:collapse;"><thead><tr style="text-align:left;color:var(--muted);"><th style="padding:4px 6px;">Producto</th><th style="padding:4px 6px;text-align:right;">App</th><th style="padding:4px 6px;text-align:right;">MeLi</th><th style="padding:4px 6px;"></th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="padding:8px;">Todo coincide.</td></tr>'}</tbody></table>
+    </div>
+    <button class="btn btn-primary btn-sm" style="width:100%;justify-content:center;" onclick="meliSyncExistenteConfirmar()" ${aEnviar.length?'':'disabled'}>✅ Enviar ${aEnviar.length} cambio(s) a MeLi</button>`;
+}
+window.meliSyncExistenteConfirmar=async function(){
+  if(!meliConfig.syncActiva){showToast('Primero activá la sincronización de stock (arriba)','err');return;}
+  const box=document.getElementById('syncExistenteResultado');
+  const incluirBaja=!!document.getElementById('syncIncluirBaja')?.checked;
+  const lista=(window._syncPrev||[]).filter(i=>i.estado==='sube'||(incluirBaja&&i.estado==='baja'));
+  if(!lista.length)return;
+  if(!confirm(`¿Enviar ${lista.length} cambio(s) de stock a MeLi? Esto modifica las cantidades de tus publicaciones.`))return;
+  let ok=0;const fallos=[];
+  for(let i=0;i<lista.length;i++){
+    box.innerHTML=`⏳ Enviando a MeLi... ${i+1} de ${lista.length}`;
+    const it=lista[i];
+    try{
+      const r=await fetch(`${MELI_WORKER_URL}/stock/push?sku=${encodeURIComponent(it.sku)}&qty=${it.app}`);
+      const d=await r.json();
+      if(d.ok){ok++;fbClearMeliSinCoincidencia(it.sku);}
+      else{fallos.push(it);fbSaveMeliSinCoincidencia(it.sku,it.name,it.talle);}
+    }catch(e){fallos.push(it);}
+    await new Promise(r=>setTimeout(r,500));
+  }
+  box.innerHTML=`<div style="color:var(--text);">✅ <b>${ok}</b> actualizados en MeLi.${fallos.length?` ⚠️ <b>${fallos.length}</b> fallaron: ${fallos.slice(0,10).map(f=>_esc(f.sku)).join(', ')}${fallos.length>10?'…':''}`:''}</div>`;
+};
+
 window.meliToggleSync = async function(){
   meliConfig.syncActiva = !meliConfig.syncActiva;
   await fbSaveMeliConfig();
@@ -5409,6 +5485,7 @@ window.aplicarCorreccion=async function(depId,can){
   });
   depActivo=depPrev;
   fbAddMov(mov);
+  pushStockToMeli(can,entry); // la corrección cambia el total: se lo avisamos a MeLi (si la sync está activa)
   if(!auditoria.corregidos)auditoria.corregidos={};
   auditoria.corregidos[depId+'|'+can]=true;
   fbSaveAuditoria();
