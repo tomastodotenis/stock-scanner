@@ -1146,7 +1146,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100710';
+const APP_BUILD = '2026100711';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -3757,13 +3757,57 @@ function meliSyncExistenteRender(sinCatalogo){
     <button class="btn btn-primary btn-sm" style="width:100%;justify-content:center;" onclick="meliSyncExistenteConfirmar()" ${aEnviar.length?'':'disabled'}>✅ Enviar ${aEnviar.length} cambio(s) a MeLi</button>
     <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;margin-top:6px;" onclick="meliSyncDescargarExcel()">📥 Descargar Excel (sin mapear, suben y todos)</button>`;
 }
-window.meliSyncDescargarExcel=function(){
+// Diagnóstico de los "sin mapear": busca en tus publicaciones de MeLi (el listado del paso 1) la que
+// seguramente corresponde a cada producto, para saber si el problema es el SKU o si no está publicado.
+function _normSku(t){return String(t||'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
+function _tokens(t){
+  return new Set(String(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]/g,' ').split(/\s+/)
+    .map(w=>w.length>3&&w.endsWith('s')?w.slice(0,-1):w).filter(w=>w.length>2&&!['zapatilla','para','con','the'].includes(w)));
+}
+function _talleToks(t){return new Set(String(t||'').toLowerCase().replace(/[^a-z0-9. ]/g,' ').split(/\s+/).filter(Boolean));}
+window.meliSyncDescargarExcel=async function(){
   const L=window._syncPrev||[];
   if(!L.length){showToast('Primero corré la vista previa','err');return;}
-  const txt={igual:'Coincide',sube:'Sube',baja:'Baja',sin_mapear:'Sin mapear (SKU no está en MeLi)',error:'Error'};
+  const txt={igual:'Coincide',sube:'Sube',baja:'Baja',sin_mapear:'Sin mapear',error:'Error'};
   const mk=arr=>XLSX.utils.json_to_sheet(arr.map(i=>({SKU:i.sku,Producto:i.name,Talle:i.talle,'Codigo en app':i.key,'Stock en app':i.app,'Stock en MeLi':i.meli===undefined?'':i.meli,Estado:txt[i.estado]||i.estado})));
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,mk(L.filter(i=>i.estado==='sin_mapear')),'Sin mapear');
+  const sm=L.filter(i=>i.estado==='sin_mapear');
+  // Diagnóstico
+  let diag=[];
+  try{
+    showToast('Analizando los sin mapear contra tus publicaciones...','ok');
+    const r=await fetch(`${MELI_WORKER_URL}/completo/exportar`);
+    const d=await r.json();
+    const pubs=(d&&d.publicaciones)||[];
+    if(!pubs.length)throw new Error('Listado de publicaciones vacío (corré el paso 1)');
+    const porSku=new Map();
+    pubs.forEach(x=>{const n=_normSku(x.sku);if(n&&!porSku.has(n))porSku.set(n,x);});
+    const pre=pubs.map(x=>({x,tk:_tokens(x.title),tt:_talleToks(x.talle)}));
+    diag=sm.map(i=>{
+      const base={'SKU en Odoo/app':i.sku,Producto:i.name,Talle:i.talle,'Stock en app':i.app};
+      const ex=porSku.get(_normSku(i.sku));
+      if(ex)return {...base,Diagnóstico:'SKU escrito distinto en MeLi (mismo código con otro formato)','Publicación MeLi':ex.item_id,'Título MeLi':ex.title,'Talle MeLi':ex.talle,'SKU actual en MeLi':ex.sku,'SKU que debería tener':i.sku};
+      const nt=_tokens(i.name);const tl=_talleToks(i.talle);
+      let best=null,bs=0;
+      if(nt.size){
+        for(const c of pre){
+          if(tl.size&&![...tl].every(t=>c.tt.has(t)))continue;
+          let hit=0;nt.forEach(t=>{if(c.tk.has(t))hit++;});
+          const sc=hit/nt.size;
+          if(sc>bs||(sc===bs&&best&&!best.x.sku&&false)){bs=sc;best=c;}
+        }
+      }
+      if(best&&bs>=0.75){
+        const x=best.x;
+        return {...base,Diagnóstico:x.sku?`Parece estar publicado pero con OTRO SKU (${Math.round(bs*100)}% parecido)`:`Parece estar publicado SIN SKU (${Math.round(bs*100)}% parecido)`,'Publicación MeLi':x.item_id,'Título MeLi':x.title,'Talle MeLi':x.talle,'SKU actual en MeLi':x.sku||'','SKU que debería tener':i.sku};
+      }
+      return {...base,Diagnóstico:'No se encontró en tus publicaciones activas (probablemente no está publicado)','Publicación MeLi':'','Título MeLi':'','Talle MeLi':'','SKU actual en MeLi':'','SKU que debería tener':''};
+    });
+    const rk=x=>x.startsWith('SKU escrito')?0:x.startsWith('Parece')?1:2;
+    diag.sort((a,b)=>rk(a.Diagnóstico)-rk(b.Diagnóstico));
+  }catch(e){showToast('No se pudo hacer el diagnóstico: '+e.message,'err');}
+  if(diag.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(diag),'Diagnóstico sin mapear');
+  XLSX.utils.book_append_sheet(wb,mk(sm),'Sin mapear');
   XLSX.utils.book_append_sheet(wb,mk(L.filter(i=>i.estado==='sube'||i.estado==='baja')),'Suben y bajan');
   XLSX.utils.book_append_sheet(wb,mk(L),'Todos');
   XLSX.writeFile(wb,`Sync_stock_MeLi_${new Date().toISOString().slice(0,10)}.xlsx`);
