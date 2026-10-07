@@ -1146,7 +1146,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100708';
+const APP_BUILD = '2026100709';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -5033,12 +5033,24 @@ async function actualizarPendientesImprimir(){
       const sku=String(p.sku||'').trim();
       if(!sku)return; // sin SKU cargado en MeLi, no se puede ubicar
       const ub=ubicarSku(sku);
-      out.push({id:'p'+(pid++),unidades:Number(p.cantidad)||1,sku,titulo:p.titulo||'',variante:'',deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar,depIds:ub.depIds,checked:false,salidaHecha:false});
+      out.push({id:'p'+(pid++),unidades:Number(p.cantidad)||1,sku,titulo:p.titulo||'',variante:'',deposito:ub.deposito,sector:ub.sector,sinUbicar:ub.sinUbicar,depIds:ub.depIds,checked:false,salidaHecha:false,shipmentId:p.shipment_id?String(p.shipment_id):null,ventaId:String(p.pack_id||p.order_id||'')});
     });
     if(!out.length){
       st.className='ist err';st.innerHTML='❌ Los pedidos pendientes no tienen SKU cargado en Mercado Libre.';
       return;
     }
+    // Fecha/hora de despacho de cada envío (de a tandas de 20, es una consulta por envío en MeLi)
+    try{
+      const shipIds=[...new Set(out.map(r=>r.shipmentId).filter(Boolean))];
+      const info={};
+      for(let i=0;i<shipIds.length;i+=20){
+        st.innerHTML=`⏳ Consultando fechas de despacho... ${Math.min(i+20,shipIds.length)} de ${shipIds.length}`;
+        const rr=await fetch(`${MELI_WORKER_URL}/envios/despacho?ids=${shipIds.slice(i,i+20).join(',')}`);
+        const dd=await rr.json();
+        Object.assign(info,dd.envios||{});
+      }
+      out.forEach(r=>{if(r.shipmentId&&info[r.shipmentId])r.despacho=info[r.shipmentId];});
+    }catch(e){console.error('despacho',e);} // si falla, la planilla igual se arma, solo sin esa línea
     planillaData=out;
     st.className='ist ok';
     st.innerHTML=`✅ <b>${out.length} ventas</b> traídas de Mercado Libre`;
@@ -5085,6 +5097,34 @@ function planillaVarianteHTML(variante){
   const resto=(variante.slice(0,m.index)+variante.slice(m.index+m[0].length)).replace(/\s*\|\s*\|\s*/,' | ').replace(/^\s*\|\s*|\s*\|\s*$/g,'');
   const talleHTML=`<span class="rsec">${m[0].trim()}</span>`;
   return resto?`${talleHTML} · ${resto}`:talleHTML;
+}
+
+
+// Línea de despacho bajo el título, al estilo de la pantalla de ventas de MeLi:
+//   "Etiqueta lista para imprimir" (link a la venta) + cuándo hay que entregar el paquete.
+// La hora sale del SLA de MeLi (expected_date). Ojo: MeLi no informa el fin de la ventana de colecta.
+function planillaDespachoHTML(r){
+  if(!r.ventaId&&!r.despacho)return '';
+  const link=r.ventaId?`https://www.mercadolibre.com.ar/ventas/${encodeURIComponent(r.ventaId)}/detalle`:null;
+  const etiqueta=link?`<a href="${link}" target="_blank" rel="noopener" style="color:#60a5fa;text-decoration:none;">🏷️ Etiqueta lista para imprimir</a>`:'🏷️ Etiqueta lista para imprimir';
+  const d=r.despacho;
+  let linea='';
+  if(d&&d.expected_date){
+    const f=new Date(d.expected_date);
+    const tz={timeZone:'America/Argentina/Buenos_Aires'};
+    const diaKey=x=>x.toLocaleDateString('en-CA',tz);
+    const hoy=new Date(),man=new Date(Date.now()+864e5);
+    const hora=f.toLocaleTimeString('es-AR',{...tz,hour:'2-digit',minute:'2-digit',hour12:false});
+    const vencido=f.getTime()<Date.now()||d.sla_status==='delayed';
+    let cuando;
+    if(diaKey(f)===diaKey(hoy))cuando='hoy';
+    else if(diaKey(f)===diaKey(man))cuando='mañana';
+    else cuando='el '+f.toLocaleDateString('es-AR',{...tz,weekday:'long',day:'numeric',month:'numeric'});
+    const tipo=d.logistic_type==='cross_docking'?'🚚 Colecta':d.logistic_type==='self_service'?'⚡ Flex':'📦 Despacho';
+    const col=vencido?'var(--danger)':'var(--muted)';
+    linea=`<div style="font-size:.7rem;color:${col};${vencido?'font-weight:700;':''}">${vencido?'⚠️ Demorado · ':''}${tipo}: ${cuando} ${hora} hs</div>`;
+  }
+  return `<div style="font-size:.7rem;margin-top:2px;">${etiqueta}</div>${linea}`;
 }
 
 function renderPlanilla(){
@@ -5134,6 +5174,7 @@ function renderPlanilla(){
       <div style="border-right:1px solid var(--border);${r.checked?'text-decoration:line-through;':''}">
         <div class="rname">${r.titulo||'—'}</div>
         ${r.variante?`<div class="rsku">${planillaVarianteHTML(r.variante)}</div>`:''}
+        ${planillaDespachoHTML(r)}
       </div>
       <div class="rsec" style="border-right:1px solid var(--border);${r.sinUbicar?'color:var(--danger);':''}">${r.deposito}</div>
       <div class="rsec" style="border-right:1px solid var(--border);">${r.sector}</div>
