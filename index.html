@@ -1146,7 +1146,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100711';
+const APP_BUILD = '2026100715';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -5234,7 +5234,7 @@ function renderPlanilla(){
       </div>
       <div class="rsec" style="border-right:1px solid var(--border);${r.sinUbicar?'color:var(--danger);':''}">${r.deposito}</div>
       <div class="rsec" style="border-right:1px solid var(--border);">${r.sector}</div>
-      <div style="text-align:center;">${r.salidaHecha?'<span style="color:var(--accent);font-size:.68rem;font-weight:700;" title="Ya se descontó del stock">✓ Descontado</span>':(r.sinUbicar?'':`<button class="btn btn-danger btn-sm" style="padding:3px 6px;font-size:.75rem;" onclick="planillaDescontarStock('${r.id}')" title="Descontar stock (salida)">📤</button>`)}</div>
+      <div style="text-align:center;">${r.sinUbicar?'':`<button class="btn ${r.checked?'btn-ghost':'btn-primary'} btn-sm" style="padding:3px 6px;font-size:.7rem;" onclick="planillaMarcarJuntada('${r.id}')" title="${r.checked?'Desmarcar juntada':'Marcar como juntada'}">${r.checked?'↩':'✅'}</button>`}</div>
     </div>`).join('');
 }
 
@@ -5309,6 +5309,13 @@ window.planillaScanCode=function(code){
 // Descuenta stock (registra una SALIDA) directo desde una fila de la planilla, sin tener
 // que ir a Escanear. Si el producto tiene stock en varios depósitos, prioriza el depósito
 // activo; si no, usa el primero donde haya stock.
+window.planillaMarcarJuntada=function(rowId){
+  const r=planillaData.find(x=>x.id===rowId);
+  if(!r)return;
+  r.checked=!r.checked;
+  renderPlanilla();
+  fbSavePlanilla();
+};
 window.planillaDescontarStock=function(rowId){
   const r=planillaData.find(x=>x.id===rowId);
   if(!r)return;
