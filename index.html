@@ -1146,7 +1146,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100716';
+const APP_BUILD = '2026100718';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1188,6 +1188,10 @@ function getStock(){ return depActivo ? (stockDB[depActivo]||{}) : {}; }
 function getSectores(){ return depActivo ? (sectoresDB[depActivo]||{}) : {}; }
 function getSectorMap(){ return depActivo ? (sectorMapDB[depActivo]||{}) : {}; }
 function setStockVal(key,val){ if(!depActivo)return; if(!stockDB[depActivo])stockDB[depActivo]={}; if(val<=0)delete stockDB[depActivo][key]; else stockDB[depActivo][key]=val; }
+// Nunca descartar stock por falta de catálogo: si el código no está, se usa una ficha provisoria visible.
+function entryOrFallback(key){
+  return catalog[key]||{name:'⚠️ Producto fuera del catálogo',sku:'',barcode:key,talle:'',canonical:key,_fallback:true};
+}
 function getStockVal(key){ return depActivo ? ((stockDB[depActivo]||{})[key]||0) : 0; }
 function setSectorForProduct(key,secId){ if(!depActivo)return; if(!sectorMapDB[depActivo])sectorMapDB[depActivo]={}; sectorMapDB[depActivo][key]=secId; }
 function getSectorForProduct(key){ return depActivo ? ((sectorMapDB[depActivo]||{})[key]||null) : null; }
@@ -2063,13 +2067,17 @@ let resolviendoSinCatalogo=false;
 async function resolverSinCatalogo(){
   if(resolviendoSinCatalogo)return;
   resolviendoSinCatalogo=true;
+  let hallados=0;
   try{
     while(colaSinCatalogo.length){
       const lote=colaSinCatalogo.splice(0,5);
-      await Promise.all(lote.map(k=>lookupOdoo(k).catch(()=>null)));
+      const res=await Promise.all(lote.map(k=>lookupOdoo(k).catch(()=>null)));
+      hallados+=res.filter(Boolean).length;
     }
   }catch(e){console.error('resolverSinCatalogo',e);}
   resolviendoSinCatalogo=false;
+  if(hallados)try{await idbSet('ss_catalog',catalog);}catch(e){}   // queda guardado: no se vuelve a buscar en Odoo
+  try{updateHeader();}catch(e){}
   renderStock();
 }
 function renderStock(){
@@ -2080,12 +2088,10 @@ function renderStock(){
   const allCans=new Set();
   Object.values(stockDB).forEach(d=>Object.entries(d).forEach(([k,q])=>{if(q>0)allCans.add(k);}));
   allCans.forEach(can=>{
-    let entry=catalog[can];
-    if(!entry){
-      // Stock cuyo código no está en el catálogo guardado (producto buscado en Odoo al escanear):
-      // se muestra igual y se intenta resolver el nombre en segundo plano.
-      if(!stockSinCatalogoTried.has(can)&&stockSinCatalogoTried.size<150){stockSinCatalogoTried.add(can);colaSinCatalogo.push(can);}
-      entry={name:'⚠️ Producto fuera del catálogo',sku:'',barcode:can,talle:'',canonical:can};
+    const entry=entryOrFallback(can);
+    if(entry._fallback){
+      // Stock cuyo código no está en el catálogo guardado: se muestra igual y se intenta resolver en Odoo en segundo plano.
+      if(!stockSinCatalogoTried.has(can)&&stockSinCatalogoTried.size<400){stockSinCatalogoTried.add(can);colaSinCatalogo.push(can);}
     }
     if(seen.has(can))return;seen.add(can);
     // Sin filtro de depósito → suma general de todos; con filtro → solo ese depósito
@@ -2107,7 +2113,9 @@ function renderStock(){
     return tA.localeCompare(tB);
   });
   if(!rendered.length){list.innerHTML='<div class="empty"><div class="icon">📭</div><p>Sin productos.</p></div>';return;}
-  list.innerHTML=rendered.map(({entry,qty,key,secId})=>{
+  const sinCatalogoCount=rendered.filter(r=>r.entry._fallback).length;
+  const aviso=sinCatalogoCount?`<div style="margin:8px 0;padding:8px 11px;border-radius:8px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.5);color:#f59e0b;font-size:.78rem;">${resolviendoSinCatalogo||colaSinCatalogo.length?'🔎 Buscando en Odoo '+sinCatalogoCount+' producto(s) con stock que no están en el catálogo…':'⚠️ '+sinCatalogoCount+' producto(s) con stock no están en el catálogo ni en Odoo (aparecen como “fuera del catálogo”). El stock está registrado y se cuenta igual.'}</div>`:'';
+  list.innerHTML=aviso+rendered.map(({entry,qty,key,secId})=>{
     const depToShow=filterDep||null;
     const secs=depToShow?(sectoresDB[depToShow]||{}):getSectores();
     const sn=secId&&secs[secId]?secs[secId].nombre:'—';
@@ -2596,8 +2604,7 @@ function mapaProductosDeSector(secId){
   Object.keys(stk).forEach(key=>{
     if((stk[key]||0)<=0)return;
     if((sm[key]||null)!==secId)return;
-    const entry=catalog[key];
-    if(!entry)return;
+    const entry=entryOrFallback(key);
     out.push({nombre:entry.name+(entry.talle?' — Talle '+entry.talle:''),qty:stk[key]});
   });
   out.sort((a,b)=>a.nombre.localeCompare(b.nombre));
@@ -2678,8 +2685,7 @@ window.mapaBuscarProducto=function(q){
   let secIdEncontrado=null;
   for(const key in stk){
     if((stk[key]||0)<=0)continue;
-    const entry=catalog[key];
-    if(!entry)continue;
+    const entry=entryOrFallback(key);
     const txt=(entry.name+' '+(entry.sku||'')+' '+(entry.talle||'')).toLowerCase();
     if(txt.indexOf(q)===-1)continue;
     if(sm[key]){secIdEncontrado=sm[key];break;}
@@ -2690,7 +2696,7 @@ window.mapaBuscarProducto=function(q){
 // Búsqueda exacta por código escaneado (cámara o pistola lectora): puede ser el código
 // de un sector (cartel) o el código de barras de un producto — en ambos casos ubica el
 // sector correspondiente en el mapa.
-window.mapaBuscarCodigoExacto=function(code){
+window.mapaBuscarCodigoExacto=async function(code){
   code=(code||'').trim();
   if(!code)return;
   const secDirecto=Object.values(getSectores()).find(s=>s.codigo===code);
@@ -2699,7 +2705,8 @@ window.mapaBuscarCodigoExacto=function(code){
     mapaIrASector(secDirecto.id);
     return;
   }
-  const entry=catalog[code];
+  let entry=catalog[code];
+  if(!entry)entry=await lookupOdoo(code);
   if(entry){
     const key=entry.canonical;
     const secId=getSectorForProduct(key);
@@ -3252,14 +3259,15 @@ window.tScanDestino=function(code){
 document.getElementById('tDestinoScanInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();tScanDestino(e.target.value);}});
 window.tManScan=function(){const v=document.getElementById('tManInput').value.trim();if(v){processTScan(v);document.getElementById('tManInput').value='';}};
 document.getElementById('tManInput').addEventListener('keydown',e=>{if(e.key==='Enter')tManScan();});
-function processTScan(code){
+async function processTScan(code){
   // Check sector code for destino (compatibilidad: si escanean el cartel de destino acá también funciona)
   if(traslado.origenSec){
     const matchSec=buscarSectorPorCodigo(code);
     if(matchSec){setDestinoDep(matchSec.depId,true);setTimeout(()=>setDestino(matchSec.id),100);return;}
   }
   if(!traslado.origenSec){showToast('Seleccioná el sector de origen primero','err');return;}
-  const entry=catalog[code];
+  let entry=catalog[code];
+  if(!entry){showToast('🔍 Buscando en Odoo...','ok');entry=await lookupOdoo(code);}   // igual que en Escanear
   if(!entry){showToast('Código no encontrado','err');return;}
   const key=entry.canonical;
   const sm=sectorMapDB[traslado.origenDep]||{};
@@ -3372,7 +3380,7 @@ function buildRows(secFiltro,depFiltro){
   const allKeys=new Set();
   Object.values(stockDB).forEach(ds=>Object.keys(ds).forEach(k=>allKeys.add(k)));
   allKeys.forEach(key=>{
-    const entry=catalog[key];if(!entry)return;
+    const entry=entryOrFallback(key);
     const can=entry.canonical;if(seen.has(can))return;seen.add(can);
     if(depFiltro){
       const rq=getStockInDep(depFiltro,can);if(rq===0)return;
@@ -4022,7 +4030,7 @@ function updateAlertTab(){
   const seen=new Set();let cnt=0;
   Object.keys(depositos).forEach(depId=>{
     Object.entries(stockDB[depId]||{}).forEach(([key,rq])=>{
-      const entry=catalog[key];if(!entry)return;
+      const entry=entryOrFallback(key);
       const can=entry.canonical;const uid=depId+'_'+can;if(seen.has(uid))return;seen.add(uid);
       if(rq>0&&rq<=getUmbralForProduct(can))cnt++;
     });
@@ -4140,7 +4148,7 @@ function renderAlertas(){
     const depSecs=sectoresDB[depId]||{};
     const depSM=sectorMapDB[depId]||{};
     Object.entries(depStock).forEach(([key,qty])=>{
-      const entry=catalog[key];if(!entry)return;
+      const entry=entryOrFallback(key);
       const can=entry.canonical;
       const uid=depId+'_'+can;if(seen.has(uid))return;seen.add(uid);
       if(qty<=0)return;
@@ -5302,11 +5310,12 @@ function clearPlanilla(){
 
 // Escanear (cámara o pistola) para marcar como "ya juntado" un producto de la planilla,
 // sin tocar el stock. Verde + sonido si matchea una fila pendiente, rojo + sonido si no.
-window.planillaScanCode=function(code){
+window.planillaScanCode=async function(code){
   code=(code||'').trim();
   const si=document.getElementById('planillaScanInput');if(si)si.value='';
   if(!code)return;
-  const entry=catalog[code];
+  let entry=catalog[code];
+  if(!entry)entry=await lookupOdoo(code);
   const can=entry?entry.canonical:null;
   // Busca, entre las filas NO marcadas todavía, una cuyo SKU resuelva al mismo producto escaneado.
   const match=planillaData.find(r=>{
@@ -5518,7 +5527,7 @@ function computeAuditDiffs(){
     const sistema=(auditoria.snapshot[depId]||{})[can]||0;
     const contado=(auditoria.conteo[depId]||{})[can]||0;
     if(sistema===0&&contado===0)return;
-    const entry=catalog[can];if(!entry)return;
+    const entry=entryOrFallback(can);
     const diff=contado-sistema;
     const secId=(sectorMapDB[depId]||{})[can];
     const secN=secId&&(sectoresDB[depId]||{})[secId]?(sectoresDB[depId]||{})[secId].nombre:'Sin sector';
