@@ -1146,7 +1146,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100718';
+const APP_BUILD = '2026100719';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -3455,22 +3455,39 @@ function playBeep(ok){
   try{
     const ctx=ensureAudioCtx();
     if(!ctx)return;
-    const osc=ctx.createOscillator();const g=ctx.createGain();
-    osc.connect(g);g.connect(ctx.destination);
-    if(ok){osc.frequency.setValueAtTime(880,ctx.currentTime);osc.frequency.setValueAtTime(1100,ctx.currentTime+.08);g.gain.setValueAtTime(.3,ctx.currentTime);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.2);osc.start(ctx.currentTime);osc.stop(ctx.currentTime+.2);}
-    else{osc.frequency.setValueAtTime(300,ctx.currentTime);g.gain.setValueAtTime(.3,ctx.currentTime);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.3);osc.start(ctx.currentTime);osc.stop(ctx.currentTime+.3);}
+    const tocar=()=>{
+      try{
+        const osc=ctx.createOscillator();const g=ctx.createGain();
+        osc.connect(g);g.connect(ctx.destination);
+        const t=ctx.currentTime;
+        if(ok){osc.frequency.setValueAtTime(880,t);osc.frequency.setValueAtTime(1100,t+.08);g.gain.setValueAtTime(.3,t);g.gain.exponentialRampToValueAtTime(.001,t+.2);osc.start(t);osc.stop(t+.2);}
+        else{osc.frequency.setValueAtTime(300,t);g.gain.setValueAtTime(.3,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);osc.start(t);osc.stop(t+.3);}
+      }catch(e){}
+    };
+    if(ctx.state==='running'){tocar();return;}
+    // El audio estaba suspendido/interrumpido: hay que esperar a que reanude ANTES de programar el sonido,
+    // si no el beep queda en el pasado y no suena. Si tarda demasiado se descarta para no sonar fuera de tiempo.
+    const t0=Date.now();
+    const p=ctx.resume&&ctx.resume();
+    if(p&&p.then)p.then(()=>{if(Date.now()-t0<1200&&ctx.state==='running')tocar();}).catch(()=>{});
   }catch(e){}
 }
 let audioCtx=null;
 function ensureAudioCtx(){
   try{
-    if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    if(audioCtx.state==='suspended')audioCtx.resume();
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return null;
+    if(!audioCtx||audioCtx.state==='closed')audioCtx=new AC();
+    if(audioCtx.state!=='running'){const p=audioCtx.resume&&audioCtx.resume();if(p&&p.catch)p.catch(()=>{});}
     return audioCtx;
   }catch(e){return null;}
 }
-// Desbloquea el audio en iOS con el primer toque en la pantalla (requisito de Safari)
-['touchend','click'].forEach(ev=>document.addEventListener(ev,()=>ensureAudioCtx(),{once:true,passive:true}));
+// Destraba el audio con CUALQUIER interacción (toque, clic o tecla de la pistola lectora) y lo vuelve a destrabar
+// cada vez que se suspende (pantalla bloqueada, app en segundo plano, llamada, inactividad).
+['touchstart','touchend','pointerdown','click','keydown'].forEach(ev=>document.addEventListener(ev,()=>{
+  if(!audioCtx||audioCtx.state!=='running')ensureAudioCtx();
+},{passive:true,capture:true}));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)ensureAudioCtx();});
 
 function vibrateDevice(ok){if(navigator.vibrate)navigator.vibrate(ok?[60]:[80,60,80]);}
 
