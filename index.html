@@ -1146,7 +1146,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026100715';
+const APP_BUILD = '2026100716';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2056,6 +2056,22 @@ function fbListenNoEncontrados(){
 
 // ── STOCK ──
 document.getElementById('searchInput').addEventListener('input',e=>{searchQuery=e.target.value.toLowerCase();renderStock();});
+const stockSinCatalogoTried=new Set();
+const colaSinCatalogo=[];
+let resolviendoSinCatalogo=false;
+// Busca en Odoo (de a 5) los códigos con stock que no están en el catálogo guardado; al terminar redibuja.
+async function resolverSinCatalogo(){
+  if(resolviendoSinCatalogo)return;
+  resolviendoSinCatalogo=true;
+  try{
+    while(colaSinCatalogo.length){
+      const lote=colaSinCatalogo.splice(0,5);
+      await Promise.all(lote.map(k=>lookupOdoo(k).catch(()=>null)));
+    }
+  }catch(e){console.error('resolverSinCatalogo',e);}
+  resolviendoSinCatalogo=false;
+  renderStock();
+}
 function renderStock(){
   const list=document.getElementById('stockList');
   const seen=new Set(),rendered=[];
@@ -2064,14 +2080,20 @@ function renderStock(){
   const allCans=new Set();
   Object.values(stockDB).forEach(d=>Object.entries(d).forEach(([k,q])=>{if(q>0)allCans.add(k);}));
   allCans.forEach(can=>{
-    const entry=catalog[can];if(!entry)return;
+    let entry=catalog[can];
+    if(!entry){
+      // Stock cuyo código no está en el catálogo guardado (producto buscado en Odoo al escanear):
+      // se muestra igual y se intenta resolver el nombre en segundo plano.
+      if(!stockSinCatalogoTried.has(can)&&stockSinCatalogoTried.size<150){stockSinCatalogoTried.add(can);colaSinCatalogo.push(can);}
+      entry={name:'⚠️ Producto fuera del catálogo',sku:'',barcode:can,talle:'',canonical:can};
+    }
     if(seen.has(can))return;seen.add(can);
     // Sin filtro de depósito → suma general de todos; con filtro → solo ese depósito
     const rqty=depToShow?getStockInDep(depToShow,can):getTotalStock(can);
     if(rqty<=0)return;
     const secId=depToShow?(sectorMapDB[depToShow]||{})[can]:(depActivo?(sectorMapDB[depActivo]||{})[can]:null);
     if(filterSec&&secId!==filterSec)return;
-    const txt=(entry.name+' '+entry.sku+' '+entry.talle).toLowerCase();
+    const txt=(entry.name+' '+entry.sku+' '+entry.talle+' '+(entry.barcode||'')).toLowerCase();
     if(searchQuery&&!txt.includes(searchQuery))return;
     rendered.push({entry,qty:rqty,key:can,secId});
   });
@@ -2108,6 +2130,7 @@ function renderStock(){
       <div class="rcode">${entry.barcode||entry.sku||'—'}</div>
     </div>`;
   }).join('');
+  if(colaSinCatalogo.length)resolverSinCatalogo();
 }
 function renderMovList(){
   const l=document.getElementById('movList');
