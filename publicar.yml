@@ -1,0 +1,52 @@
+name: Revisar y publicar
+
+# Cada vez que se sube un cambio a "main": primero se corren la revisión y las pruebas.
+# Solo si TODO pasa, la app se publica. Si algo falla, la versión publicada no cambia.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  probar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run lint
+      - run: npm test
+
+  publicar:
+    needs: probar
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Armar carpeta a publicar (sin pruebas ni herramientas de desarrollo)
+        run: |
+          mkdir _site
+          rsync -a --exclude '_site' --exclude 'node_modules' --exclude 'tests' --exclude '.github' --exclude '.git' --exclude 'package.json' --exclude 'package-lock.json' --exclude 'README.md' --exclude '.gitignore' ./ _site/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
