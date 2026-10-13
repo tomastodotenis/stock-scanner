@@ -1,0 +1,15 @@
+{
+  "name": "stock-scanner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Todo Tenis & Running - escáner de stock (PWA). Pruebas y revisión automática.",
+  "scripts": {
+    "lint": "node tests/lint.mjs",
+    "test": "node --test --test-concurrency=1 \"tests/*.test.mjs\"",
+    "revisar": "npm run lint && npm test"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "playwright": "1.56.0"
+  }
+}
