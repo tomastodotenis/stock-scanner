@@ -1146,7 +1146,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026101320';
+const APP_BUILD = '2026101420';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -4407,6 +4407,7 @@ async function fetchPromos(force){
       const fechaCad=row[5]?.trim();
       if(!desc||!precioLista)continue;
       if(desc==='Descripcion')continue; // skip headers
+      const pl=parsePrecio(precioLista),dp=parseDescuento(descuento),pfIn=parsePrecio(precioFinal);
       promociones.push({
         descripcion:desc,
         nroPub:nroPub||'',
@@ -4414,7 +4415,7 @@ async function fetchPromos(force){
         fechaCad:fechaCad||'',
         precioLista:parsePrecio(precioLista),
         descuentoPct:parseDescuento(descuento),
-        precioFinal:parsePrecio(precioFinal)||Math.round(parsePrecio(precioLista)*(1-parseDescuento(descuento)/100)),
+        precioFinal:pfIn>0&&pfIn<=pl?pfIn:Math.round(pl*(1-dp/100)), // si el precio final de la planilla viene vacío o absurdo, se recalcula con el descuento
         recibis:parsePrecio(recibis),
         raw:{precioLista,descuento,precioFinal,recibis}
       });
@@ -4429,17 +4430,30 @@ async function fetchPromos(force){
   }
 }
 
+function distEdicion(a,b){
+  const d=Array.from({length:a.length+1},(_,i)=>[i]);
+  for(let j=1;j<=b.length;j++)d[0][j]=j;
+  for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)
+    d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  return d[a.length][b.length];
+}
+function mesMasParecido(w,MESES){
+  let best=-1,bd=3;
+  MESES.forEach((m,i)=>{const d=distEdicion(w,m);if(d<bd){bd=d;best=i;}});
+  return best;
+}
+function promoInactiva(p){return /pausad|finalizad/i.test(p.fechaCad||'');}
 function isVencida(fechaCad){
-  if(!fechaCad||fechaCad.toLowerCase().includes('pausad'))return null;
-  // Parse "27 de Julio" style dates
-  const meses={enero:0,febrero:1,marzo:2,abril:3,mayo:4,junio:5,julio:6,agosto:7,septiembre:8,octubre:9,noviembre:10,diciembre:11};
-  const clean=fechaCad.toLowerCase().trim();
-  const match=clean.match(/(\d+)\s+de\s+(\w+)(?:\s+de\s+(\d+))?/);
+  if(!fechaCad||/pausad|finalizad/i.test(fechaCad))return null;
+  // Parse "27 de Julio" / "30 noviembre" y también con errores de tipeo ("31 de Ocubre", "30 de Novimebre")
+  const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const clean=fechaCad.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  const match=clean.match(/(\d{1,2})\s+(?:de\s+)?([a-z]+)(?:\s+de\s+(\d{4}))?/);
   if(!match)return null;
   const dia=parseInt(match[1]);
-  const mes=meses[match[2]];
+  const mes=mesMasParecido(match[2],MESES);
   const anio=match[3]?parseInt(match[3]):new Date().getFullYear();
-  if(mes===undefined)return null;
+  if(mes===-1)return null;
   const fecha=new Date(anio,mes,dia);
   const hoy=new Date();hoy.setHours(0,0,0,0);
   const diff=Math.floor((fecha-hoy)/(1000*60*60*24));
@@ -4476,6 +4490,7 @@ function findPromo(nombre){
   const numeros=allWords.filter(w=>/^\d+$/.test(w));
   let best=null;let bestScore=0;
   for(const p of promociones){
+    if(promoInactiva(p))continue; // pausadas/finalizadas por ML no son promo vigente
     const descLower=p.descripcion.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
     if(codigos.length&&!codigos.every(c=>descLower.includes(c)))continue;
     if(numeros.length&&!numeros.every(n=>descLower.includes(n)))continue;
@@ -4509,6 +4524,7 @@ function renderPromos(){
   // Count all for stats (ignore active filter)
   let cnt=0,vencePronto=0,vencida=0;
   promociones.forEach(p=>{
+    if(promoInactiva(p))return;
     cnt++;
     const dias=isVencida(p.fechaCad);
     if(dias!==null){if(dias<0)vencida++;else if(dias<=7)vencePronto++;}
@@ -4550,7 +4566,7 @@ function renderPromos(){
     const pf=p.precioFinal?`$${Math.round(p.precioFinal).toLocaleString('es-AR')}`:'';
     const rec=p.recibis?`$${Math.round(p.recibis).toLocaleString('es-AR')}`:'';
     return`<div class="promo-list-item">
-      <div class="promo-name">${p.descripcion}</div>
+      <div class="promo-name">${String(p.descripcion).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}</div>
       <div class="promo-prices">
         ${pl?`<span class="promo-original">${pl}</span>`:''}
         ${p.descuentoPct?`<span class="promo-discount">-${p.descuentoPct}%</span>`:''}
@@ -4567,7 +4583,7 @@ function getPromoBadge(nombre){
   const p=findPromo(nombre);
   if(!p)return '';
   const pf=p.precioFinal?`$${Math.round(p.precioFinal).toLocaleString('es-AR')}`:'';
-  return `<span class="promo-badge" title="${p.descripcion}" onclick="switchTab('promos')">🏷️ -${p.descuentoPct}% ${pf?'→ '+pf:''}</span>`;
+  return `<span class="promo-badge" title="${String(p.descripcion).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}" onclick="switchTab('promos')">🏷️ -${p.descuentoPct}% ${pf?'→ '+pf:''}</span>`;
 }
 
 // Fetch promos on load
