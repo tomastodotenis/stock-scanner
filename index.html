@@ -1146,7 +1146,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026101420';
+const APP_BUILD = '2026101421';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -4408,6 +4408,7 @@ async function fetchPromos(force){
       if(!desc||!precioLista)continue;
       if(desc==='Descripcion')continue; // skip headers
       const pl=parsePrecio(precioLista),dp=parseDescuento(descuento),pfIn=parsePrecio(precioFinal);
+      if(promociones.some(x=>x.descripcion===desc&&x.nroPub===(nroPub||'')&&x.precioLista===pl))continue; // filas repetidas en la planilla
       promociones.push({
         descripcion:desc,
         nroPub:nroPub||'',
@@ -4442,7 +4443,7 @@ function mesMasParecido(w,MESES){
   MESES.forEach((m,i)=>{const d=distEdicion(w,m);if(d<bd){bd=d;best=i;}});
   return best;
 }
-function promoInactiva(p){return /pausad|finalizad/i.test(p.fechaCad||'');}
+function promoInactiva(p){return /pausad|finalizad/i.test((p.fechaCad||'')+' '+(p.fechaInicio||''));} // la planilla a veces pone "PAUSADA" en Fecha de Inicio
 function isVencida(fechaCad){
   if(!fechaCad||/pausad|finalizad/i.test(fechaCad))return null;
   // Parse "27 de Julio" / "30 noviembre" y también con errores de tipeo ("31 de Ocubre", "30 de Novimebre")
