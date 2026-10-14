@@ -804,7 +804,7 @@
       </div>
 
       <!-- Stats -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
         <div class="card" id="promoCardTodos" style="padding:10px;text-align:center;cursor:pointer;border-color:var(--accent);" onclick="setPromoFiltro('todos')">
           <div style="font-size:1.4rem;font-weight:700;color:var(--accent);" id="promoCnt">0</div>
           <div style="font-size:.7rem;color:var(--muted);">Todas</div>
@@ -816,6 +816,10 @@
         <div class="card" id="promoCardVencida" style="padding:10px;text-align:center;cursor:pointer;" onclick="setPromoFiltro('vencida')">
           <div style="font-size:1.4rem;font-weight:700;color:var(--danger);" id="promoVencidaCnt">0</div>
           <div style="font-size:.7rem;color:var(--muted);">Vencidas</div>
+        </div>
+        <div class="card" id="promoCardRevisar" style="padding:10px;text-align:center;cursor:pointer;" onclick="setPromoFiltro('revisar')">
+          <div style="font-size:1.4rem;font-weight:700;color:#60a5fa;" id="promoRevisarCnt">0</div>
+          <div style="font-size:.7rem;color:var(--muted);">A revisar</div>
         </div>
       </div>
 
@@ -1146,7 +1150,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026101421';
+const APP_BUILD = '2026101422';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -4368,66 +4372,107 @@ function parseDescuento(str){
   return parseFloat(String(str).replace('%','').trim())||0;
 }
 function parseCSV(text){
-  const lines=text.split('\n');
-  const rows=[];
-  for(const line of lines){
-    if(!line.trim())continue;
-    // Simple CSV parse (handles quoted fields)
-    const cols=[];let cur='';let inQ=false;
-    for(let i=0;i<line.length;i++){
-      const c=line[i];
-      if(c==='"'&&!inQ){inQ=true;}
-      else if(c==='"'&&inQ){if(line[i+1]==='"'){cur+='"';i++;}else inQ=false;}
-      else if(c===','&&!inQ){cols.push(cur);cur='';}
+  // Parser completo: soporta comillas, comas y saltos de línea dentro de una celda, y \r\n.
+  const rows=[];let row=[],cur='',inQ=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQ){
+      if(c==='"'){if(text[i+1]==='"'){cur+='"';i++;}else inQ=false;}
       else cur+=c;
-    }
-    cols.push(cur);
-    rows.push(cols);
+    }else if(c==='"')inQ=true;
+    else if(c===','){row.push(cur);cur='';}
+    else if(c==='\n'||c==='\r'){
+      if(c==='\r'&&text[i+1]==='\n')i++;
+      row.push(cur);cur='';
+      if(row.some(x=>x.trim()!==''))rows.push(row);
+      row=[];
+    }else cur+=c;
   }
+  row.push(cur);
+  if(row.some(x=>x.trim()!==''))rows.push(row);
   return rows;
 }
+const normTxt=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+const escHtml=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+// Convierte las filas del CSV en promociones. Busca las columnas por el nombre del encabezado (y usa posiciones fijas si no lo encuentra).
+function parsearPromos(rows){
+  let col={desc:2,nro:3,ini:4,cad:5,lista:7,dto:8,final:9,recibis:10,meliPct:11,meliFinal:12,meliRecibis:13};
+  const h=rows.find(r=>r.some(x=>normTxt(x).trim()==='descripcion')&&r.some(x=>normTxt(x).trim()==='precio lista'));
+  if(h){
+    const t=h.map(x=>normTxt(x).trim()), f=n=>t.indexOf(n);
+    const c2={desc:f('descripcion'),nro:f('nro de publicacion'),ini:f('fecha de inicio'),cad:f('fecha de caducidad'),lista:f('precio lista'),dto:f('descuento'),final:f('precio final'),recibis:f('recibis'),meliPct:f('meli+'),meliFinal:f('precio final meli')};
+    c2.meliRecibis=t.indexOf('recibis',c2.meliFinal>=0?c2.meliFinal:99);
+    Object.keys(c2).forEach(k=>{if(c2[k]>=0)col[k]=c2[k];});
+  }
+  const out=[],vistos=new Set();
+  for(const row of rows){
+    const g=k=>(row[col[k]]||'').trim();
+    const desc=g('desc'), precioLista=g('lista');
+    if(!desc||!precioLista||normTxt(desc)==='descripcion')continue;
+    const pl=parsePrecio(precioLista), dp=parseDescuento(g('dto')), pfIn=parsePrecio(g('final'));
+    const nroPub=g('nro');
+    const clave=desc+'|'+nroPub+'|'+pl;
+    if(vistos.has(clave))continue; vistos.add(clave); // filas repetidas en la planilla
+    const finalOk=pfIn>0&&pfIn<=pl;
+    const p={
+      descripcion:desc, nroPub, fechaInicio:g('ini'), fechaCad:g('cad'),
+      precioLista:pl, descuentoPct:dp,
+      precioFinal:finalOk?pfIn:Math.round(pl*(1-dp/100)), // si el precio final viene vacío o absurdo, se recalcula con el descuento
+      recibis:parsePrecio(g('recibis')),
+      meliPct:parseDescuento(g('meliPct')), meliFinal:parsePrecio(g('meliFinal')), meliRecibis:parsePrecio(g('meliRecibis')),
+      _n:normTxt(desc),
+    };
+    p.motivos=motivosRevision(p,finalOk);
+    out.push(p);
+  }
+  return out;
+}
+function motivosRevision(p,finalOk){
+  const m=[];
+  if(promoInactiva(p))return m;
+  if(!p.fechaCad.trim())m.push('sin fecha de fin');
+  else if(isVencida(p.fechaCad)===null)m.push('fecha no entendida');
+  if(!finalOk&&p.precioLista)m.push('precio final de la planilla vacío o incorrecto');
+  else if(p.descuentoPct&&Math.abs(Math.round(p.precioLista*(1-p.descuentoPct/100))-p.precioFinal)>p.precioLista*0.02)m.push('precio final no coincide con el descuento');
+  if(p.nroPub&&!/^\d+$/.test(p.nroPub))m.push('nº de publicación dañado');
+  return m;
+}
+
+let promoDeCopia=false;
 async function fetchPromos(force){
   const now=Date.now();
   if(!force&&promoLastFetch&&now-promoLastFetch<5*60*1000)return; // cache 5min
-  document.getElementById('promoSyncStatus').textContent='⏳ Actualizando...';
+  const st=document.getElementById('promoSyncStatus');
+  st.textContent='⏳ Actualizando...';
   try{
     const resp=await fetch(PROMO_CSV_URL+'&t='+now);
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
     const text=await resp.text();
-    const rows=parseCSV(text);
-    promociones=[];
-    for(const row of rows){
-      const desc=row[2]?.trim();
-      const nroPub=row[3]?.trim();
-      const precioLista=row[7]?.trim();
-      const descuento=row[8]?.trim();
-      const precioFinal=row[9]?.trim();
-      const recibis=row[10]?.trim();
-      const fechaInicio=row[4]?.trim();
-      const fechaCad=row[5]?.trim();
-      if(!desc||!precioLista)continue;
-      if(desc==='Descripcion')continue; // skip headers
-      const pl=parsePrecio(precioLista),dp=parseDescuento(descuento),pfIn=parsePrecio(precioFinal);
-      if(promociones.some(x=>x.descripcion===desc&&x.nroPub===(nroPub||'')&&x.precioLista===pl))continue; // filas repetidas en la planilla
-      promociones.push({
-        descripcion:desc,
-        nroPub:nroPub||'',
-        fechaInicio:fechaInicio||'',
-        fechaCad:fechaCad||'',
-        precioLista:parsePrecio(precioLista),
-        descuentoPct:parseDescuento(descuento),
-        precioFinal:pfIn>0&&pfIn<=pl?pfIn:Math.round(pl*(1-dp/100)), // si el precio final de la planilla viene vacío o absurdo, se recalcula con el descuento
-        recibis:parsePrecio(recibis),
-        raw:{precioLista,descuento,precioFinal,recibis}
-      });
-    }
+    if(/<html/i.test(text.slice(0,300)))throw new Error('La planilla no devolvió un CSV');
+    const nuevas=parsearPromos(parseCSV(text));
+    if(!nuevas.length)throw new Error('La planilla vino vacía');
+    promociones=nuevas; promoDeCopia=false;
     promoLastFetch=now;
+    try{await idbSet('ss_promos',{upd:new Date().toISOString(),promos:promociones.map(({_n,...r})=>r)});}catch(_){}
     const d=new Date();
-    document.getElementById('promoSyncStatus').textContent=`✅ Actualizado ${d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${promociones.length} promos`;
+    st.textContent=`✅ Actualizado ${d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${promociones.length} promos`;
     renderPromos();
   }catch(e){
-    document.getElementById('promoSyncStatus').textContent='❌ Error al cargar';
     console.error('fetchPromos:',e);
+    logError('promos',e&&e.message||String(e));
+    // Sin internet o planilla caída: se usa la última copia buena en vez de dejar todo vacío
+    if(!promociones.length){
+      try{
+        const c=await idbGet('ss_promos');
+        if(c&&Array.isArray(c.promos)&&c.promos.length){
+          promociones=c.promos.map(p=>Object.assign(p,{_n:normTxt(p.descripcion)}));promoDeCopia=true;
+          st.textContent=`⚠️ Sin conexión con la planilla · mostrando copia del ${new Date(c.upd).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}`;
+          renderPromos();return;
+        }
+      }catch(_){}
+    }
+    st.textContent=promociones.length?`⚠️ No se pudo actualizar · se mantienen ${promociones.length} promos anteriores`:'❌ Error al cargar';
   }
 }
 
@@ -4453,10 +4498,12 @@ function isVencida(fechaCad){
   if(!match)return null;
   const dia=parseInt(match[1]);
   const mes=mesMasParecido(match[2],MESES);
-  const anio=match[3]?parseInt(match[3]):new Date().getFullYear();
-  if(mes===-1)return null;
-  const fecha=new Date(anio,mes,dia);
+  let anio=match[3]?parseInt(match[3]):new Date().getFullYear();
+  if(mes===-1||dia<1||dia>31)return null;
   const hoy=new Date();hoy.setHours(0,0,0,0);
+  let fecha=new Date(anio,mes,dia);
+  // Sin año y ya pasada hace más de 6 meses (ej. "15 de enero" leído en diciembre): es del año que viene
+  if(!match[3]&&(hoy-fecha)/864e5>180)fecha=new Date(anio+1,mes,dia);
   const diff=Math.floor((fecha-hoy)/(1000*60*60*24));
   return diff; // negative = vencida, 0-7 = vence pronto
 }
@@ -4492,7 +4539,7 @@ function findPromo(nombre){
   let best=null;let bestScore=0;
   for(const p of promociones){
     if(promoInactiva(p))continue; // pausadas/finalizadas por ML no son promo vigente
-    const descLower=p.descripcion.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    const descLower=p._n||normTxt(p.descripcion);
     if(codigos.length&&!codigos.every(c=>descLower.includes(c)))continue;
     if(numeros.length&&!numeros.every(n=>descLower.includes(n)))continue;
     const matches=words.filter(w=>descLower.includes(w)).length;
@@ -4505,8 +4552,8 @@ function findPromo(nombre){
 window.setPromoFiltro=function(filtro){
   promoFiltroActivo=filtro;
   // Update card borders
-  const colors={todos:'var(--accent)',pronto:'#f59e0b',vencida:'var(--danger)'};
-  ['todos','pronto','vencida'].forEach(f=>{
+  const colors={todos:'var(--accent)',pronto:'#f59e0b',vencida:'var(--danger)',revisar:'#60a5fa'};
+  ['todos','pronto','vencida','revisar'].forEach(f=>{
     const card=document.getElementById('promoCard'+f.charAt(0).toUpperCase()+f.slice(1));
     if(card)card.style.borderColor=f===filtro?colors[f]:'var(--border)';
   });
@@ -4523,26 +4570,30 @@ function renderPromos(){
   }
 
   // Count all for stats (ignore active filter)
-  let cnt=0,vencePronto=0,vencida=0;
+  let cnt=0,vencePronto=0,vencida=0,revisar=0;
   promociones.forEach(p=>{
     if(promoInactiva(p))return;
     cnt++;
+    if(p.motivos&&p.motivos.length)revisar++;
     const dias=isVencida(p.fechaCad);
     if(dias!==null){if(dias<0)vencida++;else if(dias<=7)vencePronto++;}
   });
   document.getElementById('promoCnt').textContent=cnt;
   document.getElementById('promoVenceCnt').textContent=vencePronto;
   document.getElementById('promoVencidaCnt').textContent=vencida;
+  document.getElementById('promoRevisarCnt').textContent=revisar;
 
   // Apply filters
   const filtered=promociones.filter(p=>{
     if(search){
-      const d=p.descripcion.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
-      if(!d.includes(search))return false;
+      if(!(p._n||normTxt(p.descripcion)).includes(search))return false;
     }
     if(promoFiltroActivo==='pronto'){
       const dias=isVencida(p.fechaCad);
       if(dias===null||dias<0||dias>7)return false;
+    }
+    if(promoFiltroActivo==='revisar'){
+      if(promoInactiva(p)||!(p.motivos&&p.motivos.length))return false;
     }
     if(promoFiltroActivo==='vencida'){
       const dias=isVencida(p.fechaCad);
@@ -4567,14 +4618,16 @@ function renderPromos(){
     const pf=p.precioFinal?`$${Math.round(p.precioFinal).toLocaleString('es-AR')}`:'';
     const rec=p.recibis?`$${Math.round(p.recibis).toLocaleString('es-AR')}`:'';
     return`<div class="promo-list-item">
-      <div class="promo-name">${String(p.descripcion).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}</div>
+      <div class="promo-name">${escHtml(p.descripcion)}${promoInactiva(p)?' <span style="font-size:.68rem;color:var(--danger);">· pausada/finalizada</span>':''}</div>
       <div class="promo-prices">
         ${pl?`<span class="promo-original">${pl}</span>`:''}
         ${p.descuentoPct?`<span class="promo-discount">-${p.descuentoPct}%</span>`:''}
         ${pf?`<span class="promo-final">${pf}</span>`:''}
       </div>
       ${rec?`<div class="promo-recibis">Recibís: ${rec}</div>`:''}
-      <div class="promo-vence" style="color:${venceColor}">${venceStr}</div>
+      ${p.meliFinal?`<div class="promo-recibis">Con Meli+${p.meliPct?` (-${p.meliPct}%)`:''}: <b style="color:var(--accent);">$${Math.round(p.meliFinal).toLocaleString('es-AR')}</b>${p.meliRecibis?` · Recibís $${Math.round(p.meliRecibis).toLocaleString('es-AR')}`:''}</div>`:''}
+      <div class="promo-vence" style="color:${venceColor}">${escHtml(venceStr)}</div>
+      ${promoFiltroActivo==='revisar'&&p.motivos?`<div style="font-size:.68rem;color:#60a5fa;">🔎 ${escHtml(p.motivos.join(' · '))}</div>`:''}
     </div>`;
   }).join('');
 }
