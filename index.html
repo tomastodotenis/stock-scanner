@@ -415,7 +415,10 @@
       <div class="cam-section">
         <div class="cam-hdr">
           <h3><span id="camDot"></span> Cámara</h3>
-          <button class="btn btn-ghost btn-sm" id="btnCam">Activar cámara</button>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button class="btn btn-ghost btn-sm" id="btnLuz" style="display:none;">🔦 Encender luz</button>
+            <button class="btn btn-ghost btn-sm" id="btnCam">Activar cámara</button>
+          </div>
         </div>
         <div id="viewport"><div class="scan-overlay"><div class="scan-line"></div></div></div>
       </div>
@@ -1076,6 +1079,7 @@
   <div class="admin-card" style="max-width:380px;">
     <h2>📷 Escaneá el código</h2>
     <div id="scanRapidoViewport" style="width:100%;aspect-ratio:1/1;background:#000;border-radius:10px;overflow:hidden;"></div>
+    <button class="btn btn-ghost" id="btnLuzRapido" style="display:none;" onclick="camAlternarLuz(document.querySelector('#scanRapidoViewport video'),this)">🔦 Encender luz</button>
     <button class="btn btn-ghost" onclick="cerrarScanRapido()">Cancelar</button>
   </div>
 </div>
@@ -1151,7 +1155,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026101510';
+const APP_BUILD = '2026101513';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1930,6 +1934,7 @@ document.getElementById('mapaBuscar')?.addEventListener('keydown',e=>{
   }
 });
 document.getElementById('btnCam').addEventListener('click',()=>cameraActive?stopCam():startCam());
+document.getElementById('btnLuz').addEventListener('click',e=>camAlternarLuz(document.querySelector('#viewport video'),e.currentTarget));
 // ── LECTOR DE CÁMARA COMPARTIDO (escáner principal y escaneo rápido) ──
 // 1) Si el navegador trae lector nativo (BarcodeDetector: Chrome/Android) se usa ese: es mucho más rápido y enfoca mejor.
 // 2) Si no (iPhone, otros) se usa ZXing, leyendo cada ~120 ms en vez de cada 500 ms y probando también códigos girados.
@@ -2014,6 +2019,29 @@ function abrirLectorCamara(video,onCode){
   })();
   return h;
 }
+// Linterna: solo la ofrecen los celulares/navegadores que dejan controlarla (Chrome en Android). En iPhone (Safari) no existe esa opción.
+function camTorchSoportada(video){
+  try{
+    const st=video&&video.srcObject, tr=st&&st.getVideoTracks&&st.getVideoTracks()[0];
+    const cap=tr&&tr.getCapabilities?tr.getCapabilities():null;
+    return !!(cap&&cap.torch);
+  }catch(e){return false;}
+}
+function camMostrarLuz(video,btn){
+  if(!btn)return;
+  btn.dataset.on='0';
+  btn.textContent='🔦 Encender luz';
+  btn.style.display=camTorchSoportada(video)?'':'none';
+}
+window.camAlternarLuz=async function(video,btn){
+  try{
+    const tr=video.srcObject.getVideoTracks()[0];
+    const on=btn.dataset.on!=='1';
+    await tr.applyConstraints({advanced:[{torch:on}]});
+    btn.dataset.on=on?'1':'0';
+    btn.textContent=on?'🔦 Apagar luz':'🔦 Encender luz';
+  }catch(e){showToast('Este celular no permite encender la luz desde la app','err');}
+};
 let camLector=null;
 async function startCam(){
   ensureAudioCtx();
@@ -2032,11 +2060,13 @@ async function startCam(){
     }
     camLector=abrirLectorCamara(video,txt=>processCode(txt,true));
     await camLector.listo;
+    camMostrarLuz(video,document.getElementById('btnLuz'));
   }catch(e){showToast('No se pudo acceder a la cámara','err');stopCam();}
 }
 function stopCam(){
   try{if(camLector){camLector.stop();camLector=null;}}catch(e){}
   cameraActive=false;
+  const bl=document.getElementById('btnLuz'); if(bl)bl.style.display='none';
   document.getElementById('viewport').style.display='none';
   document.getElementById('btnCam').textContent='Activar cámara';
   document.getElementById('camDot').classList.remove('on');
@@ -2100,11 +2130,12 @@ window.abrirScanRapido=function(onResult){
       cerrarScanRapido();
       onResult(code);
     });
-    qsLector.listo.catch(()=>{showToast('No se pudo acceder a la cámara','err');cerrarScanRapido();});
+    qsLector.listo.then(()=>camMostrarLuz(video,document.getElementById('btnLuzRapido'))).catch(()=>{showToast('No se pudo acceder a la cámara','err');cerrarScanRapido();});
   }catch(e){showToast('No se pudo acceder a la cámara','err');cerrarScanRapido();}
 };
 window.cerrarScanRapido=function(){
   try{if(qsLector){qsLector.stop();qsLector=null;}}catch(e){}
+  const bl=document.getElementById('btnLuzRapido'); if(bl)bl.style.display='none';
   const modal=document.getElementById('scanRapidoModal');
   if(modal)modal.classList.remove('show');
 };

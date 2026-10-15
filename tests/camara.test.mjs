@@ -32,6 +32,17 @@ test('Cámara: lector nativo lee, libera la cámara y respeta los errores de per
       out.pistasTrasStop = pistasDetenidas;
       const antes = intentos; await w(400); out.sigueLeyendoTrasStop = intentos !== antes;
 
+      // Linterna: el botón aparece si la cámara la permite y la prende/apaga
+      const btn = document.createElement('button'); document.body.appendChild(btn);
+      const lector4 = abrirLectorCamara(video, () => {}); await lector4.listo;
+      let torchPedido = null; pista.applyConstraints = async c => { if (c.advanced[0].torch !== undefined) torchPedido = c.advanced[0].torch; };
+      pista.getCapabilities = () => ({ torch: true });
+      camMostrarLuz(video, btn); out.botonVisible = btn.style.display !== 'none';
+      await camAlternarLuz(video, btn); out.luzPrendida = torchPedido === true && btn.dataset.on === '1';
+      await camAlternarLuz(video, btn); out.luzApagada = torchPedido === false && btn.dataset.on === '0';
+      pista.getCapabilities = () => ({}); camMostrarLuz(video, btn); out.botonOculto = btn.style.display === 'none';
+      lector4.stop(); await w(100);
+
       // Parar antes de que termine de abrir: no queda la cámara encendida
       pistasDetenidas = 0;
       const l2 = abrirLectorCamara(video, () => {}); l2.stop(); await l2.listo.catch(() => {}); await w(200);
@@ -47,6 +58,10 @@ test('Cámara: lector nativo lee, libera la cámara y respeta los errores de per
     assert.equal(r.enfoque, true, 'pide enfoque continuo');
     assert.ok(r.pistasTrasStop >= 1, 'al parar libera la cámara');
     assert.equal(r.sigueLeyendoTrasStop, false, 'al parar deja de leer');
+    assert.equal(r.botonVisible, true, 'muestra el botón de luz si el celular la permite');
+    assert.equal(r.luzPrendida, true);
+    assert.equal(r.luzApagada, true);
+    assert.equal(r.botonOculto, true, 'sin soporte (iPhone) no muestra el botón');
     assert.equal(r.denegado, 'NotAllowedError');
     assert.deepEqual(errores, []);
   } finally { await cerrar(); }
