@@ -65,6 +65,7 @@
     .btn-sm{padding:6px 11px;font-size:.76rem;}
     .inp{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:.875rem;outline:none;width:100%;}
     .inp:focus{border-color:var(--accent);}
+    @media (pointer:coarse){.inp{font-size:16px;}} /* con menos de 16px el iPhone hace zoom al tocar el campo y el teclado se comporta raro */
     .slabel{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
     /* IMPORT */
     .import-zone{margin:18px;border:2px dashed var(--border);border-radius:var(--radius);padding:34px 22px;text-align:center;cursor:pointer;background:var(--surface);}
@@ -1150,7 +1151,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026101422';
+const APP_BUILD = '2026101510';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1929,7 +1930,91 @@ document.getElementById('mapaBuscar')?.addEventListener('keydown',e=>{
   }
 });
 document.getElementById('btnCam').addEventListener('click',()=>cameraActive?stopCam():startCam());
-let zxingReader=null;
+// ── LECTOR DE CÁMARA COMPARTIDO (escáner principal y escaneo rápido) ──
+// 1) Si el navegador trae lector nativo (BarcodeDetector: Chrome/Android) se usa ese: es mucho más rápido y enfoca mejor.
+// 2) Si no (iPhone, otros) se usa ZXing, leyendo cada ~120 ms en vez de cada 500 ms y probando también códigos girados.
+// En los dos casos se pide enfoque continuo cuando el celu lo permite.
+const CAM_FORMATOS_NATIVOS=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','codabar'];
+function camEnfoqueContinuo(video){
+  try{
+    const st=video.srcObject, tr=st&&st.getVideoTracks&&st.getVideoTracks()[0];
+    if(!tr)return;
+    const cap=tr.getCapabilities?tr.getCapabilities():{};
+    if(cap.focusMode&&cap.focusMode.indexOf('continuous')!==-1){
+      tr.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(()=>{});
+    }
+  }catch(e){}
+}
+function abrirLectorCamara(video,onCode){
+  let parado=false,stream=null,timer=null,zx=null;
+  const parar=()=>{
+    parado=true;
+    if(timer){clearTimeout(timer);timer=null;}
+    try{if(zx){zx.reset();zx=null;}}catch(e){}
+    try{
+      const st=stream||video.srcObject;
+      if(st&&st.getTracks)st.getTracks().forEach(t=>t.stop());
+      stream=null;
+      video.srcObject=null;
+    }catch(e){}
+  };
+  const h={stop:parar,listo:null};
+  h.listo=(async()=>{
+    if('BarcodeDetector' in window){
+      try{
+        const soportados=await window.BarcodeDetector.getSupportedFormats();
+        const formatos=CAM_FORMATOS_NATIVOS.filter(f=>soportados.indexOf(f)!==-1);
+        if(formatos.length){
+          const detector=new window.BarcodeDetector({formats:formatos});
+          stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+          if(parado){parar();return;}
+          video.srcObject=stream;
+          await video.play();
+          camEnfoqueContinuo(video);
+          const ciclo=async()=>{
+            if(parado)return;
+            try{
+              if(video.readyState>=2){
+                const r=await detector.detect(video);
+                if(r&&r.length&&!parado)onCode(r[0].rawValue);
+              }
+            }catch(e){}
+            if(!parado)timer=setTimeout(ciclo,120);
+          };
+          ciclo();
+          return;
+        }
+      }catch(e){
+        // Sin permiso o sin cámara: no tiene sentido reintentar con otro lector
+        if(e&&(e.name==='NotAllowedError'||e.name==='NotFoundError'||e.name==='SecurityError')){parar();throw e;}
+        // Cualquier otro problema del lector nativo: se libera y se sigue con ZXing
+        try{if(stream)stream.getTracks().forEach(t=>t.stop());}catch(e2){}
+        stream=null;
+      }
+    }
+    if(parado)return;
+    const hints=new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
+      ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.CODE_128,ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.ITF,ZXing.BarcodeFormat.CODABAR,
+    ]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER,true); // también lee etiquetas torcidas o en vertical
+    zx=new ZXing.BrowserMultiFormatReader(hints,120);
+    const cb=(result)=>{if(result&&!parado)onCode(result.getText());};
+    // Cámara trasera pedida por constraint (en algunos iPhone enumerar dispositivos antes del permiso devuelve vacío)
+    try{
+      await zx.decodeFromConstraints({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}},video,cb);
+    }catch(e1){
+      if(parado)return;
+      await zx.decodeFromVideoDevice(undefined,video,cb);
+    }
+    camEnfoqueContinuo(video);
+  })();
+  return h;
+}
+let camLector=null;
 async function startCam(){
   ensureAudioCtx();
   const vp=document.getElementById('viewport');vp.style.display='block';
@@ -1945,35 +2030,12 @@ async function startCam(){
       video.muted=true;
       vp.insertBefore(video,vp.firstChild);
     }
-    // Limitamos los formatos a los de código de barras 1D que usan los productos (EAN/UPC/Code128/etc.)
-    // en vez de dejar que pruebe TODOS los formatos (QR, DataMatrix, PDF417...) en cada cuadro —
-    // eso lo hacía bastante más lento para leer, tanto en iOS como en Android.
-    const hints=new Map();
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
-      ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.UPC_E,
-      ZXing.BarcodeFormat.CODE_128,ZXing.BarcodeFormat.CODE_39,
-      ZXing.BarcodeFormat.ITF,ZXing.BarcodeFormat.CODABAR,
-    ]);
-    zxingReader=new ZXing.BrowserMultiFormatReader(hints);
-    // Pedimos la cámara trasera directo por constraint en vez de enumerar dispositivos primero:
-    // en algunos iPhone (sobre todo con la app agregada como ícono de Inicio) listVideoInputDevices()
-    // devuelve la lista vacía antes de tener permiso concedido, y nunca llegaba a abrir la cámara.
-    // También pedimos una resolución razonable (no la máxima del celu) para que decodifique más rápido.
-    try{
-      await zxingReader.decodeFromConstraints({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}},video,(result,err)=>{
-        if(result) processCode(result.getText(),true);
-      });
-    }catch(e1){
-      // Fallback por si el navegador no soporta ese constraint puntual
-      await zxingReader.decodeFromVideoDevice(undefined,video,(result,err)=>{
-        if(result) processCode(result.getText(),true);
-      });
-    }
+    camLector=abrirLectorCamara(video,txt=>processCode(txt,true));
+    await camLector.listo;
   }catch(e){showToast('No se pudo acceder a la cámara','err');stopCam();}
 }
 function stopCam(){
-  try{if(zxingReader){zxingReader.reset();zxingReader=null;}}catch(e){}
+  try{if(camLector){camLector.stop();camLector=null;}}catch(e){}
   cameraActive=false;
   document.getElementById('viewport').style.display='none';
   document.getElementById('btnCam').textContent='Activar cámara';
@@ -2004,7 +2066,8 @@ window.showTextPrompt=function(title,defaultValue,cb){
   inp.value=defaultValue||'';
   _textPromptCallback=cb;
   document.getElementById('textPromptModal').classList.add('show');
-  setTimeout(()=>{inp.focus();},50);
+  inp.focus(); // en el mismo toque: iPhone solo abre el teclado si el foco se pide dentro del gesto
+  setTimeout(()=>{if(document.activeElement!==inp)inp.focus();},120);
 };
 window.closeTextPrompt=function(){
   document.getElementById('textPromptModal').classList.remove('show');
@@ -2018,17 +2081,7 @@ window.confirmTextPrompt=function(){
   if(cb)cb(val);
 };
 // ── ESCANEO RÁPIDO (cámara) — modal reutilizable para Mapa, Traslados, etc. ──
-let qsReader=null;
-const SCAN_HINTS=(()=>{
-  const h=new Map();
-  h.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
-    ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,
-    ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.UPC_E,
-    ZXing.BarcodeFormat.CODE_128,ZXing.BarcodeFormat.CODE_39,
-    ZXing.BarcodeFormat.ITF,ZXing.BarcodeFormat.CODABAR,
-  ]);
-  return h;
-})();
+let qsLector=null;
 window.abrirScanRapido=function(onResult){
   const modal=document.getElementById('scanRapidoModal');
   const vp=document.getElementById('scanRapidoViewport');
@@ -2039,19 +2092,19 @@ window.abrirScanRapido=function(onResult){
   video.muted=true;
   vp.appendChild(video);
   modal.classList.add('show');
+  let hecho=false;
   try{
-    qsReader=new ZXing.BrowserMultiFormatReader(SCAN_HINTS);
-    qsReader.decodeFromConstraints({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}},video,(result)=>{
-      if(result){
-        const code=result.getText();
-        cerrarScanRapido();
-        onResult(code);
-      }
-    }).catch(()=>{showToast('No se pudo acceder a la cámara','err');cerrarScanRapido();});
+    qsLector=abrirLectorCamara(video,(code)=>{
+      if(hecho)return;
+      hecho=true;
+      cerrarScanRapido();
+      onResult(code);
+    });
+    qsLector.listo.catch(()=>{showToast('No se pudo acceder a la cámara','err');cerrarScanRapido();});
   }catch(e){showToast('No se pudo acceder a la cámara','err');cerrarScanRapido();}
 };
 window.cerrarScanRapido=function(){
-  try{if(qsReader){qsReader.reset();qsReader=null;}}catch(e){}
+  try{if(qsLector){qsLector.stop();qsLector=null;}}catch(e){}
   const modal=document.getElementById('scanRapidoModal');
   if(modal)modal.classList.remove('show');
 };
