@@ -622,6 +622,7 @@
         <div class="slabel" style="margin-bottom:7px;">Responsable del traslado</div>
         <div style="display:flex;gap:7px;">
           <input type="text" id="tResp" class="inp" placeholder="Escaneá el código de barras..." autocomplete="off" />
+          <button class="btn btn-ghost btn-sm" onclick="abrirScanRapido(tScanResp)">📷</button>
           <button class="btn btn-ghost btn-sm" onclick="confirmarResp()">✓</button>
         </div>
         <div style="font-size:.7rem;color:var(--muted);margin-top:5px;">🔒 Escaneá tu código de barras (cargado en Empleados) para habilitar los pasos siguientes</div>
@@ -1155,7 +1156,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026101513';
+const APP_BUILD = '2026101514';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -3336,6 +3337,7 @@ window.confirmarResp=function(){
   const s1=document.getElementById('tStep1');s1.style.opacity='1';s1.style.pointerEvents='';s1.classList.add('active-step');
   showToast(`Responsable: ${emp.nombre}`,'ok');
 };
+window.tScanResp=function(code){document.getElementById('tResp').value=String(code||'').trim();confirmarResp();};
 document.getElementById('tResp').addEventListener('keydown',e=>{if(e.key==='Enter')confirmarResp();});
 window.setOrigenDep=function(depId){
   if(!depId)return;

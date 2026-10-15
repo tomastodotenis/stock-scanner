@@ -66,3 +66,20 @@ test('Cámara: lector nativo lee, libera la cámara y respeta los errores de per
     assert.deepEqual(errores, []);
   } finally { await cerrar(); }
 });
+
+test('Traslados: el responsable se habilita escaneando con la cámara', async () => {
+  const { page, errores, cerrar } = await abrirApp();
+  try {
+    const r = await page.evaluate(() => {
+      empleados = { e1: { nombre: 'Juan Pérez', codigo: '7790001112223' } };
+      const botones = [...document.querySelectorAll('button')].filter(b => (b.getAttribute('onclick') || '').includes('abrirScanRapido(tScanResp)')).length;
+      tScanResp('7790001112223');
+      return { botones, responsable: traslado.responsable, paso1: document.getElementById('tStep1').style.opacity, bloqueado: document.getElementById('tResp').disabled };
+    });
+    assert.equal(r.botones, 1, 'hay botón de cámara junto al responsable');
+    assert.equal(r.responsable, 'Juan Pérez');
+    assert.equal(r.paso1, '1', 'se habilita el paso 1');
+    assert.equal(r.bloqueado, true);
+    assert.deepEqual(errores, []);
+  } finally { await cerrar(); }
+});
