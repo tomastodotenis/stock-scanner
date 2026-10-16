@@ -532,8 +532,12 @@
             <option value="PA">Pasillos de Planta Alta (10)</option>
             <option value="PB">Pasillos de Planta Baja (10)</option>
           </select>
-          <button class="btn btn-primary btn-sm" onclick="imprimirCartelesPasillos(document.getElementById('cartPasPlanta').value)">Pasillos</button>
+          <button class="btn btn-primary btn-sm" onclick="imprimirCartelesPasillos(document.getElementById('cartPasPlanta').value,document.getElementById('cartPasLados').value==='BA')">Pasillos</button>
         </div>
+        <select id="cartPasLados" class="inp" style="margin-top:7px;">
+          <option value="AB">Lados: A a la izquierda · B a la derecha</option>
+          <option value="BA">Lados: B a la izquierda · A a la derecha</option>
+        </select>
         <button class="btn btn-ghost btn-sm" style="margin-top:7px;width:100%;justify-content:center;" onclick="imprimirCarteles()">🖨️ Carteles de todos los sectores del depósito</button>
       </div>
       <div class="card" style="padding:11px 13px;">
@@ -1170,7 +1174,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026101613';
+const APP_BUILD = '2026101614';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2490,14 +2494,15 @@ window.imprimirCarteles=function(idUnico){
   cartelesAbrirVentana('Carteles de sectores — '+dep,hojas);
 };
 // Pasillos: 6 filas horizontales (H) y 4 verticales (V) por planta; PA = Planta Alta, PB = Planta Baja. Código tipo "1H-PA".
-window.imprimirCartelesPasillos=function(planta){
+window.imprimirCartelesPasillos=function(planta,invertido){
+  const izq=invertido?'B':'A',der=invertido?'A':'B'; // por defecto A a la izquierda y B a la derecha; invertido = al revés
   const plantas=planta==='PA'||planta==='PB'?[planta]:['PA','PB'];
   const defs=[];
   plantas.forEach(p=>{
     for(let n=1;n<=6;n++)defs.push({codigo:n+'H-'+p,desc:`Fila ${n} · Horizontal · ${p==='PA'?'Planta Alta':'Planta Baja'}`});
     for(let n=1;n<=4;n++)defs.push({codigo:n+'V-'+p,desc:`Fila ${n} · Vertical · ${p==='PA'?'Planta Alta':'Planta Baja'}`});
   });
-  const hojas=defs.map(d=>`<section class="cartel"><div class="dep">${escHtml(d.desc)}</div><div class="nombre" style="font-size:190pt;">${escHtml(d.codigo)}</div>${code128Svg(code128Modulos(d.codigo))}<div class="lados"><div class="lado">A</div><div class="cod">${escHtml(d.codigo)}</div><div class="lado">B</div></div></section>`).join('');
+  const hojas=defs.map(d=>`<section class="cartel"><div class="dep">${escHtml(d.desc)}</div><div class="nombre" style="font-size:190pt;">${escHtml(d.codigo)}</div>${code128Svg(code128Modulos(d.codigo))}<div class="lados"><div class="lado">${izq}</div><div class="cod">${escHtml(d.codigo)}</div><div class="lado">${der}</div></div></section>`).join('');
   cartelesAbrirVentana('Carteles de pasillos',hojas);
 };
 function cartelesAbrirVentana(titulo,hojas){

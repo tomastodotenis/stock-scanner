@@ -114,3 +114,19 @@ test('Pasillos: escanear 1H-PA en Stock muestra solo los sectores de esa fila y 
     assert.deepEqual(errores, []);
   } finally { await cerrar(); }
 });
+
+test('Carteles de pasillos: con "invertido" la B va a la izquierda y la A a la derecha', async () => {
+  const { page, errores, cerrar } = await abrirApp();
+  try {
+    const r = await page.evaluate(() => {
+      let e = ''; window.open = () => ({ document: { write: h => { e += h; }, close() {} }, focus() {}, print() {} });
+      imprimirCartelesPasillos('', true); const inv = e;
+      e = ''; imprimirCartelesPasillos('PA'); const normal = e;
+      const re = (a, b) => new RegExp('<div class="lados"><div class="lado">' + a + '</div><div class="cod">[^<]+</div><div class="lado">' + b + '</div></div>', 'g');
+      return { invBA: (inv.match(re('B', 'A')) || []).length, invAB: (inv.match(re('A', 'B')) || []).length, normalAB: (normal.match(re('A', 'B')) || []).length };
+    });
+    assert.equal(r.invBA, 20); assert.equal(r.invAB, 0);
+    assert.equal(r.normalAB, 10, 'sin "invertido" sigue A izquierda y B derecha');
+    assert.deepEqual(errores, []);
+  } finally { await cerrar(); }
+});
