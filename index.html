@@ -525,6 +525,7 @@
           <input id="secNombre" type="text" class="inp" placeholder="Nombre (ej: 1-A)" />
           <button class="btn btn-primary btn-sm" onclick="crearSector()">Crear</button>
         </div>
+        <div id="cartelesBloque" style="display:none;">
         <div class="slabel" style="margin:12px 0 6px;">🖨️ Carteles</div>
         <div style="display:flex;gap:7px;">
           <select id="cartPasPlanta" class="inp" style="flex:1;">
@@ -539,6 +540,7 @@
           <option value="BA">Lados: B a la izquierda · A a la derecha</option>
         </select>
         <button class="btn btn-ghost btn-sm" style="margin-top:7px;width:100%;justify-content:center;" onclick="imprimirCarteles()">🖨️ Carteles de todos los sectores del depósito</button>
+        </div>
       </div>
       <div class="card" style="padding:11px 13px;">
         <div class="slabel" style="margin-bottom:7px;">Sector activo al escanear</div>
@@ -1174,7 +1176,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026101614';
+const APP_BUILD = '2026101615';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2446,7 +2448,7 @@ function renderSectores(){
     <div class="sec-row">
       <div style="flex:1;"><div class="sec-name">📍 ${s.nombre}</div><div class="sec-meta">${s.codigo} · ${cnt[s.id]||0} productos</div></div>
       <button class="btn btn-ghost btn-sm" onclick="verSector('${s.id}')">Ver</button>
-      <button class="btn btn-ghost btn-sm" onclick="imprimirCarteles('${s.id}')" title="Imprimir cartel">🖨️</button>
+      ${isAdmin?`<button class="btn btn-ghost btn-sm" onclick="imprimirCarteles('${s.id}')" title="Imprimir cartel">🖨️</button>`:''}
       <button class="btn btn-ghost btn-sm" onclick="editarSector('${s.id}')">✏️</button>
       <button class="btn btn-danger btn-sm" onclick="eliminarSector('${s.id}')">🗑</button>
     </div>`).join('');
@@ -2477,6 +2479,7 @@ function code128Svg(bits){
   return `<svg class="barras" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${bits.length+margen*2} 1" preserveAspectRatio="none" shape-rendering="crispEdges">${rects}</svg>`;
 }
 window.imprimirCarteles=function(idUnico){
+  if(!isAdmin){showToast('Solo el administrador puede imprimir carteles','err');return;}
   const secs=Object.values(getSectores()).filter(s=>!idUnico||s.id===idUnico).sort((a,b)=>a.nombre.localeCompare(b.nombre,undefined,{numeric:true}));
   if(!secs.length){showToast('No hay sectores para imprimir','err');return;}
   if(!idUnico&&secs.length>30&&!confirm(`Se van a generar ${secs.length} carteles (uno por hoja). ¿Seguir?`))return;
@@ -2495,6 +2498,7 @@ window.imprimirCarteles=function(idUnico){
 };
 // Pasillos: 6 filas horizontales (H) y 4 verticales (V) por planta; PA = Planta Alta, PB = Planta Baja. Código tipo "1H-PA".
 window.imprimirCartelesPasillos=function(planta,invertido){
+  if(!isAdmin){showToast('Solo el administrador puede imprimir carteles','err');return;}
   const izq=invertido?'B':'A',der=invertido?'A':'B'; // por defecto A a la izquierda y B a la derecha; invertido = al revés
   const plantas=planta==='PA'||planta==='PB'?[planta]:['PA','PB'];
   const defs=[];
@@ -3879,6 +3883,8 @@ window.pinPress = function(key){
         document.getElementById('tabMeli').style.display='flex';
         const mbe=document.getElementById('mapaBtnEditar');
         if(mbe)mbe.style.display='flex';
+        const cb=document.getElementById('cartelesBloque');if(cb)cb.style.display='block';
+        renderSectores();
         showToast('Modo administrador activado 🔴','ok');
         openAdminPanel();
       }else{
@@ -4263,6 +4269,8 @@ window.salirAdmin = function(){
   document.getElementById('adminBadge').style.display='none';
   const mbe=document.getElementById('mapaBtnEditar');
   if(mbe)mbe.style.display='none';
+  const cb=document.getElementById('cartelesBloque');if(cb)cb.style.display='none';
+  renderSectores();
   if(mapaModo==='editar')setMapaModo('ver');
   // If currently on an admin-only tab, redirect to stock
   const active=document.querySelector('.tab.active');

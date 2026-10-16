@@ -29,6 +29,7 @@ test('Carteles: imprime un cartel por sector con su nombre y su código, ordenad
   const { page, errores, cerrar } = await abrirApp();
   try {
     const r = await page.evaluate(() => {
+      isAdmin = true;
       depositos = { d1: { nombre: 'Depósito Central' } }; depActivo = 'd1';
       sectoresDB = { d1: {
         a: { id: 'a', nombre: '10-B', codigo: 'SEC-10B' },
@@ -57,6 +58,7 @@ test('Carteles de pasillos: 12 horizontales + 8 verticales, códigos tipo 1H-PA,
   const { page, errores, cerrar } = await abrirApp();
   try {
     const r = await page.evaluate(() => {
+      isAdmin = true;
       let escrito = '';
       window.open = () => ({ document: { write: h => { escrito += h; }, close() {} }, focus() {}, print() {} });
       imprimirCartelesPasillos(''); const todos = escrito;
@@ -119,6 +121,7 @@ test('Carteles de pasillos: con "invertido" la B va a la izquierda y la A a la d
   const { page, errores, cerrar } = await abrirApp();
   try {
     const r = await page.evaluate(() => {
+      isAdmin = true;
       let e = ''; window.open = () => ({ document: { write: h => { e += h; }, close() {} }, focus() {}, print() {} });
       imprimirCartelesPasillos('', true); const inv = e;
       e = ''; imprimirCartelesPasillos('PA'); const normal = e;
@@ -127,6 +130,32 @@ test('Carteles de pasillos: con "invertido" la B va a la izquierda y la A a la d
     });
     assert.equal(r.invBA, 20); assert.equal(r.invAB, 0);
     assert.equal(r.normalAB, 10, 'sin "invertido" sigue A izquierda y B derecha');
+    assert.deepEqual(errores, []);
+  } finally { await cerrar(); }
+});
+
+test('Carteles: solo el administrador puede imprimirlos (el bloque está oculto y las funciones se niegan)', async () => {
+  const { page, errores, cerrar } = await abrirApp();
+  try {
+    const r = await page.evaluate(() => {
+      let abierta = 0; window.open = () => { abierta++; return { document: { write() {}, close() {} }, focus() {}, print() {} }; };
+      depositos = { d: { nombre: 'Soler' } }; depActivo = 'd';
+      sectoresDB = { d: { a: { id: 'a', nombre: '1H-PA-M1A-E1', codigo: 'SEC-1HPAM1AE1' } } };
+      const out = { bloqueOculto: document.getElementById('cartelesBloque').style.display === 'none' };
+      isAdmin = false; secListOpen = true; renderSectores();
+      out.botonSectorSinAdmin = document.getElementById('secList').innerHTML.includes('imprimirCarteles(');
+      imprimirCarteles(); imprimirCarteles('a'); imprimirCartelesPasillos('');
+      out.ventanasSinAdmin = abierta;
+      isAdmin = true; renderSectores();
+      out.botonSectorConAdmin = document.getElementById('secList').innerHTML.includes('imprimirCarteles(');
+      imprimirCartelesPasillos('PA'); out.ventanasConAdmin = abierta;
+      return out;
+    });
+    assert.equal(r.bloqueOculto, true, 'sin admin el bloque de carteles no se ve');
+    assert.equal(r.botonSectorSinAdmin, false);
+    assert.equal(r.ventanasSinAdmin, 0, 'sin admin no se abre ninguna ventana de impresión');
+    assert.equal(r.botonSectorConAdmin, true);
+    assert.equal(r.ventanasConAdmin, 1);
     assert.deepEqual(errores, []);
   } finally { await cerrar(); }
 });
