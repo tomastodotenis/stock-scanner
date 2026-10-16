@@ -460,12 +460,16 @@
         <button class="btn btn-danger btn-sm" id="btnClear" onclick="requireAdmin(limpiarStock)">🗑 Limpiar</button>
       </div>
       <div style="display:flex;gap:8px;">
-        <select id="depFilter" class="inp" style="flex:1;" onchange="filterDep=this.value;filterSec='';updateSecSelects();renderStock()">
+        <select id="depFilter" class="inp" style="flex:1;" onchange="filterDep=this.value;filterSec='';pasLimpiar(false);updateSecSelects();renderStock()">
           <option value="">Todos los depósitos</option>
         </select>
-        <select id="secFilter" class="inp" style="flex:1;" onchange="filterSec=this.value;renderStock()">
+        <select id="secFilter" class="inp" style="flex:1;" onchange="filterSec=this.value;pasLimpiar(false);renderStock()">
         <option value="">Todos los sectores</option>
       </select>
+      </div>
+      <div id="pasChip" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:7px 11px;border-radius:8px;background:rgba(200,245,0,.1);border:1px solid var(--accent);font-size:.8rem;">
+        <span id="pasChipTxt"></span>
+        <button class="btn btn-ghost btn-sm" onclick="pasLimpiar(true)">✕ Quitar</button>
       </div>
       <div style="display:flex;gap:8px;">
         <input type="text" id="stockScanInput" class="inp" style="flex:1;" placeholder="🔎 Escaneá el código del sector..." autocomplete="off" />
@@ -521,6 +525,16 @@
           <input id="secNombre" type="text" class="inp" placeholder="Nombre (ej: 1-A)" />
           <button class="btn btn-primary btn-sm" onclick="crearSector()">Crear</button>
         </div>
+        <div class="slabel" style="margin:12px 0 6px;">🖨️ Carteles</div>
+        <div style="display:flex;gap:7px;">
+          <select id="cartPasPlanta" class="inp" style="flex:1;">
+            <option value="">Los 20 pasillos (ambas plantas)</option>
+            <option value="PA">Pasillos de Planta Alta (10)</option>
+            <option value="PB">Pasillos de Planta Baja (10)</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="imprimirCartelesPasillos(document.getElementById('cartPasPlanta').value)">Pasillos</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:7px;width:100%;justify-content:center;" onclick="imprimirCarteles()">🖨️ Carteles de todos los sectores del depósito</button>
       </div>
       <div class="card" style="padding:11px 13px;">
         <div class="slabel" style="margin-bottom:7px;">Sector activo al escanear</div>
@@ -1156,7 +1170,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026101514';
+const APP_BUILD = '2026101613';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1214,6 +1228,7 @@ let notFoundLog=[], modoScan='entrada', sectorActivo=null;
 let auditoria={activa:false,id:null,iniciadoPor:'',fechaInicio:'',snapshot:{},conteo:{},corregidos:{}};
 let unsubAuditoria=null, auditFilterEstado='';
 let filterSec='', filterDep='', searchQuery='', cameraActive=false;
+let filterPas=''; // pasillo escaneado (ej. "1H-PA"): muestra los sectores cuyo nombre empieza con ese código
 let lastScan=null, lastScanTime=0;
 const CAM_DB=400;
 let currentUser=null, unsubMov=null;
@@ -2228,7 +2243,7 @@ async function resolverSinCatalogo(){
 // Control de cuentas: sin filtros, la suma de la lista debe ser igual a la suma del stock guardado.
 function controlCuentas(rendered){
   const el=document.getElementById('ctrlCuentas');
-  if(searchQuery||filterDep||filterSec){if(el)el.remove();return;}
+  if(searchQuery||filterDep||filterSec||filterPas){if(el)el.remove();return;}
   let db=0;Object.values(stockDB).forEach(d=>Object.values(d).forEach(q=>{if(q>0)db+=q;}));
   const lista=rendered.reduce((a,r)=>a+r.qty,0);
   const list=document.getElementById('stockList');
@@ -2257,6 +2272,11 @@ function renderStock(){
     if(rqty<=0)return;
     const secId=depToShow?(sectorMapDB[depToShow]||{})[can]:(depActivo?(sectorMapDB[depActivo]||{})[can]:null);
     if(filterSec&&secId!==filterSec)return;
+    if(filterPas){
+      const dp=depToShow||depActivo;
+      const nomSec=secId&&(sectoresDB[dp]||{})[secId]?String(sectoresDB[dp][secId].nombre).toUpperCase():'';
+      if(!nomSec.startsWith(filterPas+'-'))return;
+    }
     const txt=(entry.name+' '+entry.sku+' '+entry.talle+' '+(entry.barcode||'')).toLowerCase();
     if(searchQuery&&!txt.includes(searchQuery))return;
     rendered.push({entry,qty:rqty,key:can,secId});
@@ -2422,17 +2442,128 @@ function renderSectores(){
     <div class="sec-row">
       <div style="flex:1;"><div class="sec-name">📍 ${s.nombre}</div><div class="sec-meta">${s.codigo} · ${cnt[s.id]||0} productos</div></div>
       <button class="btn btn-ghost btn-sm" onclick="verSector('${s.id}')">Ver</button>
+      <button class="btn btn-ghost btn-sm" onclick="imprimirCarteles('${s.id}')" title="Imprimir cartel">🖨️</button>
       <button class="btn btn-ghost btn-sm" onclick="editarSector('${s.id}')">✏️</button>
       <button class="btn btn-danger btn-sm" onclick="eliminarSector('${s.id}')">🗑</button>
     </div>`).join('');
 }
+// ── CARTELES DE SECTORES ──
+// Genera el código de barras Code128 sin librerías ni internet (los 107 patrones estándar, 1 = barra, 0 = espacio).
+// Lo que se imprime es el MISMO código que guarda cada sector (ej. SEC-1A), así la cámara o la pistola lo reconocen.
+const CODE128_BARRAS=["11011001100", "11001101100", "11001100110", "10010011000", "10010001100", "10001001100", "10011001000", "10011000100", "10001100100", "11001001000", "11001000100", "11000100100", "10110011100", "10011011100", "10011001110", "10111001100", "10011101100", "10011100110", "11001110010", "11001011100", "11001001110", "11011100100", "11001110100", "11101101110", "11101001100", "11100101100", "11100100110", "11101100100", "11100110100", "11100110010", "11011011000", "11011000110", "11000110110", "10100011000", "10001011000", "10001000110", "10110001000", "10001101000", "10001100010", "11010001000", "11000101000", "11000100010", "10110111000", "10110001110", "10001101110", "10111011000", "10111000110", "10001110110", "11101110110", "11010001110", "11000101110", "11011101000", "11011100010", "11011101110", "11101011000", "11101000110", "11100010110", "11101101000", "11101100010", "11100011010", "11101111010", "11001000010", "11110001010", "10100110000", "10100001100", "10010110000", "10010000110", "10000101100", "10000100110", "10110010000", "10110000100", "10011010000", "10011000010", "10000110100", "10000110010", "11000010010", "11001010000", "11110111010", "11000010100", "10001111010", "10100111100", "10010111100", "10010011110", "10111100100", "10011110100", "10011110010", "11110100100", "11110010100", "11110010010", "11011011110", "11011110110", "11110110110", "10101111000", "10100011110", "10001011110", "10111101000", "10111100010", "11110101000", "11110100010", "10111011110", "10111101110", "11101011110", "11110101110", "11010000100", "11010010000", "11010011100", "1100011101011"];
+function code128Modulos(texto){
+  texto=String(texto==null?'':texto);
+  if(!texto)return null;
+  let suma=104,bits=CODE128_BARRAS[104]; // 104 = inicio Code128-B (caracteres ASCII 32 a 126)
+  for(let i=0;i<texto.length;i++){
+    const v=texto.charCodeAt(i)-32;
+    if(v<0||v>94)return null;
+    suma+=v*(i+1);
+    bits+=CODE128_BARRAS[v];
+  }
+  return bits+CODE128_BARRAS[suma%103]+CODE128_BARRAS[106];
+}
+function code128Svg(bits){
+  const margen=10; // zona de silencio a cada lado, en módulos
+  let rects='',i=0;
+  while(i<bits.length){
+    if(bits[i]==='1'){let j=i;while(j<bits.length&&bits[j]==='1')j++;rects+=`<rect x="${margen+i}" y="0" width="${j-i}" height="1"/>`;i=j;}
+    else i++;
+  }
+  return `<svg class="barras" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${bits.length+margen*2} 1" preserveAspectRatio="none" shape-rendering="crispEdges">${rects}</svg>`;
+}
+window.imprimirCarteles=function(idUnico){
+  const secs=Object.values(getSectores()).filter(s=>!idUnico||s.id===idUnico).sort((a,b)=>a.nombre.localeCompare(b.nombre,undefined,{numeric:true}));
+  if(!secs.length){showToast('No hay sectores para imprimir','err');return;}
+  if(!idUnico&&secs.length>30&&!confirm(`Se van a generar ${secs.length} carteles (uno por hoja). ¿Seguir?`))return;
+  const dep=depositos[depActivo]?.nombre||'';
+  const sinCodigo=[];
+  const hojas=secs.map(s=>{
+    const bits=code128Modulos(s.codigo);
+    if(!bits){sinCodigo.push(s.nombre);return '';}
+    const n=String(s.nombre).length;
+    const tam=n<=4?'210pt':n<=7?'140pt':n<=11?'90pt':'60pt';
+    return `<section class="cartel"><div class="dep">${escHtml(dep)}</div><div class="nombre" style="font-size:${tam};">${escHtml(s.nombre)}</div>${code128Svg(bits)}<div class="cod">${escHtml(s.codigo)}</div></section>`;
+  }).join('');
+  if(!hojas){showToast('Esos sectores tienen un código que no se puede imprimir como barras','err');return;}
+  if(sinCodigo.length)showToast('No se pudo armar el cartel de: '+sinCodigo.join(', '),'err');
+  cartelesAbrirVentana('Carteles de sectores — '+dep,hojas);
+};
+// Pasillos: 6 filas horizontales (H) y 4 verticales (V) por planta; PA = Planta Alta, PB = Planta Baja. Código tipo "1H-PA".
+window.imprimirCartelesPasillos=function(planta){
+  const plantas=planta==='PA'||planta==='PB'?[planta]:['PA','PB'];
+  const defs=[];
+  plantas.forEach(p=>{
+    for(let n=1;n<=6;n++)defs.push({codigo:n+'H-'+p,desc:`Fila ${n} · Horizontal · ${p==='PA'?'Planta Alta':'Planta Baja'}`});
+    for(let n=1;n<=4;n++)defs.push({codigo:n+'V-'+p,desc:`Fila ${n} · Vertical · ${p==='PA'?'Planta Alta':'Planta Baja'}`});
+  });
+  const hojas=defs.map(d=>`<section class="cartel"><div class="dep">${escHtml(d.desc)}</div><div class="nombre" style="font-size:190pt;">${escHtml(d.codigo)}</div>${code128Svg(code128Modulos(d.codigo))}<div class="lados"><div class="lado">A</div><div class="cod">${escHtml(d.codigo)}</div><div class="lado">B</div></div></section>`).join('');
+  cartelesAbrirVentana('Carteles de pasillos',hojas);
+};
+function cartelesAbrirVentana(titulo,hojas){
+  const win=window.open('','_blank');
+  if(!win){showToast('El navegador bloqueó la ventana de impresión: permitila e intentá de nuevo','err');return;}
+  win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${escHtml(titulo)}</title>
+<style>
+  @page{size:A4 landscape;margin:8mm;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;}
+  .cartel{height:194mm;page-break-after:always;break-after:page;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:6mm 10mm;}
+  .cartel:last-child{page-break-after:auto;break-after:auto;}
+  .dep{font-size:22pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#333;}
+  .nombre{font-weight:900;line-height:1;text-align:center;word-break:break-word;}
+  .barras{width:250mm;height:50mm;display:block;fill:#000;}
+  .cod{font-size:24pt;font-family:'Courier New',monospace;letter-spacing:.12em;}
+  .lados{width:100%;display:flex;align-items:flex-end;justify-content:space-between;padding:0 4mm;}
+  .lado{font-size:100pt;font-weight:900;line-height:.85;}
+  .ayuda{font-size:12pt;padding:8px;background:#ffd;border-bottom:1px solid #cc9;text-align:center;}
+  @media print{.ayuda{display:none;}}
+</style></head><body>
+<div class="ayuda">Imprimí en <b>horizontal</b>, tamaño real (100%), sin encabezados ni pies de página.</div>
+${hojas}
+</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(),500);
+}
 window.verSector=function(id){switchTab('stock');const f=document.getElementById('secFilter');if(f){f.value=id;filterSec=id;renderStock();}};
 // Escanear (cámara o pistola) el cartel de un sector en Stock, para filtrar directo por ese sector.
+function pasActualizarChip(){
+  const c=document.getElementById('pasChip'),t=document.getElementById('pasChipTxt');
+  if(!c)return;
+  if(filterPas){
+    const m=filterPas.match(/^(\d+)([HV])-P([AB])$/);
+    t.textContent=m?`🧭 Pasillo ${filterPas} · Fila ${m[1]} · ${m[2]==='H'?'Horizontal':'Vertical'} · ${m[3]==='A'?'Planta Alta':'Planta Baja'}`:'🧭 Pasillo '+filterPas;
+    c.style.display='flex';
+  }else c.style.display='none';
+}
+window.pasLimpiar=function(render){
+  if(!filterPas)return;
+  filterPas='';pasActualizarChip();
+  if(render)renderStock();
+};
 window.stockScanSector=function(code){
   code=(code||'').trim();if(!code)return;
   const matchSec=buscarSectorPorCodigo(code);
-  if(!matchSec){showToast('No se encontró ningún sector con ese código','err');return;}
+  if(!matchSec){
+    // Cartel de pasillo (ej. 1H-PA, 3V-PB): muestra todos los sectores de esa fila y planta
+    const pas=code.toUpperCase();
+    if(/^\d+[HV]-P[AB]$/.test(pas)){
+      const dp=filterDep||depActivo;
+      const hay=Object.values(sectoresDB[dp]||{}).some(x=>String(x.nombre).toUpperCase().startsWith(pas+'-'));
+      if(!hay){showToast(`No hay sectores que empiecen con ${pas}- en este depósito`,'err');return;}
+      playBeep(true);vibrateDevice(true);
+      filterPas=pas;filterSec='';
+      const sf0=document.getElementById('secFilter');if(sf0)sf0.value='';
+      pasActualizarChip();renderStock();
+      const inp0=document.getElementById('stockScanInput');if(inp0)inp0.value='';
+      showToast(`Filtrando por pasillo: ${pas}`,'ok');
+      return;
+    }
+    showToast('No se encontró ningún sector con ese código','err');return;
+  }
   playBeep(true);vibrateDevice(true);
+  filterPas='';pasActualizarChip();
   filterDep=matchSec.depId;filterSec=matchSec.id;
   updateSecSelects();renderStock();
   const df=document.getElementById('depFilter');if(df)df.value=matchSec.depId;
