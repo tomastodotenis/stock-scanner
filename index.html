@@ -318,24 +318,24 @@
     <span id="depActivoLabel" style="font-size:.75rem;color:var(--accent);font-weight:700;"></span>
   </div>
   <div class="tabs">
-    <div class="tab active" data-tab="import">⬆️ Importar</div>
-    <div class="tab" data-tab="scanner">📷 Escanear</div>
+    <div class="tab active" data-tab="scanner">📷 Escanear</div>
     <div class="tab" data-tab="stock">📋 Stock</div>
+    <div class="tab" data-tab="mapa">🗺️ Mapa</div>
+    <div class="tab" data-tab="traslados">🔄 Traslados</div>
     <div class="tab" data-tab="historial">📜 Historial</div>
     <div class="tab" data-tab="sectores">📍 Sectores</div>
-    <div class="tab" data-tab="mapa">🗺️ Mapa</div>
-    <div class="tab" data-tab="empleados" id="tabEmpleados" style="display:none;">👤 Empleados</div>
-    <div class="tab" data-tab="traslados">🔄 Traslados</div>
-    <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">⚙️ Config. Alertas</div>
-    <div class="tab" data-tab="promos">🏷️ Promos MeLi</div>
-    <div class="tab" data-tab="ranking">🏆 Ranking</div>
     <div class="tab" data-tab="planilla">📄 Planilla</div>
+    <div class="tab" data-tab="ranking">🏆 Ranking</div>
+    <div class="tab" data-tab="promos">🏷️ Promos MeLi</div>
+    <div class="tab" data-tab="import">⬆️ Importar</div>
+    <div class="tab" data-tab="empleados" id="tabEmpleados" style="display:none;">👤 Empleados</div>
+    <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">⚙️ Config. Alertas</div>
     <div class="tab" data-tab="auditoria" id="tabAuditoria" style="display:none;">🧮 Auditoría</div>
     <div class="tab" data-tab="meli" id="tabMeli" style="display:none;">🔗 MeLi Sync</div>
   </div>
 
   <!-- IMPORT -->
-  <div class="page active" id="page-import">
+  <div class="page" id="page-import">
     <div class="import-zone" id="importZone">
       <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
       <div class="icon">📂</div>
@@ -385,7 +385,7 @@
   </div>
 
   <!-- SCANNER -->
-  <div class="page" id="page-scanner">
+  <div class="page active" id="page-scanner">
     <div class="sw">
       <!-- Modo -->
       <div class="card" style="padding:11px 13px;">
@@ -420,7 +420,7 @@
             <button class="btn btn-ghost btn-sm" id="btnCam">Activar cámara</button>
           </div>
         </div>
-        <div id="viewport"><div class="scan-overlay"><div class="scan-line"></div></div></div>
+        <div id="viewport"></div>
       </div>
       <!-- Manual -->
       <div class="card">
@@ -1185,7 +1185,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026102015';
+const APP_BUILD = '2026102017';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
