@@ -82,10 +82,10 @@
     .cam-section{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;}
     .cam-hdr{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);}
     .cam-hdr h3{font-size:.83rem;font-weight:600;display:flex;align-items:center;gap:7px;}
-    #viewport{position:relative;width:100%;height:220px;background:#000;overflow:hidden;display:none;}
+    #viewport{position:relative;width:100%;aspect-ratio:1/1;max-height:70vh;background:#000;overflow:hidden;display:none;}
     #viewport video{width:100%;height:100%;object-fit:cover;}
     #viewport canvas{position:absolute;top:0;left:0;width:100%;height:100%;}
-    .scan-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:200px;height:80px;border:2px solid var(--accent);border-radius:6px;box-shadow:0 0 0 9999px rgba(0,0,0,.4);pointer-events:none;}
+    .scan-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:88%;height:46%;border:2px solid var(--accent);border-radius:8px;pointer-events:none;}
     .scan-line{position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);animation:scan 1.5s ease-in-out infinite;box-shadow:0 0 8px var(--accent);}
     @keyframes scan{0%,100%{top:0}50%{top:calc(100% - 2px)}}
     #camDot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;}
@@ -395,7 +395,7 @@
           <button class="modo-btn" id="btnModoConsulta" onclick="setModo('consulta')" style="flex:1;justify-content:center;">🔍 Consulta</button>
           <button class="modo-btn" id="btnModoSalida" onclick="setModo('salida')" style="flex:1;justify-content:center;">📤 Salida</button>
         </div>
-        <div style="font-size:.72rem;color:var(--muted);margin-top:7px;" id="modoDesc">Cada scan suma +1 al stock</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:7px;" id="modoDesc">Cada scan suma al stock (1, o la cantidad que pongas)</div>
       </div>
       <!-- Sector selector always visible in scanner -->
       <div class="card" style="padding:10px 13px;">
@@ -429,6 +429,11 @@
           <input type="text" id="manInput" class="inp" placeholder="Código de barras o SKU..." autocomplete="off" />
           <button class="btn btn-primary btn-sm" onclick="manScan()">Sumar</button>
         </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:9px;">
+          <label for="scanQty" style="font-size:.8rem;color:var(--muted);">Cantidad para el próximo código</label>
+          <input type="number" id="scanQty" class="inp" inputmode="numeric" min="1" max="9999" step="1" value="1" style="width:78px;text-align:center;" />
+        </div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:5px;">Poné la cantidad, escaneá (cámara, pistola o manual) y se aplica a ese producto. Después vuelve a 1.</div>
       </div>
       <!-- Result -->
       <div class="scan-result" id="scanResult">
@@ -1176,7 +1181,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026101615';
+const APP_BUILD = '2026102013';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1802,6 +1807,12 @@ function processFile(file){
 
 // ── SCAN ──
 
+function leerCantidadScan(){
+  const el=document.getElementById('scanQty');
+  const n=Math.floor(Number(el&&el.value));
+  return (Number.isFinite(n)&&n>=1)?Math.min(n,9999):1;
+}
+function resetCantidadScan(){const el=document.getElementById('scanQty');if(el)el.value='1';}
 async function processCode(rawCode,fromCam){
   const code=String(rawCode).trim();if(!code)return;
   if(fromCam){
@@ -1846,6 +1857,7 @@ async function processCode(rawCode,fromCam){
     const key=entry.canonical;
     const esSalida=modoScan==='salida';
     const esConsulta=modoScan==='consulta';
+    const cantScan=esConsulta?1:leerCantidadScan();
 
     if(esConsulta){
       // CONSULTA: solo muestra info, no modifica stock
@@ -1889,19 +1901,21 @@ async function processCode(rawCode,fromCam){
     }
 
     if(esSalida){
-      if(getStockVal(key)<=0){
+      if(getStockVal(key)<cantScan){
         re.style.display='block';re.className='scan-result notfound';
         rh.textContent='⚠️ Sin stock disponible';
-        rb.innerHTML=`<div class="pmeta">No hay unidades para descontar: <b>${entry.name}</b></div>`;
+        rb.innerHTML=`<div class="pmeta">No alcanzan las unidades para descontar ${cantScan}: <b>${entry.name}</b> (hay ${getStockVal(key)})</div>`;
         playBeep(false);vibrateDevice(false);flashScr(false);
         showToast('Sin stock para descontar','err');return;
       }
-      const curQ=getStockVal(key);setStockVal(key,curQ-1);
-      fbAddMov(makeMov(key,entry,'salida',1,'Salida manual'));
+      const curQ=getStockVal(key);setStockVal(key,curQ-cantScan);
+      fbAddMov(makeMov(key,entry,'salida',cantScan,'Salida manual'));
+      resetCantidadScan();
     }else{
-      setStockVal(key,getStockVal(key)+1);
+      setStockVal(key,getStockVal(key)+cantScan);
       if(sectorActivo)setSectorForProduct(key,sectorActivo);
-      fbAddMov(makeMov(key,entry,'entrada',1,'Escaneo'));
+      fbAddMov(makeMov(key,entry,'entrada',cantScan,cantScan>1?'Escaneo (cantidad manual)':'Escaneo'));
+      resetCantidadScan();
     }
     fbSaveStock();updateHeader();
     pushStockToMeli(key,entry); // no bloqueante — si falla o no está mapeado, no traba el escaneo
@@ -1910,7 +1924,7 @@ async function processCode(rawCode,fromCam){
     const secN=secId&&secs[secId]?secs[secId].nombre:null;
     const saldo=getStockVal(key);
     const col=esSalida?'var(--danger)':'var(--accent)';
-    const sig=esSalida?'−1':'+1';
+    const sig=(esSalida?'−':'+')+cantScan;
     re.style.display='block';re.className='scan-result found';
     rh.textContent=esSalida?'📤 Salida registrada':'📥 Entrada registrada';
     rb.innerHTML=`
@@ -1937,7 +1951,7 @@ async function processCode(rawCode,fromCam){
 
 window.setModo=function(modo){
   modoScan=modo;
-  const descs={entrada:'Cada scan suma +1 al stock',consulta:'Solo consulta — no modifica el stock',salida:'Cada scan resta −1 del stock'};
+  const descs={entrada:'Cada scan suma al stock (1, o la cantidad que pongas)',consulta:'Solo consulta — no modifica el stock',salida:'Cada scan resta del stock (1, o la cantidad que pongas)'};
   document.getElementById('modoDesc').textContent=descs[modo];
   ['entrada','consulta','salida'].forEach(m=>{
     const btn=document.getElementById('btnModo'+m.charAt(0).toUpperCase()+m.slice(1));
@@ -4966,6 +4980,22 @@ window.syncCatalogFromOdoo = async function(silent=false){
     const nowDate = new Date();
     // Save sync timestamp
     try { await idbSet('ss_catalog_meta', {upd: nowDate.toISOString()}); } catch(e){}
+    // Sube a la nube para que el resto de los dispositivos lo reciba solo.
+    // Manual: siempre. Automática: solo si la copia de la nube tiene más de SYNC_INTERVAL_MS (evita que todos suban a la vez).
+    try{
+      let subir=!silent;
+      if(silent){
+        const{db,doc,getDoc}=fb();
+        const ms=await getDoc(doc(db,'config','catalogo_meta'));
+        const u=ms.exists()?new Date(ms.data().upd).getTime():0;
+        subir=!u||(Date.now()-u>=SYNC_INTERVAL_MS);
+      }
+      if(subir){
+        if(status&&!silent) status.textContent='☁️ Subiendo a los demás dispositivos...';
+        const okNube=await uploadCatalogToCloud(totalLoaded,nowDate.toISOString());
+        if(!silent) showToast(okNube?'☁️ Catálogo enviado a todos los dispositivos':'No se pudo enviar a los demás dispositivos (revisá la conexión)',okNube?'ok':'err');
+      }
+    }catch(e){console.error('subida catálogo Odoo',e);}
     if(!silent){
       if(status) status.textContent = `✅ Última sync: ${nowDate.toLocaleDateString('es-AR')} ${nowDate.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})} · ${totalLoaded.toLocaleString()} productos`;
       if(label) label.textContent = `✅ ${totalLoaded.toLocaleString()} productos sincronizados`;
