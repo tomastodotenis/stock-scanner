@@ -1185,7 +1185,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026102014';
+const APP_BUILD = '2026102015';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2335,7 +2335,7 @@ function renderStock(){
         ${alertBadges?`<div style="margin-top:3px;">${alertBadges}</div>`:''}
         ${promoBadge?`<div style="margin-top:2px;">${promoBadge}</div>`:''}
       </div>
-      <div class="rsec">${sn}</div>
+      <div class="rsec"${secId&&secs[secId]?` data-ir-mapa="1" onclick="stockIrAlMapa('${depToShow||depActivo}','${secId}')" style="cursor:pointer;text-decoration:underline;" title="Ver en el mapa"`:''}>${sn}${secId&&secs[secId]?' 🗺️':''}</div>
       <div class="rtalle">${entry.talle||'—'}</div>
       <div class="rqty${qty===0?' zero':''}">${qty}</div>
       <div class="rcode">${entry.barcode||entry.sku||'—'}</div>
@@ -2994,6 +2994,13 @@ function mapaIrASector(secId){
   mapaMostrarPanel(modulo);
   return true;
 }
+// Desde Stock: tocar el sector abre el Mapa con ese sector resaltado (cambia al depósito del sector si hace falta).
+window.stockIrAlMapa=function(depId,secId){
+  if(!secId)return;
+  if(depId&&depId!==depActivo&&depositos[depId])cambiarDepActivo(depId);
+  switchTab('mapa');
+  setTimeout(()=>mapaIrASector(secId),50);
+};
 window.mapaBuscarProducto=function(q){
   q=(q||'').trim().toLowerCase();
   document.querySelectorAll('.mapa-modulo').forEach(p=>p.classList.remove('mapa-flash'));
