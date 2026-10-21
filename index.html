@@ -13,7 +13,8 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-    import { getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, collection, addDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, collection, addDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, deleteField, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
     const app = initializeApp({
       apiKey: "AIzaSyC4rhZK1tuhJChMrChr01ukMeGs6tM3x_8",
       authDomain: "stock-scanner-d7c67.firebaseapp.com",
@@ -22,7 +23,7 @@
       messagingSenderId: "267705854754",
       appId: "1:267705854754:web:15c9408a27846e3954137b"
     });
-    window._fb = { auth: getAuth(app), db: getFirestore(app), signInWithEmailAndPassword, signOut, onAuthStateChanged, doc, setDoc, getDoc, getDocs, deleteDoc, collection, addDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, deleteField };
+    window._fb = { auth: getAuth(app), db: getFirestore(app), signInWithEmailAndPassword, signOut, onAuthStateChanged, doc, setDoc, getDoc, getDocs, deleteDoc, collection, addDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, deleteField, arrayUnion, arrayRemove, getToken, isSupported, getMessaging: () => getMessaging(app) };
   </script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -1228,7 +1229,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026102116';
+const APP_BUILD = '2026102118';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1689,6 +1690,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementB
 window.doLogout=async function(){
   if(!confirm('¿Cerrar sesión?'))return;
   await markOffline();
+  await msgQuitarPushToken();
   const{auth,signOut}=fb();await signOut(auth);
   if(unsubMov)unsubMov();
   if(unsubCatalog)unsubCatalog();
@@ -3908,7 +3910,7 @@ window.saveProfile = function(){
     (async()=>{
       try{
         const{db,doc,setDoc}=fb();
-        await setDoc(doc(db,'perfiles',currentUser.uid),{nombre:name,email:currentUser.email||'',upd:new Date().toISOString()});
+        await setDoc(doc(db,'perfiles',currentUser.uid),{nombre:name,email:currentUser.email||'',upd:new Date().toISOString()},{merge:true});
       }catch(e){console.error(e);}
     })();
   }
@@ -6251,6 +6253,8 @@ function startMensajeria(){
     msgListo.todos=true;
     msgActualizarBadge();msgRender();
   },err=>{console.error('todos',err);logError('mensajes-todos',err&&err.message);});
+  msgRegistrarPush();
+  if(location.hash==='#mensajes'){switchTab('mensajes');try{history.replaceState(null,'',location.pathname+location.search);}catch(e){}}
 }
 function stopMensajeria(){
   [unsubPerfiles,unsubChats,unsubTodos,unsubMensajesChat].forEach(f=>{try{if(f)f();}catch(e){}});
@@ -6375,6 +6379,7 @@ window.msgEnviar=async function(){
     const meta={tipo:chatId==='todos'?'todos':'dm',ultimoMsg:texto.slice(0,140),ultimoDe:yo,ultimoDeNombre:nombre,ultimoAt:serverTimestamp(),leido:{[yo]:serverTimestamp()}};
     if(chatId!=='todos')meta.miembros=chatId.split('_');
     await Promise.all([envio,setDoc(doc(db,'chats',chatId),meta,{merge:true})]);
+    msgNotificarPush(chatId); // push a los que tienen la app cerrada (no bloquea)
   }catch(e){
     console.error(e);logError('mensajes-enviar',e&&e.message||String(e));
     if(!inp.value)inp.value=texto;
@@ -6402,9 +6407,57 @@ function msgRenderNotifBtn(){
 window.msgPedirPermiso=async function(){
   try{await Notification.requestPermission();}catch(e){}
   msgRenderNotifBtn();
+  if(Notification.permission==='granted'){
+    const ok=await msgRegistrarPush();
+    showToast(ok?'🔔 Avisos activados en este aparato':'Avisos activados solo con la app abierta (este navegador no permite push)',ok?'ok':'err');
+  }
 };
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)msgRender();});
 
+
+// ── PUSH (avisos con la app cerrada) ──
+// Clave pública de "Certificados push web" (Firebase → Configuración → Cloud Messaging).
+const PUSH_VAPID_KEY='BIdhN4hfAnNiFTnEtG0YEIYoDptppnKueQJRO10jW8eksVB5tnISy-jZa-6ZUZ1YqP6CxCf8lZR0c21HqCEsttU';
+async function msgRegistrarPush(){
+  try{
+    if(!currentUser||!('Notification' in window)||Notification.permission!=='granted'||!('serviceWorker' in navigator))return false;
+    if(!PUSH_VAPID_KEY||PUSH_VAPID_KEY.startsWith('__'))return false;
+    const f=fb();
+    if(!(await f.isSupported()))return false;
+    const reg=await navigator.serviceWorker.register('firebase-messaging-sw.js');
+    await navigator.serviceWorker.ready;
+    const token=await f.getToken(f.getMessaging(),{vapidKey:PUSH_VAPID_KEY,serviceWorkerRegistration:reg});
+    if(!token)return false;
+    const prev=localStorage.getItem('ss_pushToken'), prevUid=localStorage.getItem('ss_pushUid');
+    if(prev!==token||prevUid!==currentUser.uid){
+      const{db,doc,setDoc,arrayUnion,arrayRemove}=f;
+      await setDoc(doc(db,'perfiles',currentUser.uid),{pushTokens:arrayUnion(token)},{merge:true});
+      if(prev&&prev!==token&&prevUid===currentUser.uid){
+        setDoc(doc(db,'perfiles',currentUser.uid),{pushTokens:arrayRemove(prev)},{merge:true}).catch(()=>{});
+      }
+      localStorage.setItem('ss_pushToken',token);localStorage.setItem('ss_pushUid',currentUser.uid);
+    }
+    return true;
+  }catch(e){console.error('push',e);logError('push-registro',e&&e.message||String(e));return false;}
+}
+async function msgQuitarPushToken(){
+  try{
+    const t=localStorage.getItem('ss_pushToken');
+    if(!t||!currentUser||localStorage.getItem('ss_pushUid')!==currentUser.uid)return;
+    const{db,doc,setDoc,arrayRemove}=fb();
+    await setDoc(doc(db,'perfiles',currentUser.uid),{pushTokens:arrayRemove(t)},{merge:true});
+    localStorage.removeItem('ss_pushToken');localStorage.removeItem('ss_pushUid');
+  }catch(e){console.error(e);}
+}
+async function msgNotificarPush(chatId){
+  try{
+    const idToken=await currentUser.getIdToken();
+    await fetch(MELI_WORKER_URL+'/push/mensaje',{method:'POST',headers:{'content-type':'application/json','authorization':'Bearer '+idToken},body:JSON.stringify({chatId})});
+  }catch(e){console.error('push aviso',e);}
+}
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.tipo==='abrir-mensajes'&&currentUser)switchTab('mensajes');});
+}
 </script>
 </body>
 </html>
