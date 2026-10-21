@@ -13,7 +13,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-    import { getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, collection, addDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     const app = initializeApp({
       apiKey: "AIzaSyC4rhZK1tuhJChMrChr01ukMeGs6tM3x_8",
       authDomain: "stock-scanner-d7c67.firebaseapp.com",
@@ -22,7 +22,7 @@
       messagingSenderId: "267705854754",
       appId: "1:267705854754:web:15c9408a27846e3954137b"
     });
-    window._fb = { auth: getAuth(app), db: getFirestore(app), signInWithEmailAndPassword, signOut, onAuthStateChanged, doc, setDoc, getDoc, getDocs, deleteDoc, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, deleteField };
+    window._fb = { auth: getAuth(app), db: getFirestore(app), signInWithEmailAndPassword, signOut, onAuthStateChanged, doc, setDoc, getDoc, getDocs, deleteDoc, collection, addDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, deleteField };
   </script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -278,6 +278,26 @@
     .mapa-prodrow{padding:7px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:8px; font-size:.8rem;}
     .mapa-prodrow:last-child{border-bottom:none;}
     .mapa-prodrow .qty{color:var(--accent); font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap;}
+    /* MENSAJES */
+    .msg-fila{display:flex;align-items:center;gap:10px;padding:10px 13px;border-bottom:1px solid var(--border);cursor:pointer;}
+    .msg-fila:last-child{border-bottom:none;}
+    .msg-fila:hover{background:var(--surface2);}
+    .msg-avatar{position:relative;width:36px;height:36px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0;}
+    .msg-avatar.todos{background:rgba(200,245,0,.15);border-color:rgba(200,245,0,.4);}
+    .msg-dot{position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:#64748b;border:2px solid var(--surface);}
+    .msg-dot.on{background:#22c55e;}
+    .msg-fila-top{display:flex;justify-content:space-between;gap:8px;font-size:.84rem;}
+    .msg-hora{font-size:.68rem;color:var(--muted);white-space:nowrap;}
+    .msg-prev{font-size:.75rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+    .msg-fila.no-leido .msg-prev{color:var(--text);font-weight:600;}
+    .msg-unread{width:10px;height:10px;border-radius:50%;background:var(--accent);flex-shrink:0;}
+    .msg-hilo{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px;height:calc(100dvh - 330px);min-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;}
+    .msg-burbuja{max-width:80%;align-self:flex-start;background:var(--surface2);border:1px solid var(--border);border-radius:12px 12px 12px 4px;padding:7px 10px;}
+    .msg-burbuja.mia{align-self:flex-end;background:rgba(200,245,0,.14);border-color:rgba(200,245,0,.35);border-radius:12px 12px 4px 12px;}
+    .msg-autor{font-size:.68rem;font-weight:700;color:#a78bfa;margin-bottom:2px;}
+    .msg-texto{font-size:.85rem;line-height:1.4;word-break:break-word;}
+    .msg-hora-b{font-size:.62rem;color:var(--muted);text-align:right;margin-top:3px;}
+    .msg-dia{align-self:center;font-size:.66rem;color:var(--muted);background:var(--surface2);border-radius:10px;padding:2px 9px;margin:6px 0;}
   </style>
 </head>
 <body>
@@ -319,6 +339,7 @@
   </div>
   <div class="tabs">
     <div class="tab active" data-tab="scanner">📷 Escanear</div>
+    <div class="tab" data-tab="mensajes">💬 Mensajes</div>
     <div class="tab" data-tab="stock">📋 Stock</div>
     <div class="tab" data-tab="mapa">🗺️ Mapa</div>
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
@@ -447,6 +468,28 @@
           <button class="btn btn-ghost btn-sm" onclick="clearNF()">Limpiar</button>
         </div>
         <div id="nfList"><div class="nfe">Ninguno por ahora ✅</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MENSAJES -->
+  <div class="page" id="page-mensajes">
+    <div style="padding:13px 15px;display:flex;flex-direction:column;gap:10px;">
+      <div class="card" id="msgNotifBox" style="display:none;padding:10px 13px;font-size:.78rem;"></div>
+      <div id="msgListaView">
+        <div class="stbl" id="msgLista"><div class="empty"><p>Cargando...</p></div></div>
+        <div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:9px;">🔒 Tus chats son privados entre los participantes. El canal "Todos" lo ve todo el equipo.</div>
+      </div>
+      <div id="msgConvView" style="display:none;flex-direction:column;gap:8px;">
+        <div class="card" style="padding:9px 11px;display:flex;align-items:center;gap:10px;">
+          <button class="btn btn-ghost btn-sm" onclick="msgVolver()">←</button>
+          <div style="min-width:0;"><div id="msgConvTitulo" style="font-weight:700;font-size:.9rem;"></div><div id="msgConvSub" style="font-size:.7rem;color:var(--muted);"></div></div>
+        </div>
+        <div id="msgHilo" class="msg-hilo"></div>
+        <div style="display:flex;gap:7px;align-items:flex-end;">
+          <textarea id="msgTexto" class="inp" rows="1" maxlength="2000" placeholder="Escribí un mensaje..." style="resize:none;max-height:120px;"></textarea>
+          <button class="btn btn-primary" onclick="msgEnviar()" style="flex:none;">Enviar</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1185,7 +1228,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026102017';
+const APP_BUILD = '2026102116';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1621,11 +1664,13 @@ window.addEventListener('DOMContentLoaded',()=>{
         // Auto-sync catalog every 30 minutes
         autoSyncCatalog();
         startPresence();
+        startMensajeria();
       }else{
         currentUser=null;
         document.getElementById('loginScreen').style.display='flex';
         document.getElementById('appShell').style.display='none';
         stopPresence();
+        stopMensajeria();
       }
     });
   },100);
@@ -1648,12 +1693,13 @@ window.doLogout=async function(){
   if(unsubMov)unsubMov();
   if(unsubCatalog)unsubCatalog();
   stopPresence();
+  stopMensajeria();
 };
 
 // ── PRESENCIA (usuarios en línea) ──
 const PRESENCE_INTERVAL_MS=25000; // late cada 25s
 const PRESENCE_STALE_MS=60000;    // si no hay latido en 60s, se considera "sin conexión"
-let presenceInterval=null, unsubPresence=null, presenceByName={};
+let presenceInterval=null, unsubPresence=null, presenceByName={}, presenceByUid={};
 async function presenceHeartbeat(){
   if(!currentUser)return;
   try{
@@ -1676,13 +1722,16 @@ function listenPresence(){
   if(unsubPresence)return;
   const{db,collection,onSnapshot}=fb();
   unsubPresence=onSnapshot(collection(db,'presence'),snap=>{
-    const map={};
+    const map={}, mapUid={};
     snap.forEach(d=>{
       const data=d.data();
       const ms=data.lastSeen&&data.lastSeen.toMillis?data.lastSeen.toMillis():0;
       map[data.nombre]=ms;
+      mapUid[d.id]=ms;
     });
     presenceByName=map;
+    presenceByUid=mapUid;
+    msgRender();
     if(document.getElementById('page-empleados')?.classList.contains('active'))renderEmpleados();
   },err=>console.error('presence listen',err));
 }
@@ -1692,12 +1741,12 @@ function startPresence(){
   presenceInterval=setInterval(presenceHeartbeat,PRESENCE_INTERVAL_MS);
   listenPresence();
   // fuerza un re-render periódico para que un usuario que se colgó pase a "Sin conexión" sin esperar un nuevo latido de otro
-  setInterval(()=>{ if(document.getElementById('page-empleados')?.classList.contains('active'))renderEmpleados(); },15000);
+  setInterval(()=>{ if(document.getElementById('page-empleados')?.classList.contains('active'))renderEmpleados(); msgRender(); },15000);
 }
 function stopPresence(){
   if(presenceInterval){clearInterval(presenceInterval);presenceInterval=null;}
   if(unsubPresence){unsubPresence();unsubPresence=null;}
-  presenceByName={};
+  presenceByName={};presenceByUid={};
 }
 window.addEventListener('beforeunload',()=>{ navigator.sendBeacon; /* best-effort, ver nota abajo */ });
 
@@ -1722,6 +1771,7 @@ window.switchTab=function(name){
   if(name==='auditoria')renderAuditoria();
   if(name==='meli')renderMeliTab();
   if(name==='mapa')renderMapa();
+  if(name==='mensajes')msgRender();
 };
 function switchSub(name){
   document.querySelectorAll('.stab').forEach(t=>t.classList.toggle('active',t.textContent.includes(name==='saldo'?'Saldo':'Mov')));
@@ -3824,11 +3874,14 @@ function getDisplayName(){
 async function fbLoadProfile(){
   if(!currentUser)return;
   try{
-    const{db,doc,getDoc}=fb();
+    const{db,doc,getDoc,setDoc}=fb();
     const pf=await getDoc(doc(db,'perfiles',currentUser.uid));
     if(pf.exists() && pf.data().nombre){
       localStorage.setItem('ss_displayName', pf.data().nombre);
       updateDisplayName();
+    }else{
+      // Sin perfil todavía: se crea con el nombre provisorio para que aparezca en Mensajes (se cambia tocando el nombre arriba).
+      await setDoc(doc(db,'perfiles',currentUser.uid),{nombre:getDisplayName(),email:currentUser.email||'',upd:new Date().toISOString()},{merge:true});
     }
   }catch(e){console.error(e);}
 }
@@ -6117,6 +6170,241 @@ function exportAuditXLSX(){
   XLSX.utils.book_append_sheet(wb,ws,'Auditoría');
   XLSX.writeFile(wb,`auditoria_stock_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
+
+// ── MENSAJERÍA INTERNA ──
+// chats/{chatId}: chat 1 a 1 → id = los dos uid ordenados y unidos con "_" (solo lo leen esos dos; lo garantizan las reglas de Firestore).
+// chats/todos: canal general que ve todo el equipo. Los mensajes viven en chats/{chatId}/mensajes.
+let usuariosDB={}, chatsDB={}, chatAbierto=null, chatOtroUid=null;
+let unsubPerfiles=null, unsubChats=null, unsubTodos=null, unsubMensajesChat=null;
+let mensajesChat=[], msgUltimoVisto={}, msgListo={dm:false,todos:false};
+function msgMiUid(){return currentUser?currentUser.uid:null;}
+function msgDmId(otroUid){return [msgMiUid(),otroUid].sort().join('_');}
+function msgTsMs(t){return t&&t.toMillis?t.toMillis():(typeof t==='number'?t:0);}
+function msgNoLeido(chat){
+  const yo=msgMiUid();
+  if(!chat||!yo||!chat.ultimoDe||chat.ultimoDe===yo)return false;
+  return msgTsMs(chat.ultimoAt)>msgTsMs((chat.leido||{})[yo]);
+}
+function msgEnLinea(uid){const ls=presenceByUid[uid];return !!ls&&(Date.now()-ls)<PRESENCE_STALE_MS;}
+function msgNombre(uid){const u=usuariosDB[uid];return (u&&(u.nombre||(u.email||'').split('@')[0]))||'Usuario';}
+function msgViendo(chatId){return chatAbierto===chatId&&!document.hidden&&!!document.getElementById('page-mensajes')?.classList.contains('active');}
+function msgCuando(t){
+  const ms=msgTsMs(t);if(!ms)return '';
+  const d=new Date(ms);
+  return d.toDateString()===new Date().toDateString()
+    ?d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})
+    :d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
+}
+
+function msgProcesarChat(id,data,inicial){
+  const prev=msgUltimoVisto[id]||0;
+  const ms=msgTsMs(data.ultimoAt);
+  chatsDB[id]={id,...data};
+  msgUltimoVisto[id]=Math.max(prev,ms);
+  if(!inicial&&ms>prev&&data.ultimoDe&&data.ultimoDe!==msgMiUid()){
+    if(msgViendo(id))msgMarcarLeido(id);
+    else msgAvisar(id,data);
+  }
+}
+function msgAvisar(id,data){
+  const de=data.ultimoDeNombre||msgNombre(data.ultimoDe);
+  const titulo=id==='todos'?`💬 ${de} en Todos`:`💬 ${de}`;
+  const texto=String(data.ultimoMsg||'');
+  showToast(`${titulo}: ${texto.length>45?texto.slice(0,45)+'…':texto}`,'ok');
+  playBeep(true);vibrateDevice(true);
+  if(document.hidden&&'Notification' in window&&Notification.permission==='granted'){
+    const opts={body:texto.slice(0,140),tag:'chat_'+id,icon:'favicon.png'};
+    const directa=()=>{try{new Notification(titulo,opts);}catch(e){}};
+    try{
+      if(navigator.serviceWorker&&navigator.serviceWorker.getRegistration){
+        navigator.serviceWorker.getRegistration().then(r=>{if(r)r.showNotification(titulo,opts);else directa();}).catch(directa);
+      }else directa();
+    }catch(e){}
+  }
+}
+function msgActualizarBadge(){
+  const n=Object.values(chatsDB).filter(msgNoLeido).length;
+  const tab=document.querySelector('.tab[data-tab="mensajes"]');
+  if(tab)tab.textContent=n?`💬 Mensajes (${n})`:'💬 Mensajes';
+  try{if(navigator.setAppBadge){(n?navigator.setAppBadge(n):navigator.clearAppBadge()).catch(()=>{});}}catch(e){}
+}
+
+function startMensajeria(){
+  if(!currentUser)return;
+  stopMensajeria();
+  const{db,collection,doc,query,where,onSnapshot}=fb();
+  msgListo={dm:false,todos:false};
+  unsubPerfiles=onSnapshot(collection(db,'perfiles'),snap=>{
+    usuariosDB={};
+    snap.forEach(d=>{usuariosDB[d.id]={uid:d.id,...d.data()};});
+    msgRender();
+  },err=>console.error('perfiles',err));
+  unsubChats=onSnapshot(query(collection(db,'chats'),where('miembros','array-contains',currentUser.uid)),snap=>{
+    const inicial=!msgListo.dm;
+    snap.docs.forEach(d=>msgProcesarChat(d.id,d.data({serverTimestamps:'estimate'}),inicial));
+    msgListo.dm=true;
+    msgActualizarBadge();msgRender();
+  },err=>{console.error('chats',err);logError('mensajes-chats',err&&err.message);});
+  unsubTodos=onSnapshot(doc(db,'chats','todos'),snap=>{
+    const inicial=!msgListo.todos;
+    if(snap.exists())msgProcesarChat('todos',snap.data({serverTimestamps:'estimate'}),inicial);
+    msgListo.todos=true;
+    msgActualizarBadge();msgRender();
+  },err=>{console.error('todos',err);logError('mensajes-todos',err&&err.message);});
+}
+function stopMensajeria(){
+  [unsubPerfiles,unsubChats,unsubTodos,unsubMensajesChat].forEach(f=>{try{if(f)f();}catch(e){}});
+  unsubPerfiles=unsubChats=unsubTodos=unsubMensajesChat=null;
+  usuariosDB={};chatsDB={};chatAbierto=null;chatOtroUid=null;mensajesChat=[];msgUltimoVisto={};
+  msgActualizarBadge();
+}
+
+async function msgMarcarLeido(chatId){
+  const yo=msgMiUid(),chat=chatsDB[chatId];
+  if(!yo||!chat)return;
+  // marca local al instante (evita escrituras repetidas mientras llega la confirmación)
+  chat.leido={...(chat.leido||{}),[yo]:Math.max(Date.now(),msgTsMs(chat.ultimoAt))};
+  msgActualizarBadge();
+  try{const{db,doc,setDoc,serverTimestamp}=fb();await setDoc(doc(db,'chats',chatId),{leido:{[yo]:serverTimestamp()}},{merge:true});}
+  catch(e){console.error(e);}
+}
+
+function msgRender(){
+  if(!document.getElementById('page-mensajes')?.classList.contains('active'))return;
+  const lista=document.getElementById('msgListaView'),conv=document.getElementById('msgConvView');
+  if(chatAbierto){
+    lista.style.display='none';conv.style.display='flex';
+    msgRenderConv();
+    if(msgViendo(chatAbierto)&&msgNoLeido(chatsDB[chatAbierto]))msgMarcarLeido(chatAbierto);
+  }else{
+    lista.style.display='block';conv.style.display='none';
+    msgRenderLista();
+  }
+  msgRenderNotifBtn();
+}
+function msgFilaHTML(onclick,avatar,avatarCls,online,nombre,prev,cuando,noLeido){
+  return `<div class="msg-fila${noLeido?' no-leido':''}" onclick="${onclick}">
+    <div class="msg-avatar ${avatarCls}">${avatar}${online===null?'':`<span class="msg-dot${online?' on':''}"></span>`}</div>
+    <div style="flex:1;min-width:0;">
+      <div class="msg-fila-top"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(nombre)}</b><span class="msg-hora">${cuando}</span></div>
+      <div class="msg-prev">${escHtml(prev)}</div>
+    </div>
+    ${noLeido?'<span class="msg-unread"></span>':''}
+  </div>`;
+}
+function msgPreview(chat,esTodos){
+  if(!chat||!chat.ultimoMsg)return esTodos?'Avisos para todo el equipo':'Sin mensajes todavía';
+  const yo=msgMiUid();
+  const quien=chat.ultimoDe===yo?'Vos: ':(esTodos?(chat.ultimoDeNombre||msgNombre(chat.ultimoDe))+': ':'');
+  return quien+chat.ultimoMsg;
+}
+function msgRenderLista(){
+  const cont=document.getElementById('msgLista');if(!cont)return;
+  const yo=msgMiUid();
+  const t=chatsDB.todos;
+  let html=msgFilaHTML("msgAbrir('todos')",'📢','todos',null,'Todos',msgPreview(t,true),msgCuando(t&&t.ultimoAt),msgNoLeido(t));
+  const otros=Object.values(usuariosDB).filter(u=>u.uid!==yo).map(u=>({u,chat:chatsDB[msgDmId(u.uid)]}));
+  otros.sort((a,b)=>(msgNoLeido(b.chat)-msgNoLeido(a.chat))||(msgTsMs(b.chat&&b.chat.ultimoAt)-msgTsMs(a.chat&&a.chat.ultimoAt))||msgNombre(a.u.uid).localeCompare(msgNombre(b.u.uid)));
+  html+=otros.map(({u,chat})=>{
+    const nombre=msgNombre(u.uid);
+    return msgFilaHTML(`msgAbrir('${msgDmId(u.uid)}','${u.uid}')`,escHtml(nombre.charAt(0).toUpperCase()),'',msgEnLinea(u.uid),nombre,msgPreview(chat,false),msgCuando(chat&&chat.ultimoAt),msgNoLeido(chat));
+  }).join('');
+  if(!otros.length)html+='<div class="empty" style="padding:18px;"><p>Cuando otros usuarios entren a la app, van a aparecer acá.</p></div>';
+  cont.innerHTML=html;
+}
+function msgRenderConv(){
+  const t=document.getElementById('msgConvTitulo'),s=document.getElementById('msgConvSub');
+  if(!t||!s)return;
+  if(chatAbierto==='todos'){t.textContent='📢 Todos';s.textContent='Canal general · lo ve todo el equipo';}
+  else{
+    t.textContent=msgNombre(chatOtroUid);
+    const on=msgEnLinea(chatOtroUid);
+    s.innerHTML=`<span style="color:${on?'#22c55e':'var(--muted)'};">${on?'● En línea':'○ Sin conexión'}</span> · 🔒 Privado`;
+  }
+}
+function msgRenderMensajes(){
+  const h=document.getElementById('msgHilo');if(!h)return;
+  const yo=msgMiUid();
+  if(!mensajesChat.length){
+    h.innerHTML=`<div class="empty"><div class="icon">💬</div><p>${chatAbierto==='todos'?'Todavía no hay avisos en el canal general.':'Todavía no hay mensajes. Escribí el primero.'}</p></div>`;
+    return;
+  }
+  let ultDia='';
+  h.innerHTML=mensajesChat.map(m=>{
+    const mio=m.de===yo;
+    const d=new Date(msgTsMs(m.at)||Date.now());
+    const dia=d.toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'});
+    let sep='';if(dia!==ultDia){ultDia=dia;sep=`<div class="msg-dia">${dia}</div>`;}
+    const hora=d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+    const autor=(!mio&&chatAbierto==='todos')?`<div class="msg-autor">${escHtml(m.deNombre||msgNombre(m.de))}</div>`:'';
+    return sep+`<div class="msg-burbuja${mio?' mia':''}">${autor}<div class="msg-texto">${escHtml(m.texto).replace(/\n/g,'<br>')}</div><div class="msg-hora-b">${hora}</div></div>`;
+  }).join('');
+  h.scrollTop=h.scrollHeight;
+}
+
+window.msgAbrir=function(chatId,otroUid){
+  chatAbierto=chatId;chatOtroUid=otroUid||null;mensajesChat=[];
+  if(unsubMensajesChat){unsubMensajesChat();unsubMensajesChat=null;}
+  const h=document.getElementById('msgHilo');if(h)h.innerHTML='<div class="empty"><p>Cargando...</p></div>';
+  const{db,collection,query,orderBy,limit,onSnapshot}=fb();
+  unsubMensajesChat=onSnapshot(query(collection(db,'chats',chatId,'mensajes'),orderBy('at','desc'),limit(150)),snap=>{
+    if(chatAbierto!==chatId)return;
+    mensajesChat=snap.docs.map(d=>({id:d.id,...d.data({serverTimestamps:'estimate'})})).reverse();
+    msgRenderMensajes();
+    if(msgViendo(chatId)&&msgNoLeido(chatsDB[chatId]))msgMarcarLeido(chatId);
+  },err=>{
+    console.error(err);logError('mensajes-hilo',err&&err.message);
+    const hh=document.getElementById('msgHilo');if(hh)hh.innerHTML='<div class="empty"><p>No se pudieron cargar los mensajes.</p></div>';
+  });
+  msgRender();
+};
+window.msgVolver=function(){
+  chatAbierto=null;chatOtroUid=null;mensajesChat=[];
+  if(unsubMensajesChat){unsubMensajesChat();unsubMensajesChat=null;}
+  msgRender();
+};
+window.msgEnviar=async function(){
+  const inp=document.getElementById('msgTexto');
+  const texto=(inp.value||'').trim();
+  if(!texto||!chatAbierto||!currentUser)return;
+  const yo=msgMiUid(),chatId=chatAbierto,nombre=getDisplayName();
+  inp.value='';msgAjustarAltura(inp);
+  try{
+    const{db,doc,setDoc,addDoc,collection,serverTimestamp}=fb();
+    const envio=addDoc(collection(db,'chats',chatId,'mensajes'),{de:yo,deNombre:nombre,texto:texto.slice(0,2000),at:serverTimestamp()});
+    const meta={tipo:chatId==='todos'?'todos':'dm',ultimoMsg:texto.slice(0,140),ultimoDe:yo,ultimoDeNombre:nombre,ultimoAt:serverTimestamp(),leido:{[yo]:serverTimestamp()}};
+    if(chatId!=='todos')meta.miembros=chatId.split('_');
+    await Promise.all([envio,setDoc(doc(db,'chats',chatId),meta,{merge:true})]);
+  }catch(e){
+    console.error(e);logError('mensajes-enviar',e&&e.message||String(e));
+    if(!inp.value)inp.value=texto;
+    showToast('⚠️ No se pudo enviar el mensaje','err');
+  }
+};
+function msgAjustarAltura(el){if(!el)return;el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px';}
+(function(){
+  const inp=document.getElementById('msgTexto');
+  if(!inp)return;
+  inp.addEventListener('input',()=>msgAjustarAltura(inp));
+  inp.addEventListener('keydown',e=>{
+    // En compu: Enter envía y Shift+Enter hace salto de línea. En el celu Enter es salto de línea y se envía con el botón.
+    if(e.key==='Enter'&&!e.shiftKey&&!window.matchMedia('(pointer:coarse)').matches){e.preventDefault();msgEnviar();}
+  });
+})();
+function msgRenderNotifBtn(){
+  const b=document.getElementById('msgNotifBox');if(!b)return;
+  if(!('Notification' in window)||Notification.permission==='granted'){b.style.display='none';return;}
+  b.style.display='block';
+  b.innerHTML=Notification.permission==='denied'
+    ?'🔕 Los avisos están bloqueados para esta app. Activalos desde los ajustes del celular o del navegador.'
+    :'<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;"><span>🔔 Activá los avisos para enterarte de los mensajes nuevos.</span><button class="btn btn-primary btn-sm" onclick="msgPedirPermiso()">Activar</button></div>';
+}
+window.msgPedirPermiso=async function(){
+  try{await Notification.requestPermission();}catch(e){}
+  msgRenderNotifBtn();
+};
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)msgRender();});
+
 </script>
 </body>
 </html>
