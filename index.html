@@ -717,6 +717,7 @@
       <!-- Paso 2: Productos -->
       <div class="tst" id="tStep2" style="opacity:.4;pointer-events:none;">
         <div class="tst-label">Paso 2 — Productos a trasladar</div>
+        <button class="btn btn-ghost btn-sm" id="btnTraerTodo" style="margin-bottom:7px;justify-content:center;width:100%;" onclick="tTraerTodoSector()">📦 Traer todo el sector</button>
         <div class="tprod" id="tProdList"><div style="padding:11px;text-align:center;color:var(--muted);font-size:.8rem;">Sin productos</div></div>
         <div style="display:flex;gap:7px;margin-top:7px;">
           <input type="text" id="tManInput" class="inp" placeholder="Código manual..." />
@@ -1229,7 +1230,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026102118';
+const APP_BUILD = '2026102119';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -3664,9 +3665,33 @@ function renderTProdList(){
   l.innerHTML=traslado.productos.map(p=>`
     <div class="tprod-item">
       <div><div style="font-weight:600;">${p.entry.name}${p.entry.talle?' · '+p.entry.talle:''}</div><div style="font-size:.7rem;color:var(--muted);">${p.entry.sku||''}</div></div>
-      <div style="font-weight:700;color:var(--accent);">×${p.qty}</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="font-weight:700;color:var(--accent);">×${p.qty}</div>
+        <button class="btn btn-ghost btn-sm" style="padding:2px 8px;" title="Sacar de la lista" onclick="tQuitarProd('${String(p.key).replace(/'/g,"\\'")}')">✕</button>
+      </div>
     </div>`).join('');
 }
+// Carga en la lista todos los productos que hay hoy en el sector de origen, con su cantidad completa.
+window.tTraerTodoSector=function(){
+  if(!traslado.origenDep||!traslado.origenSec){showToast('Elegí primero el sector de origen','err');return;}
+  const sm=sectorMapDB[traslado.origenDep]||{};
+  const stk=stockDB[traslado.origenDep]||{};
+  const lista=Object.keys(sm).filter(k=>sm[k]===traslado.origenSec&&(stk[k]||0)>0)
+    .map(k=>({key:k,entry:entryOrFallback(k),qty:stk[k]}))
+    .sort((a,b)=>(a.entry.name||'').localeCompare(b.entry.name||'')||String(a.entry.talle||'').localeCompare(String(b.entry.talle||''),undefined,{numeric:true}));
+  if(!lista.length){showToast('Ese sector no tiene productos con stock','err');return;}
+  if(traslado.productos.length&&!confirm('Ya hay productos en la lista. ¿Reemplazarla por todo el sector?'))return;
+  traslado.productos=lista;
+  renderTProdList();
+  const s3=document.getElementById('tStep3');s3.style.opacity='1';s3.style.pointerEvents='';
+  const u=lista.reduce((a,p)=>a+p.qty,0);
+  playBeep(true);vibrateDevice(true);
+  showToast(`${lista.length} producto(s) · ${u} unidades cargadas`,'ok');
+};
+window.tQuitarProd=function(key){
+  traslado.productos=traslado.productos.filter(p=>p.key!==key);
+  renderTProdList();
+};
 window.setDestino=function(id){
   if(!id)return;
   if(id===traslado.origenSec&&traslado.destinoDep===traslado.origenDep){showToast('El destino no puede ser igual al origen','err');return;}
