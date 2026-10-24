@@ -340,10 +340,10 @@
   </div>
   <div class="tabs">
     <div class="tab active" data-tab="scanner">📷 Escanear</div>
-    <div class="tab" data-tab="mensajes">💬 Mensajes</div>
     <div class="tab" data-tab="stock">📋 Stock</div>
     <div class="tab" data-tab="mapa">🗺️ Mapa</div>
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
+    <div class="tab" data-tab="mensajes">💬 Mensajes</div>
     <div class="tab" data-tab="historial">📜 Historial</div>
     <div class="tab" data-tab="sectores">📍 Sectores</div>
     <div class="tab" data-tab="planilla">📄 Planilla</div>
@@ -1230,7 +1230,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026102119';
+const APP_BUILD = '2026102120';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
