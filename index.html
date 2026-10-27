@@ -1277,7 +1277,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026102122';
+const APP_BUILD = '2026102123';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1467,7 +1467,33 @@ async function fbSaveUltimoMov(canonicalKey, nombre){
   }catch(e){console.error(e);}
 }
 // ── Push de stock a MeLi (Fase 2c) ──
-async function pushStockToMeli(key,entry){
+// El aviso a MeLi espera a que el producto deje de moverse unos segundos y manda UN solo total final
+// (así, al cargar 4 unidades una por una, MeLi no pasa por 1, 2, 3 sino que recibe 4 de una).
+// Si la app se va a segundo plano o se cierra, se manda todo lo pendiente en ese momento.
+const MELI_ESPERA_MS=45000;
+const _meliTimers={}, _meliPend={};
+function _meliGuardarPend(){try{localStorage.setItem('ss_meli_pend',JSON.stringify(_meliPend));}catch(e){}}
+function pushStockToMeli(key,entry){
+  if(!meliConfig.syncActiva)return;
+  if(!entry||!(entry.sku||entry.barcode))return;
+  _meliPend[key]={sku:entry.sku||'',barcode:entry.barcode||'',name:entry.name||'',talle:entry.talle||''};
+  _meliGuardarPend();
+  clearTimeout(_meliTimers[key]);
+  _meliTimers[key]=setTimeout(()=>meliFlushUno(key),MELI_ESPERA_MS);
+}
+function meliFlushUno(key){
+  clearTimeout(_meliTimers[key]);delete _meliTimers[key];
+  const entry=_meliPend[key];
+  if(!entry)return;
+  delete _meliPend[key];_meliGuardarPend();
+  pushStockToMeliAhora(key,entry); // lee el total actual recién ahora
+}
+function meliFlushTodos(){Object.keys(_meliPend).forEach(meliFlushUno);}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')meliFlushTodos();});
+window.addEventListener('pagehide',meliFlushTodos);
+// Pendientes que quedaron de una sesión anterior (la app se cerró antes de la espera): se mandan al rato de abrir, cuando ya cargó la config.
+setTimeout(()=>{try{const g=JSON.parse(localStorage.getItem('ss_meli_pend')||'{}');Object.keys(g).forEach(k=>{if(_meliPend[k])return;_meliPend[k]=g[k];meliFlushUno(k);});}catch(e){}},25000);
+async function pushStockToMeliAhora(key,entry){
   console.log('[MeLi] pushStockToMeli llamado. syncActiva=',meliConfig.syncActiva,'sku=',entry?.sku);
   if(!meliConfig.syncActiva){
     console.log('[MeLi] Sincronización apagada, no se manda nada.');
@@ -1477,7 +1503,7 @@ async function pushStockToMeli(key,entry){
   if(!sku)return;
   const qty=getTotalStock(key);
   try{
-    const res=await fetch(`${MELI_WORKER_URL}/stock/push?sku=${encodeURIComponent(sku)}&qty=${qty}`);
+    const res=await fetch(`${MELI_WORKER_URL}/stock/push?sku=${encodeURIComponent(sku)}&qty=${qty}`,{keepalive:true});
     const data=await res.json();
     if(data.ok){
       showToast(`🔗 MeLi actualizado: ${qty} u.`,'ok');
