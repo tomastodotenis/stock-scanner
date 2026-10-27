@@ -1277,7 +1277,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026102121';
+const APP_BUILD = '2026102122';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1484,18 +1484,18 @@ async function pushStockToMeli(key,entry){
       fbClearMeliSinCoincidencia(sku); // si antes había quedado en la lista de pendientes, ya se resolvió
     }else{
       showToast('⚠️ No se pudo sincronizar con MeLi (SKU sin mapear)','err');
-      fbSaveMeliSinCoincidencia(sku,entry.name,entry.talle);
+      fbSaveMeliSinCoincidencia(sku,entry.name,entry.talle,key);
     }
   }catch(e){
     console.error('pushStockToMeli',e);
     showToast('⚠️ Error de conexión al sincronizar con MeLi — revisá manualmente','err');
   }
 }
-async function fbSaveMeliSinCoincidencia(sku,nombre,talle){
+async function fbSaveMeliSinCoincidencia(sku,nombre,talle,key){
   if(!currentUser)return;
   try{
     const{db,doc,setDoc}=fb();
-    await setDoc(doc(db,'meliSinCoincidencia',sanitizeDocId(sku)),{sku,nombre:nombre||'',talle:talle||'',time:new Date().toISOString()});
+    await setDoc(doc(db,'meliSinCoincidencia',sanitizeDocId(sku)),{sku,key:key||sku,nombre:nombre||'',talle:talle||'',time:new Date().toISOString()});
   }catch(e){console.error(e);}
 }
 async function fbClearMeliSinCoincidencia(sku){
@@ -4332,7 +4332,7 @@ window.meliSyncExistenteConfirmar=async function(){
       const r=await fetch(`${MELI_WORKER_URL}/stock/push?sku=${encodeURIComponent(it.sku)}&qty=${it.app}`);
       const d=await r.json();
       if(d.ok){ok++;fbClearMeliSinCoincidencia(it.sku);}
-      else{fallos.push(it);fbSaveMeliSinCoincidencia(it.sku,it.name,it.talle);}
+      else{fallos.push(it);fbSaveMeliSinCoincidencia(it.sku,it.name,it.talle,it.key);}
     }catch(e){fallos.push(it);}
     await new Promise(r=>setTimeout(r,500));
   }
