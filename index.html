@@ -572,12 +572,20 @@
         <button class="btn btn-ghost btn-sm" style="flex:none;" onclick="abrirScanRapido(stockScanSector)">📷</button>
       </div>
       <div class="stabs">
-        <div class="stab active" onclick="switchSub('saldo')">📦 Saldo actual</div>
-        <div class="stab" onclick="switchSub('movs')">📋 Movimientos</div>
+        <div class="stab active" data-sub="saldo" onclick="switchSub('saldo')">📦 Saldo actual</div>
+        <div class="stab" data-sub="movs" onclick="switchSub('movs')">📋 Movimientos</div>
+        <div class="stab" data-sub="ventas" id="stabVentas" onclick="switchSub('ventas')">🛒 Ventas MeLi</div>
       </div>
       <div id="sub-saldo" class="stbl">
         <div class="stbl-hdr"><span>Producto</span><span>Sector</span><span>Talle</span><span>Cant.</span><span>Código</span></div>
         <div id="stockList"><div class="empty"><div class="icon">📭</div><p>Sin datos.</p></div></div>
+      </div>
+      <div id="sub-ventas" style="display:none;" class="stbl">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;font-size:.74rem;color:var(--muted);border-bottom:1px solid var(--border);">
+          <span>Lo que se vendió en MeLi y se descontó de la app (últimos 3 días), con el sector donde estaba.</span>
+          <label style="display:flex;align-items:center;gap:5px;white-space:nowrap;"><input type="checkbox" id="vmVerPrep" onchange="vmRender()"> Ver preparados</label>
+        </div>
+        <div id="vmList"><div class="empty"><div class="icon">🛒</div><p>Sin ventas recientes.</p></div></div>
       </div>
       <div id="sub-movs" style="display:none;" class="stbl">
         <div id="movList"><div class="empty"><div class="icon">📋</div><p>Sin movimientos.</p></div></div>
@@ -1277,7 +1285,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026102123';
+const APP_BUILD = '2026111001';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1735,7 +1743,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         const sh=document.getElementById('appShell');sh.style.display='flex';
         updateDisplayName();
         await fbLoadProfile();
-        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();fbListenUltimoMov();fbListenNoEncontrados();fbListenPlanilla();fbListenSolicitudes();
+        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();fbListenUltimoMov();fbListenNoEncontrados();fbListenPlanilla();fbListenSolicitudes();fbListenVentasMeli();
         // Auto-sync catalog every 30 minutes
         autoSyncCatalog();
         startPresence();
@@ -1747,6 +1755,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         stopPresence();
         stopMensajeria();
         stopSolicitudes();
+        stopVentasMeli();
       }
     });
   },100);
@@ -1772,6 +1781,7 @@ window.doLogout=async function(){
   stopPresence();
   stopMensajeria();
   stopSolicitudes();
+  stopVentasMeli();
 };
 
 // ── PRESENCIA (usuarios en línea) ──
@@ -1853,10 +1863,12 @@ window.switchTab=function(name){
   if(name==='solicitudes')solRender();
 };
 function switchSub(name){
-  document.querySelectorAll('.stab').forEach(t=>t.classList.toggle('active',t.textContent.includes(name==='saldo'?'Saldo':'Mov')));
+  document.querySelectorAll('.stab[data-sub]').forEach(t=>t.classList.toggle('active',t.dataset.sub===name));
   document.getElementById('sub-saldo').style.display=name==='saldo'?'':'none';
   document.getElementById('sub-movs').style.display=name==='movs'?'':'none';
+  const sv=document.getElementById('sub-ventas');if(sv)sv.style.display=name==='ventas'?'':'none';
   if(name==='movs')renderMovList();
+  if(name==='ventas')vmRender();
 }
 
 // ── IndexedDB (catálogo grande; localStorage tiene poco espacio) ──
@@ -6356,6 +6368,107 @@ function solNombreDep(id){return (depositos[id]&&depositos[id].nombre)||id||'—
 function solUnidades(items,campo){return (items||[]).reduce((a,i)=>a+(Number(i[campo])||0),0);}
 function solNorm(t){return String(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');}
 function solRecibidasPendientes(){return Object.values(solDB).filter(x=>x.depProvee===depActivo&&x.estado==='pendiente').length;}
+
+
+// ── VENTAS MELI PARA PREPARAR ──
+// El Worker descuenta del depósito (Soler) cada venta de MeLi y la anota en ventasMeli/{orden}.
+// Acá se muestran esas ventas aunque el producto haya quedado en 0 (y por eso ya no figure en "Saldo actual").
+let vmDB={}, unsubVentasMeli=null;
+const VM_DIAS=3;
+function fbListenVentasMeli(){
+  stopVentasMeli();
+  try{
+    const{db,collection,query,orderBy,limit,onSnapshot}=fb();
+    unsubVentasMeli=onSnapshot(query(collection(db,'ventasMeli'),orderBy('fecha','desc'),limit(40)),snap=>{
+      snap.docChanges().forEach(ch=>{
+        if(ch.type==='removed'){delete vmDB[ch.doc.id];return;}
+        vmDB[ch.doc.id]={id:ch.doc.id,...ch.doc.data()};
+      });
+      vmActualizarBadge();
+      vmRender();
+    });
+  }catch(e){console.error(e);}
+}
+function stopVentasMeli(){
+  try{if(unsubVentasMeli)unsubVentasMeli();}catch(e){}
+  unsubVentasMeli=null;vmDB={};vmActualizarBadge();
+}
+// Una fila por producto vendido (y por renglón sin SKU), solo de ventas aplicadas, no canceladas y de los últimos días.
+function vmFilas(){
+  const desde=Date.now()-VM_DIAS*86400000, out=[];
+  Object.values(vmDB).forEach(v=>{
+    if(!v.aplicado||v.revertida)return;
+    const t=Date.parse(v.fecha||'');
+    if(!t||t<desde)return;
+    const prep=v.preparados||{};
+    (v.items||[]).forEach((it,i)=>out.push({vid:v.id,idx:String(i),t,orderId:v.orderId,depId:v.depId,it,sinSku:false,prep:!!prep[i]}));
+    (v.sin_sku||[]).forEach((it,i)=>out.push({vid:v.id,idx:'s'+i,t,orderId:v.orderId,depId:v.depId,it,sinSku:true,prep:!!prep['s'+i]}));
+  });
+  out.sort((a,b)=>(a.prep-b.prep)||(b.t-a.t));
+  return out;
+}
+function vmActualizarBadge(){
+  const n=vmFilas().filter(f=>!f.prep).length;
+  const tab=document.querySelector('.tab[data-tab="stock"]');
+  if(tab)tab.textContent=n?`📋 Stock · 🛒${n}`:'📋 Stock';
+  const st=document.getElementById('stabVentas');
+  if(st)st.textContent=n?`🛒 Ventas MeLi (${n})`:'🛒 Ventas MeLi';
+}
+function vmFilaHtml(f){
+  const it=f.it, fecha=new Date(f.t).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const dep=(depositos[f.depId]&&depositos[f.depId].nombre)||'Soler';
+  let titulo,detalle,aviso='';
+  if(f.sinSku){
+    titulo=it.titulo||'(publicación sin SKU)';
+    detalle=`Vendió ${it.qty||'?'} · sin SKU en MeLi: buscalo a mano`;
+  }else{
+    const key=it.key||it.sku;
+    const e=catalog[key]||catalog[it.sku];
+    titulo=e?e.name:(it.sku||key);
+    const talle=e&&e.talle?` · Talle ${_esc(e.talle)}`:'';
+    const secId=it.sector||((sectorMapDB[f.depId]||{})[key]||'');
+    const sec=secId&&(sectoresDB[f.depId]||{})[secId]?String(sectoresDB[f.depId][secId].nombre).toUpperCase():'';
+    if(it.estado==='sin_stock_en_app'){
+      detalle=`Vendió ${it.qty}${talle} · no había stock en ${_esc(dep)}: buscalo en otro depósito`;
+    }else{
+      const desc=(Number(it.antes)||0)-(Number(it.despues)||0);
+      const parcial=it.estado==='parcial'?` · había ${it.antes}, faltan ${it.qty-desc}`:'';
+      detalle=`Vendió ${it.qty}${talle} · ${_esc(dep)}${sec?' · Sector '+_esc(sec):''}${parcial}`;
+      if((Number(it.despues)||0)===0)aviso=' <b>· AGOTADO</b>';
+      else detalle+=` · quedan ${it.despues}`;
+    }
+  }
+  const btn=f.prep
+    ?`<span style="color:var(--muted);font-size:.7rem;">✔ preparado</span>`
+    :`<button class="btn btn-ghost btn-sm" onclick="vmMarcar('${f.vid}','${f.idx}')">✔ Preparado</button>`;
+  return `<div class="stbl-row" style="grid-template-columns:1fr auto;${f.prep?'opacity:.55;':''}">
+    <div><div class="rname">${_esc(titulo)}</div>
+    <div class="rsku" style="font-family:inherit;">${detalle}${aviso}</div>
+    <div class="rsku">${_esc(fecha)} · orden ${_esc(f.orderId||'')}</div></div>
+    <div>${btn}</div></div>`;
+}
+window.vmRender=function(){
+  const box=document.getElementById('vmList');
+  if(!box||document.getElementById('sub-ventas')?.style.display==='none')return;
+  const ver=!!document.getElementById('vmVerPrep')?.checked;
+  const filas=vmFilas().filter(f=>ver||!f.prep);
+  box.innerHTML=filas.length?filas.map(vmFilaHtml).join(''):'<div class="empty"><div class="icon">🛒</div><p>No hay ventas de MeLi para preparar.</p></div>';
+};
+window.vmMarcar=async function(vid,idx){
+  const v=vmDB[vid];if(!v)return;
+  const marca={por:getDisplayName(),en:new Date().toISOString()};
+  v.preparados=Object.assign({},v.preparados,{[idx]:marca}); // optimista
+  vmActualizarBadge();vmRender();
+  try{
+    const{db,doc,setDoc}=fb();
+    await setDoc(doc(db,'ventasMeli',vid),{preparados:{[idx]:marca}},{merge:true});
+  }catch(e){
+    console.error(e);
+    if(v.preparados)delete v.preparados[idx];
+    vmActualizarBadge();vmRender();
+    showToast('No se pudo marcar como preparado','err');
+  }
+};
 
 function fbListenSolicitudes(){
   stopSolicitudes();
