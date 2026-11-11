@@ -629,6 +629,21 @@
           <input id="secNombre" type="text" class="inp" placeholder="Nombre (ej: 1-A)" />
           <button class="btn btn-primary btn-sm" onclick="crearSector()">Crear</button>
         </div>
+        <div id="serieBloque" style="display:none;">
+        <div class="slabel" style="margin:12px 0 6px;">🧱 Crear sectores en serie</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">
+          <input id="serieSec" type="text" class="inp" value="1" placeholder="Sector (ej: 1)" title="Número de sector" />
+          <input id="serieLetras" type="text" class="inp" value="A-U" placeholder="Alas (ej: A-U)" title="Alas: rango o lista, ej. A-H,J-U" />
+          <input id="serieEst" type="number" min="1" max="20" class="inp" value="4" title="Estantes por ala" />
+          <input id="serieExc" type="text" class="inp" value="A=5,U=2" placeholder="Excepciones (ej: A=5,U=2)" title="Alas con otra cantidad de estantes" />
+        </div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:4px;line-height:1.4;">Formato: sector + ala + <b>-E</b> + estante (ej: 1A-E1). Alas con rango o lista; estantes por ala; excepciones con otra cantidad.</div>
+        <div id="seriePreview" style="font-size:.76rem;margin-top:7px;line-height:1.5;"></div>
+        <div style="display:flex;gap:7px;margin-top:7px;">
+          <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;" onclick="serieVista()">👁 Ver qué se crea</button>
+          <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center;" onclick="serieCrear()">Crear los que faltan</button>
+        </div>
+        </div>
         <div id="cartelesBloque" style="display:none;">
         <div class="slabel" style="margin:12px 0 6px;">🖨️ Carteles</div>
         <div style="display:flex;gap:7px;">
@@ -1292,7 +1307,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111101';
+const APP_BUILD = '2026111102';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2518,6 +2533,61 @@ window.crearSector=async function(){
   document.getElementById('secNombre').value='';
   await fbSaveSectores();renderSectores();updateSecSelects();updateTrasladoSels();
   showToast(`Sector ${n} creado`,'ok');
+};
+// ── Crear sectores en serie (ej. 1A-E1 … 1U-E2) ──
+function serieParseLetras(txt){
+  const out=[];
+  String(txt||'').toUpperCase().replace(/\s+/g,'').split(',').filter(Boolean).forEach(p=>{
+    const m=p.match(/^([A-Z])-([A-Z])$/);
+    if(m){let a=m[1].charCodeAt(0),b=m[2].charCodeAt(0);if(a>b)[a,b]=[b,a];for(let c=a;c<=b;c++)out.push(String.fromCharCode(c));}
+    else if(/^[A-Z]+$/.test(p))p.split('').forEach(l=>out.push(l));
+  });
+  return [...new Set(out)];
+}
+function serieParseExc(txt){
+  const m={};
+  String(txt||'').toUpperCase().replace(/\s+/g,'').split(',').filter(Boolean).forEach(p=>{
+    const x=p.match(/^([A-Z])=(\d{1,2})$/);if(x)m[x[1]]=parseInt(x[2],10);
+  });
+  return m;
+}
+function serieCalcular(){
+  const sec=(document.getElementById('serieSec').value||'').trim();
+  const letras=serieParseLetras(document.getElementById('serieLetras').value);
+  const porDef=parseInt(document.getElementById('serieEst').value,10)||0;
+  const exc=serieParseExc(document.getElementById('serieExc').value);
+  const nombres=[];
+  letras.forEach(l=>{const n=exc[l]!==undefined?exc[l]:porDef;for(let i=1;i<=n;i++)nombres.push(`${sec}${l}-E${i}`);});
+  const existentes=new Set(Object.values(getSectores()).map(s=>String(s.nombre).toLowerCase()));
+  const nuevos=nombres.filter(n=>!existentes.has(n.toLowerCase()));
+  return {sec,letras,nombres,nuevos,yaExisten:nombres.length-nuevos.length};
+}
+window.serieVista=function(){
+  const box=document.getElementById('seriePreview');if(!box)return;
+  if(!depActivo){box.textContent='Elegí un depósito primero.';return;}
+  const r=serieCalcular();
+  if(!r.sec||!r.nombres.length){box.textContent='Revisá los datos: no se genera ningún sector.';return;}
+  const muestra=r.nuevos.length>8?`${r.nuevos.slice(0,4).join(', ')} … ${r.nuevos.slice(-4).join(', ')}`:r.nuevos.join(', ');
+  box.innerHTML=`Alas: <b>${r.letras.join('')}</b> · total de la serie: <b>${r.nombres.length}</b><br>`+
+    `Ya existen: <b>${r.yaExisten}</b> · Se crearían: <b>${r.nuevos.length}</b>${r.nuevos.length?`<br><span style="color:var(--muted)">${_esc(muestra)}</span>`:''}`;
+};
+window.serieCrear=async function(){
+  if(!isAdmin){showToast('Solo el administrador puede crear sectores','err');return;}
+  if(!depActivo){showToast('Elegí un depósito','err');return;}
+  const r=serieCalcular();
+  if(!r.sec||!r.nombres.length){showToast('Revisá los datos','err');return;}
+  if(!r.nuevos.length){showToast('Ya están todos creados','ok');serieVista();return;}
+  const dep=(depositos[depActivo]&&depositos[depActivo].nombre)||'este depósito';
+  if(!confirm(`Se van a crear ${r.nuevos.length} sectores nuevos en ${dep} (ya existían ${r.yaExisten}).\n\n¿Crear?`))return;
+  if(!sectoresDB[depActivo])sectoresDB[depActivo]={};
+  const base=Date.now();
+  r.nuevos.forEach((n,i)=>{
+    const id='sec_'+base+'_'+i;
+    sectoresDB[depActivo][id]={id,nombre:n,codigo:'SEC-'+n.toUpperCase().replace(/[^A-Z0-9]/g,'')};
+  });
+  await fbSaveSectores();renderSectores();updateSecSelects();updateTrasladoSels();
+  showToast(`✅ ${r.nuevos.length} sectores creados`,'ok');
+  serieVista();
 };
 window.eliminarSector=async function(id){
   if(!isAdmin){showToast('Solo el administrador puede eliminar sectores','err');return;}
@@ -4111,7 +4181,7 @@ window.pinPress = function(key){
         document.getElementById('tabMeli').style.display='flex';
         const mbe=document.getElementById('mapaBtnEditar');
         if(mbe)mbe.style.display='flex';
-        const cb=document.getElementById('cartelesBloque');if(cb)cb.style.display='block';
+        const cb=document.getElementById('cartelesBloque');if(cb)cb.style.display='block';const sbq=document.getElementById('serieBloque');if(sbq)sbq.style.display='block';
         renderSectores();
         showToast('Modo administrador activado 🔴','ok');
         openAdminPanel();
@@ -4497,7 +4567,7 @@ window.salirAdmin = function(){
   document.getElementById('adminBadge').style.display='none';
   const mbe=document.getElementById('mapaBtnEditar');
   if(mbe)mbe.style.display='none';
-  const cb=document.getElementById('cartelesBloque');if(cb)cb.style.display='none';
+  const cb=document.getElementById('cartelesBloque');if(cb)cb.style.display='none';const sbq=document.getElementById('serieBloque');if(sbq)sbq.style.display='none';
   renderSectores();
   if(mapaModo==='editar')setMapaModo('ver');
   // If currently on an admin-only tab, redirect to stock
