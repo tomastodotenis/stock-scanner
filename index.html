@@ -689,6 +689,13 @@
         </select>
         <button class="btn btn-ghost btn-sm" onclick="mapaAgregarRef()">+ Referencia</button>
         <button class="btn btn-ghost btn-sm" onclick="mapaDeshacer()">↩️ Deshacer</button>
+        <button class="btn btn-ghost btn-sm" onclick="mapaAcomodarTodo()" title="Sube y pega a la esquina todo el plano, sin cambiar cómo está armado">📐 Acomodar todo</button>
+        <span style="display:inline-flex;gap:3px;" title="Mover todo el plano de a poquito">
+          <button class="btn btn-ghost btn-sm" onclick="mapaMoverTodo(0,-5)">⬆️</button>
+          <button class="btn btn-ghost btn-sm" onclick="mapaMoverTodo(0,5)">⬇️</button>
+          <button class="btn btn-ghost btn-sm" onclick="mapaMoverTodo(-5,0)">⬅️</button>
+          <button class="btn btn-ghost btn-sm" onclick="mapaMoverTodo(5,0)">➡️</button>
+        </span>
         <button class="btn btn-ghost btn-sm" id="mapaMultiBtn" onclick="mapaMultiToggle()">🔗 Vincular varios</button>
       </div>
       <div class="card" id="mapaMultiBar" style="display:none;padding:11px 13px;"></div>
@@ -1285,7 +1292,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111001';
+const APP_BUILD = '2026111101';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2816,6 +2823,34 @@ function mapaEditarModulo(m){
   renderMapa();
 }
 
+// Reubica TODO el plano (sectores y referencias) sin cambiar su forma: lo sube y lo pega a la esquina superior izquierda.
+window.mapaAcomodarTodo=function(){
+  if(!isAdmin||!depActivo)return;
+  const arr=mapaLayout();
+  if(!arr.length){showToast('El mapa está vacío','err');return;}
+  const MARGEN=5;
+  const minX=Math.min(...arr.map(m=>Number(m.x)||0)), minY=Math.min(...arr.map(m=>Number(m.y)||0));
+  const dx=MARGEN-minX, dy=MARGEN-minY;
+  if(!dx&&!dy){showToast('Ya está en la esquina','ok');return;}
+  mapaSnapshot();
+  arr.forEach(m=>{m.x=Math.round(((Number(m.x)||0)+dx)*100)/100;m.y=Math.round(((Number(m.y)||0)+dy)*100)/100;});
+  mapaZoomReset();
+  renderMapa();fbSaveMapa();
+  showToast('📐 Mapa acomodado. Si no te gusta, tocá Deshacer','ok');
+};
+// Mueve todo el plano de a poco (dx, dy en unidades del lienzo); no deja que nada se salga del borde.
+window.mapaMoverTodo=function(dx,dy){
+  if(!isAdmin||!depActivo)return;
+  const arr=mapaLayout();
+  if(!arr.length)return;
+  const minX=Math.min(...arr.map(m=>Number(m.x)||0)), minY=Math.min(...arr.map(m=>Number(m.y)||0));
+  const maxX=Math.max(...arr.map(m=>(Number(m.x)||0)+(Number(m.w)||0))), maxY=Math.max(...arr.map(m=>(Number(m.y)||0)+(Number(m.h)||0)));
+  const ddx=mapaClamp(dx,-minX,MAPA_CANVAS_MAX-maxX), ddy=mapaClamp(dy,-minY,MAPA_CANVAS_MAX-maxY);
+  if(!ddx&&!ddy)return;
+  mapaSnapshot();
+  arr.forEach(m=>{m.x=Math.round(((Number(m.x)||0)+ddx)*100)/100;m.y=Math.round(((Number(m.y)||0)+ddy)*100)/100;});
+  renderMapa();fbSaveMapa();
+};
 window.mapaAgregarSector=function(){
   if(!depActivo)return;
   mapaSnapshot();
