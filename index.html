@@ -632,12 +632,12 @@
         <div id="serieBloque" style="display:none;">
         <div class="slabel" style="margin:12px 0 6px;">🧱 Crear sectores en serie</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">
-          <input id="serieSec" type="text" class="inp" value="1" placeholder="Sector (ej: 1)" title="Número de sector" />
-          <input id="serieLetras" type="text" class="inp" value="A-U" placeholder="Alas (ej: A-U)" title="Alas: rango o lista, ej. A-H,J-U" />
-          <input id="serieEst" type="number" min="1" max="20" class="inp" value="4" title="Estantes por ala" />
-          <input id="serieExc" type="text" class="inp" value="A=5,U=2" placeholder="Excepciones (ej: A=5,U=2)" title="Alas con otra cantidad de estantes" />
+          <label style="font-size:.66rem;color:var(--muted);">Sector(es): uno, rango o lista<input id="serieSec" type="text" class="inp" value="1" placeholder="ej: 3  ·  3-8  ·  3,5,7" style="margin-top:3px;" /></label>
+          <label style="font-size:.66rem;color:var(--muted);">Alas (rango o lista)<input id="serieLetras" type="text" class="inp" value="A-U" placeholder="ej: A-H" style="margin-top:3px;" /></label>
+          <label style="font-size:.66rem;color:var(--muted);">Estantes por ala<input id="serieEst" type="number" min="1" max="20" class="inp" value="4" style="margin-top:3px;" /></label>
+          <label style="font-size:.66rem;color:var(--muted);">Excepciones (ala=cantidad)<input id="serieExc" type="text" class="inp" value="A=5,U=2" placeholder="ej: A=5,U=2" style="margin-top:3px;" /></label>
         </div>
-        <div style="font-size:.68rem;color:var(--muted);margin-top:4px;line-height:1.4;">Formato: sector + ala + <b>-E</b> + estante (ej: 1A-E1). Alas con rango o lista; estantes por ala; excepciones con otra cantidad.</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:4px;line-height:1.4;">Formato: sector + ala + <b>-E</b> + estante (ej: 1A-E1). Sector, alas y excepciones aceptan rango o lista (ej: sectores <b>3-8</b>); las alas y estantes se repiten igual en cada sector.</div>
         <div id="seriePreview" style="font-size:.76rem;margin-top:7px;line-height:1.5;"></div>
         <div style="display:flex;gap:7px;margin-top:7px;">
           <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;" onclick="serieVista()">👁 Ver qué se crea</button>
@@ -1307,7 +1307,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111103';
+const APP_BUILD = '2026111106';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2553,16 +2553,27 @@ function serieParseExc(txt){
   });
   return m;
 }
+// "3" → ['3'] · "3-8" → ['3','4',…,'8'] · "3,5,7" → ['3','5','7']
+function serieParseSectores(txt){
+  const out=[];
+  String(txt||'').trim().split(',').map(x=>x.trim()).filter(Boolean).forEach(p=>{
+    const m=p.match(/^(\d{1,3})\s*-\s*(\d{1,3})$/);
+    if(m){let a=parseInt(m[1],10),b=parseInt(m[2],10);if(a>b)[a,b]=[b,a];if(b-a<=60)for(let n=a;n<=b;n++)out.push(String(n));}
+    else out.push(p);
+  });
+  return [...new Set(out)];
+}
 function serieCalcular(){
-  const sec=(document.getElementById('serieSec').value||'').trim();
+  const secs=serieParseSectores(document.getElementById('serieSec').value);
+  const sec=secs.join(',');
   const letras=serieParseLetras(document.getElementById('serieLetras').value);
   const porDef=parseInt(document.getElementById('serieEst').value,10)||0;
   const exc=serieParseExc(document.getElementById('serieExc').value);
   const nombres=[];
-  letras.forEach(l=>{const n=exc[l]!==undefined?exc[l]:porDef;for(let i=1;i<=n;i++)nombres.push(`${sec}${l}-E${i}`);});
+  secs.forEach(sx=>letras.forEach(l=>{const n=exc[l]!==undefined?exc[l]:porDef;for(let i=1;i<=n;i++)nombres.push(`${sx}${l}-E${i}`);}));
   const existentes=new Set(Object.values(getSectores()).map(s=>String(s.nombre).toLowerCase()));
   const nuevos=nombres.filter(n=>!existentes.has(n.toLowerCase()));
-  return {sec,letras,nombres,nuevos,yaExisten:nombres.length-nuevos.length};
+  return {sec,secs,letras,nombres,nuevos,yaExisten:nombres.length-nuevos.length};
 }
 window.serieVista=function(){
   const box=document.getElementById('seriePreview');if(!box)return;
@@ -2570,7 +2581,7 @@ window.serieVista=function(){
   const r=serieCalcular();
   if(!r.sec||!r.nombres.length){box.textContent='Revisá los datos: no se genera ningún sector.';return;}
   const muestra=r.nuevos.length>8?`${r.nuevos.slice(0,4).join(', ')} … ${r.nuevos.slice(-4).join(', ')}`:r.nuevos.join(', ');
-  box.innerHTML=`Alas: <b>${r.letras.join('')}</b> · total de la serie: <b>${r.nombres.length}</b><br>`+
+  box.innerHTML=`Sectores: <b>${_esc(r.secs.join(', '))}</b> · Alas: <b>${r.letras.join('')}</b> · total de la serie: <b>${r.nombres.length}</b><br>`+
     `Ya existen: <b>${r.yaExisten}</b> · Se crearían: <b>${r.nuevos.length}</b>${r.nuevos.length?`<br><span style="color:var(--muted)">${_esc(muestra)}</span>`:''}`;
 };
 window.serieCrear=async function(){
@@ -3973,7 +3984,14 @@ document.getElementById('btnXLSX').addEventListener('click',exportXLSX);
 document.getElementById('btnXLSXSec').addEventListener('click',exportXLSXSec);
 document.getElementById('btnCSV').addEventListener('click',exportCSV);
 async function limpiarStock(){
-  if(!confirm('¿Limpiar todo el conteo?'))return;
+  if(!depActivo)return;
+  const dn=(depositos[depActivo]&&depositos[depActivo].nombre)||'este depósito';
+  const ds=stockDB[depActivo]||{};
+  const prods=Object.values(ds).filter(q=>q>0).length, uds=Object.values(ds).reduce((a,b)=>a+(b>0?b:0),0);
+  if(!prods){showToast(`"${dn}" no tiene stock cargado`,'ok');return;}
+  const t=prompt(`Vas a BORRAR todo el stock de "${dn}":\n${prods} productos · ${uds} unidades.\n\nNo se puede deshacer, no modifica los otros depósitos y no se avisa a MeLi.\n\nPara confirmar, escribí el nombre del depósito:`);
+  if(t===null)return;
+  if(t.trim().toLowerCase()!==dn.trim().toLowerCase()){showToast('El nombre no coincide: no se borró nada','err');return;}
   if(depActivo){stockDB[depActivo]={};sectorMapDB[depActivo]={};}await fbSaveStock();updateHeader();renderStock();showToast('Conteo limpiado','ok');
 }
 function buildRows(secFiltro,depFiltro){
