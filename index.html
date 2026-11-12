@@ -1307,7 +1307,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111102';
+const APP_BUILD = '2026111103';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1503,9 +1503,10 @@ async function fbSaveUltimoMov(canonicalKey, nombre){
 const MELI_ESPERA_MS=45000;
 const _meliTimers={}, _meliPend={};
 function _meliGuardarPend(){try{localStorage.setItem('ss_meli_pend',JSON.stringify(_meliPend));}catch(e){}}
-function pushStockToMeli(key,entry){
+function pushStockToMeli(key,entry,depId){
   if(!meliConfig.syncActiva)return;
   if(!entry||!(entry.sku||entry.barcode))return;
+  if(depId&&!meliCuentaDep(depId))return; // el movimiento fue en un depósito que no se manda a MeLi
   _meliPend[key]={sku:entry.sku||'',barcode:entry.barcode||'',name:entry.name||'',talle:entry.talle||''};
   _meliGuardarPend();
   clearTimeout(_meliTimers[key]);
@@ -1531,7 +1532,8 @@ async function pushStockToMeliAhora(key,entry){
   }
   const sku=entry.sku||entry.barcode;
   if(!sku)return;
-  const qty=getTotalStock(key);
+  if(!meliDepsCuentan().length)return; // ningún depósito elegido: no se manda nada
+  const qty=getTotalStockMeli(key);
   try{
     const res=await fetch(`${MELI_WORKER_URL}/stock/push?sku=${encodeURIComponent(sku)}&qty=${qty}`,{keepalive:true});
     const data=await res.json();
@@ -2085,7 +2087,7 @@ async function processCode(rawCode,fromCam){
       resetCantidadScan();
     }
     fbSaveStock();updateHeader();
-    pushStockToMeli(key,entry); // no bloqueante — si falla o no está mapeado, no traba el escaneo
+    pushStockToMeli(key,entry,depActivo); // no bloqueante — si falla o no está mapeado, no traba el escaneo
     const secId=getSectorForProduct(key);
     const secs=getSectores();
     const secN=secId&&secs[secId]?secs[secId].nombre:null;
@@ -3944,6 +3946,10 @@ A: ${dn}?`))return;
   await fbSaveStock(traslado.origenDep);
   await fbSaveStock(traslado.destinoDep);
   depActivo=oldDep;
+  // Si el traslado cambia lo que cuenta para MeLi (por ej. de Soler a Local), se le avisa
+  if(esExterno&&(meliCuentaDep(traslado.origenDep)||meliCuentaDep(traslado.destinoDep))){
+    traslado.productos.forEach(p=>pushStockToMeli(p.key,p.entry));
+  }
   updateHeader();renderStock();
   showToast(`${esExterno?'Traslado entre depósitos':'Traslado interno'} completado ✅`,'ok');
   resetTraslado();
@@ -4201,7 +4207,16 @@ function updatePinDots(){
 
 // ── MELI (sincronización con Mercado Libre) ──
 const MELI_WORKER_URL = 'https://meli-proxy.tomastodotenis.workers.dev';
-let meliConfig = { syncActiva: false };
+let meliConfig = { syncActiva: false, depositos: null }; // depositos: ids de los depósitos que cuentan para MeLi (null = todos)
+// Depósitos cuyo stock se suma para MeLi. Si no se eligió ninguno todavía, cuentan todos (como antes).
+function meliDepsCuentan(){
+  const todos=Object.keys(depositos||{});
+  const sel=meliConfig.depositos;
+  if(!Array.isArray(sel))return todos;
+  return todos.filter(d=>sel.includes(d));
+}
+function meliCuentaDep(depId){return meliDepsCuentan().includes(depId);}
+function getTotalStockMeli(key){return meliDepsCuentan().reduce((sum,d)=>sum+(((stockDB[d]||{})[key])||0),0);}
 let meliPinBuffer = '';
 
 async function fbLoadMeliConfig(){
@@ -4242,6 +4257,12 @@ window.adminMeliPanel = async function(){
         <div style="font-size:.72rem;color:var(--muted);">${meliConfig.syncActiva ? 'Activa — el stock se envía solo' : 'Pausada — no se envía nada a MeLi'}</div>
       </div>
       <button class="btn btn-sm ${meliConfig.syncActiva ? 'btn-danger' : 'btn-primary'}" onclick="meliToggleSync()" ${!conectado?'disabled title="Conectá primero"':''}>${meliConfig.syncActiva ? 'Pausar' : 'Activar'}</button>
+    </div>
+    <div style="padding:10px;background:var(--surface2);border-radius:8px;margin-bottom:8px;">
+      <div style="font-weight:700;font-size:.85rem;">Depósitos que cuentan para MeLi</div>
+      <div style="font-size:.72rem;color:var(--muted);margin:3px 0 7px;">MeLi muestra la suma del stock de los depósitos tildados. El resto no se manda.</div>
+      ${Object.values(depositos).map(d=>`<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:.82rem;"><input type="checkbox" ${meliCuentaDep(d.id)?'checked':''} onchange="meliToggleDep('${d.id}',this.checked)"> ${_esc(d.nombre)}</label>`).join('')}
+      <div style="font-size:.68rem;color:var(--muted);margin-top:5px;line-height:1.4;">Al cambiar esto no se modifica MeLi solo: para ajustar lo que ya está publicado usá "Sincronizar existente" (con las bajas tildadas).</div>
     </div>
     ${conectado ? `<button class="btn btn-danger btn-sm" onclick="openMeliDisyuntor()" style="justify-content:flex-start;width:100%;background:rgba(220,38,38,.15);border:1px solid var(--danger);">🔌 Desconectar de MeLi (disyuntor)</button>` : ''}
     ${conectado ? `<a href="${MELI_WORKER_URL}/completo/skus" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="justify-content:center;width:100%;margin-top:10px;font-size:.72rem;">🔄 1) Actualizar listado de publicaciones (abrir y dejar hasta que diga "Terminado")</a>` : ''}
@@ -4359,14 +4380,15 @@ function _esc(t){return String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;',
 window.meliSyncExistentePreview=async function(){
   const box=document.getElementById('syncExistenteResultado');
   if(!box)return;
+  if(!meliDepsCuentan().length){box.textContent='No hay ningún depósito elegido para MeLi.';return;}
   const totales={};
   Object.values(stockDB).forEach(d=>Object.entries(d||{}).forEach(([k,q])=>{totales[k]=(totales[k]||0)+q;}));
   const items=[];let sinCatalogo=0;
   for(const [key,q] of Object.entries(totales)){
-    if(q<=0)continue;
+    if(q<=0)continue; // sin stock en ningún depósito
     const e=catalog[key];const sku=e&&(e.sku||e.barcode);
     if(!sku){sinCatalogo++;continue;}
-    items.push({key,sku,name:e.name||sku,talle:e.talle||'',app:q});
+    items.push({key,sku,name:e.name||sku,talle:e.talle||'',app:getTotalStockMeli(key)}); // lo que cuenta para MeLi (puede ser 0)
   }
   if(!items.length){box.textContent='No hay productos con stock en la app.';return;}
   window._syncPrev=[];
@@ -4482,6 +4504,17 @@ window.meliSyncExistenteConfirmar=async function(){
   box.innerHTML=`<div style="color:var(--text);">✅ <b>${ok}</b> actualizados en MeLi.${fallos.length?` ⚠️ <b>${fallos.length}</b> fallaron: ${fallos.slice(0,10).map(f=>_esc(f.sku)).join(', ')}${fallos.length>10?'…':''}`:''}</div>`;
 };
 
+window.meliToggleDep = async function(depId,marcado){
+  if(!isAdmin){showToast('Solo el administrador puede cambiar esto','err');adminMeliPanel();return;}
+  const actuales=meliDepsCuentan();
+  const nuevos=marcado?[...new Set([...actuales,depId])]:actuales.filter(d=>d!==depId);
+  if(!nuevos.length){showToast('Tiene que quedar al menos un depósito','err');adminMeliPanel();return;}
+  meliConfig.depositos=nuevos;
+  await fbSaveMeliConfig();
+  const nombres=nuevos.map(d=>depositos[d]?.nombre||d).join(' + ');
+  showToast(`MeLi va a contar: ${nombres}`,'ok');
+  adminMeliPanel();
+};
 window.meliToggleSync = async function(){
   meliConfig.syncActiva = !meliConfig.syncActiva;
   await fbSaveMeliConfig();
@@ -6109,7 +6142,7 @@ async function planillaHacerSalida(key,entry,depId,desc,row){
   await fbSaveStock(depId);
   depActivo=prevDep;
   updateHeader();renderStock();
-  pushStockToMeli(key,entry);
+  pushStockToMeli(key,entry,depId);
   row.checked=true;
   row.salidaHecha=true;
   flashScr(true);playBeep(true);vibrateDevice(true);
@@ -6356,7 +6389,7 @@ window.aplicarCorreccion=async function(depId,can){
   });
   depActivo=depPrev;
   fbAddMov(mov);
-  pushStockToMeli(can,entry); // la corrección cambia el total: se lo avisamos a MeLi (si la sync está activa)
+  pushStockToMeli(can,entry,depId); // la corrección cambia el total: se lo avisamos a MeLi (si la sync está activa)
   if(!auditoria.corregidos)auditoria.corregidos={};
   auditoria.corregidos[depId+'|'+can]=true;
   fbSaveAuditoria();
