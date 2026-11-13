@@ -1307,7 +1307,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111106';
+const APP_BUILD = '2026111107';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1457,11 +1457,41 @@ async function fbSaveSectores(){
   if(!currentUser||!depActivo)return;
   try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','sectores_'+depActivo),{sectores:sectoresDB[depActivo]||{},upd:new Date().toISOString()});}catch(e){console.error(e);}
 }
-async function fbSaveMapa(depId){
+async function fbSaveMapa(depId,avisar){
   depId=depId||depActivo;
   if(!currentUser||!depId)return;
-  try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','mapa_'+depId),{modulos:mapaDB[depId]||[],upd:new Date().toISOString()});}catch(e){console.error(e);}
+  try{
+    const{db,doc,setDoc}=fb();
+    const limpio=JSON.parse(JSON.stringify(mapaDB[depId]||[])); // saca valores "undefined", que Firestore rechaza
+    await setDoc(doc(db,'config','mapa_'+depId),{modulos:limpio,upd:new Date().toISOString(),por:getDisplayName()});
+    if(avisar)showToast('💾 Mapa guardado','ok');
+  }catch(e){
+    console.error(e);
+    logError('guardar-mapa',e&&e.message||String(e),{dep:depId,modulos:(mapaDB[depId]||[]).length});
+    showToast('⚠️ No se pudo guardar el mapa: '+((e&&(e.code||e.message))||'error'),'err');
+  }
 }
+// Mantiene el mapa al día entre dispositivos: si otro dispositivo (o pestaña) lo cambia, acá se actualiza solo,
+// así un dispositivo con el mapa viejo no lo pisa al guardar.
+let unsubMapas=[];
+function fbListenMapas(){
+  stopMapas();
+  try{
+    const{db,doc,onSnapshot}=fb();
+    Object.keys(depositos||{}).forEach(depId=>{
+      unsubMapas.push(onSnapshot(doc(db,'config','mapa_'+depId),snap=>{
+        if(snap.metadata.hasPendingWrites||!snap.exists())return; // lo que se está guardando desde acá no se vuelve a aplicar
+        if(typeof mapaDrag!=='undefined'&&mapaDrag)return;
+        const mods=snap.data().modulos;
+        if(!Array.isArray(mods))return;
+        if(JSON.stringify(mods)===JSON.stringify(mapaDB[depId]||[]))return;
+        mapaDB[depId]=mods;
+        if(depId===depActivo&&document.getElementById('page-mapa')?.classList.contains('active')){try{renderMapa();}catch(e){}}
+      }));
+    });
+  }catch(e){console.error(e);}
+}
+function stopMapas(){unsubMapas.forEach(u=>{try{u();}catch(e){}});unsubMapas=[];}
 async function fbSaveEmpleados(){
   if(!currentUser)return;
   try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','empleados'),{empleados,upd:new Date().toISOString()});}catch(e){console.error(e);}
@@ -1767,7 +1797,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         const sh=document.getElementById('appShell');sh.style.display='flex';
         updateDisplayName();
         await fbLoadProfile();
-        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();fbListenUltimoMov();fbListenNoEncontrados();fbListenPlanilla();fbListenSolicitudes();fbListenVentasMeli();
+        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();fbListenUltimoMov();fbListenNoEncontrados();fbListenPlanilla();fbListenSolicitudes();fbListenVentasMeli();fbListenMapas();
         // Auto-sync catalog every 30 minutes
         autoSyncCatalog();
         startPresence();
@@ -1780,6 +1810,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         stopMensajeria();
         stopSolicitudes();
         stopVentasMeli();
+        stopMapas();
       }
     });
   },100);
@@ -1806,6 +1837,7 @@ window.doLogout=async function(){
   stopMensajeria();
   stopSolicitudes();
   stopVentasMeli();
+  stopMapas();
 };
 
 // ── PRESENCIA (usuarios en línea) ──
@@ -2974,7 +3006,7 @@ window.mapaVincularSector=function(secId){
   m.secId=secId||null;
   delete m.secIds;
   renderMapa();
-  fbSaveMapa();
+  fbSaveMapa(null,true);
 };
 window.mapaRenombrarRef=function(val){
   const m=mapaLayout().find(s=>s.id===mapaSelected);
@@ -3131,7 +3163,7 @@ window.mapaVVAplicar=function(){
   }
   mapaVVAbierto=false;mapaVVSeleccion=new Set();
   renderMapa();
-  fbSaveMapa();
+  fbSaveMapa(null,true);
   showToast(`✅ Vinculado${elegidos.length>1?'s '+elegidos.length+' sectores en este módulo':''}`,'ok');
 };
 window.mapaVincularSecuencia=function(){
@@ -3156,7 +3188,7 @@ window.mapaVincularSecuencia=function(){
     else noEncontrados.push(nombre);
   });
   renderMapa();
-  fbSaveMapa();
+  fbSaveMapa(null,true);
   if(noEncontrados.length){
     showToast(`Vinculados ${grupo.length-noEncontrados.length}/${grupo.length}. No existen: ${noEncontrados.join(', ')}`,'err');
   }else{
@@ -3655,7 +3687,7 @@ window.mapaMultiAplicar=function(){
   mapaMultiModo=false;
   mapaActualizarBtnMulti();
   renderMapa();
-  fbSaveMapa();
+  fbSaveMapa(null,true);
   if(noEncontrados.length){
     showToast(`Vinculados ${cant-noEncontrados.length}/${cant}. No existen: ${noEncontrados.join(', ')}`,'err');
   }else{
