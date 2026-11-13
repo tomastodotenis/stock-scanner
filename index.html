@@ -659,6 +659,9 @@
           <option value="BA">Lados: B a la izquierda · A a la derecha</option>
         </select>
         <button class="btn btn-ghost btn-sm" style="margin-top:7px;width:100%;justify-content:center;" onclick="imprimirCarteles()">🖨️ Carteles de todos los sectores del depósito</button>
+        <div class="slabel" style="margin:12px 0 6px;">Sectores con código de barras · 2 por hoja (A4 vertical)</div>
+        <input id="cartPrefijo" type="text" class="inp" placeholder="Solo los que empiecen con… (ej: 3). Vacío = todos" />
+        <button class="btn btn-primary btn-sm" style="margin-top:7px;width:100%;justify-content:center;" onclick="imprimirCartelesDos()">🖨️ Imprimir 2 por hoja</button>
         </div>
       </div>
       <div class="card" style="padding:11px 13px;">
@@ -715,6 +718,7 @@
       </div>
       <div class="card" id="mapaMultiBar" style="display:none;padding:11px 13px;"></div>
       <div class="card" id="mapaSelBar" style="display:none;padding:11px 13px;"></div>
+      <div id="mapaImprimirBtns" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px;"></div>
       <div class="card" id="mapaHint" style="padding:9px 12px;font-size:.74rem;color:var(--muted);line-height:1.5;">
         Tocá un módulo para ver qué hay cargado ahí.
       </div>
@@ -1307,7 +1311,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111107';
+const APP_BUILD = '2026111108';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2816,6 +2820,91 @@ ${hojas}
   win.focus();
   setTimeout(()=>win.print(),500);
 }
+
+// ── IMPRESIÓN: mapa de un depósito y carteles de sectores 2 por hoja ──
+function abrirVentanaImpresion(titulo,css,cuerpo,ayuda){
+  const win=window.open('','_blank');
+  if(!win){showToast('El navegador bloqueó la ventana de impresión: permitila e intentá de nuevo','err');return false;}
+  win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${escHtml(titulo)}</title>
+<style>*{box-sizing:border-box;}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;}
+.ayuda{font-size:12pt;padding:8px;background:#ffd;border-bottom:1px solid #cc9;text-align:center;}@media print{.ayuda{display:none;}}
+${css}</style></head><body><div class="ayuda">${ayuda}</div>${cuerpo}</body></html>`);
+  win.document.close();win.focus();
+  setTimeout(()=>win.print(),500);
+  return true;
+}
+// Mapa del depósito en blanco y negro (no depende de colores): recuadro por módulo con el nombre del sector adentro.
+window.imprimirMapa=function(depId){
+  depId=depId||depActivo;
+  const mods=(mapaDB[depId]||[]).filter(m=>m&&isFinite(m.x)&&isFinite(m.y)&&m.w>0&&m.h>0);
+  if(!mods.length){showToast('Ese mapa está vacío: no hay nada para imprimir','err');return;}
+  const dep=(depositos[depId]&&depositos[depId].nombre)||'';
+  const secs=sectoresDB[depId]||{};
+  const minX=Math.min(...mods.map(m=>m.x)),minY=Math.min(...mods.map(m=>m.y));
+  const maxX=Math.max(...mods.map(m=>m.x+m.w)),maxY=Math.max(...mods.map(m=>m.y+m.h));
+  const pad=4,W=maxX-minX+pad*2,H=maxY-minY+pad*2;
+  const horizontal=W>=H;
+  let sinVincular=0;
+  const piezas=mods.map(m=>{
+    const x=m.x-minX+pad,y=m.y-minY+pad,ref=m.tipo==='referencia';
+    let txt='';
+    if(ref)txt=((m.icono||'')+' '+(m.nombreRef||'Referencia')).trim();
+    else{
+      const nombres=mapaGetSecIds(m).map(id=>secs[id]&&secs[id].nombre).filter(Boolean);
+      txt=nombres.length===0?'':nombres.length===1?nombres[0]:nombres.length<=2?nombres.join(' + '):nombres[0]+' +'+(nombres.length-1);
+      if(!nombres.length)sinVincular++;
+    }
+    const girar=m.h>m.w*1.3,ancho=girar?m.h:m.w,alto=girar?m.w:m.h;
+    const fs=Math.max(1.5,Math.min(ancho*0.92/(Math.max(1,txt.length)*0.58),alto*0.62));
+    const cx=x+m.w/2,cy=y+m.h/2;
+    const rect=`<rect x="${x}" y="${y}" width="${m.w}" height="${m.h}" fill="${ref?'#e3e3e3':'#fff'}" stroke="#000" stroke-width="0.35"${(!ref&&!txt)?' stroke-dasharray="1.2 0.8"':''}/>`;
+    const t=txt?`<text x="${cx}" y="${cy}" font-size="${fs.toFixed(2)}" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#000"${girar?` transform="rotate(-90 ${cx} ${cy})"`:''}>${escHtml(txt)}</text>`:'';
+    return rect+t;
+  }).join('');
+  const fecha=new Date().toLocaleDateString('es-AR');
+  const css=`@page{size:A4 ${horizontal?'landscape':'portrait'};margin:8mm;}
+  .tit{display:flex;justify-content:space-between;align-items:baseline;font-size:14pt;font-weight:700;margin-bottom:3mm;}
+  .tit span{font-size:9pt;font-weight:400;color:#444;}
+  svg{display:block;width:100%;height:${horizontal?'178mm':'262mm'};}
+  .nota{font-size:8pt;color:#444;margin-top:2mm;}`;
+  const cuerpo=`<div class="tit"><div>Mapa — ${escHtml(dep)}</div><span>${fecha}</span></div>
+  <svg viewBox="0 0 ${W.toFixed(2)} ${H.toFixed(2)}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" font-family="Arial,Helvetica,sans-serif">${piezas}</svg>
+  <div class="nota">Gris: referencias (escaleras, baños, etc.).${sinVincular?` Recuadros con línea punteada: ${sinVincular} módulo(s) sin sector vinculado.`:''}</div>`;
+  abrirVentanaImpresion('Mapa — '+dep,css,cuerpo,`Imprimí en <b>${horizontal?'horizontal':'vertical'}</b>, tamaño real (100%), sin encabezados ni pies de página.`);
+};
+// Carteles de sectores: nombre grande + código de barras, DOS por hoja A4 vertical (con línea para cortar).
+window.imprimirCartelesDos=function(){
+  if(!isAdmin){showToast('Solo el administrador puede imprimir carteles','err');return;}
+  const pref=((document.getElementById('cartPrefijo')||{}).value||'').trim().toLowerCase();
+  let secs=Object.values(getSectores()).filter(x=>!pref||String(x.nombre).toLowerCase().startsWith(pref))
+    .sort((a,b)=>a.nombre.localeCompare(b.nombre,undefined,{numeric:true}));
+  if(!secs.length){showToast(pref?`No hay sectores que empiecen con "${pref}"`:'No hay sectores para imprimir','err');return;}
+  const dep=(depositos[depActivo]&&depositos[depActivo].nombre)||'';
+  const sinCodigo=[];
+  const items=secs.map(x=>{const bits=code128Modulos(x.codigo);if(!bits){sinCodigo.push(x.nombre);return null;}return {x,bits};}).filter(Boolean);
+  if(!items.length){showToast('Esos sectores tienen un código que no se puede imprimir como barras','err');return;}
+  if(items.length>40&&!confirm(`Se van a imprimir ${items.length} carteles en ${Math.ceil(items.length/2)} hojas. ¿Seguir?`))return;
+  if(sinCodigo.length)showToast('Sin cartel (código no imprimible): '+sinCodigo.join(', '),'err');
+  const cartel=it=>{
+    if(!it)return '<div class="c2"></div>';
+    const n=String(it.x.nombre).length;
+    const tam=n<=5?'125pt':n<=7?'100pt':n<=10?'70pt':'48pt';
+    return `<div class="c2"><div class="dep">${escHtml(dep)}</div><div class="nombre" style="font-size:${tam};">${escHtml(it.x.nombre)}</div>${code128Svg(it.bits)}<div class="cod">${escHtml(it.x.codigo)}</div></div>`;
+  };
+  let hojas='';
+  for(let i=0;i<items.length;i+=2)hojas+=`<section class="hoja">${cartel(items[i])}${cartel(items[i+1])}</section>`;
+  const css=`@page{size:A4 portrait;margin:8mm;}
+  .hoja{height:277mm;page-break-after:always;break-after:page;display:flex;flex-direction:column;}
+  .hoja:last-child{page-break-after:auto;break-after:auto;}
+  .c2{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:7mm 8mm;}
+  .c2+.c2{border-top:1px dashed #888;}
+  .dep{font-size:15pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#333;}
+  .nombre{font-weight:900;line-height:1;text-align:center;word-break:break-word;}
+  .barras{width:176mm;height:38mm;display:block;fill:#000;}
+  .cod{font-size:17pt;font-family:'Courier New',monospace;letter-spacing:.12em;}`;
+  abrirVentanaImpresion('Carteles de sectores 2 por hoja — '+dep,css,hojas,'Imprimí en <b>vertical</b> (A4), tamaño real (100%), sin encabezados ni pies de página. Cortá por la línea punteada.');
+};
+
 window.verSector=function(id){switchTab('stock');const f=document.getElementById('secFilter');if(f){f.value=id;filterSec=id;renderStock();}};
 // Escanear (cámara o pistola) el cartel de un sector en Stock, para filtrar directo por ese sector.
 function pasActualizarChip(){
@@ -3487,7 +3576,16 @@ function mapaInitEventosSiHaceFalta(){
   });
 }
 
+function mapaRenderBotonesImpresion(){
+  const box=document.getElementById('mapaImprimirBtns');
+  if(!box)return;
+  const clave=Object.values(depositos||{}).map(d=>d.id+':'+d.nombre).join('|');
+  if(box.dataset.k===clave)return;
+  box.dataset.k=clave;
+  box.innerHTML=Object.values(depositos||{}).map(d=>`<button class="btn btn-ghost btn-sm" onclick="imprimirMapa('${d.id}')">🖨️ Imprimir mapa ${_esc(d.nombre)}</button>`).join('');
+}
 function renderMapa(){
+  mapaRenderBotonesImpresion();
   mapaInitEventosSiHaceFalta();
   const inner=document.getElementById('mapaInner');
   if(!inner)return;
