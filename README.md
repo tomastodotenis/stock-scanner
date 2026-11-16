@@ -14,6 +14,7 @@ Si algo falla, el comando termina en error y **no se publica**.
 - Traslados, Mapa y Planilla buscan en Odoo si el código no está en el catálogo.
 - Planilla: "Juntada" solo marca la fila y no toca el stock.
 - Sonido: suena aunque el navegador suspenda/cierre el audio; la pistola lectora lo destraba.
+- Ventas Local: no se cierra sin vendedor, descuenta solo del depósito de ventas, manda al Sheet y anula con PIN de caja.
 - Peso: `index.html` no puede superar 450 KB ni llevar imágenes incrustadas.
 
 ## Publicación
@@ -25,3 +26,7 @@ Subir `index.html` **y la carpeta `img/`** (logo y fondo), manteniendo el resto 
 
 ## Al agregar una pantalla o corregir un error
 Agregar una prueba en `tests/` que reproduzca el caso. Así no vuelve a pasar.
+
+## Ventas Local → Google Sheets
+`apps-script/VentasLocal.gs` va en un proyecto de Apps Script publicado como aplicación web (instrucciones dentro del archivo).
+La URL y la clave se cargan en la app: Ventas Local → ⚙️ (modo admin).
