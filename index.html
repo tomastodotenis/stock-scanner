@@ -1402,7 +1402,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111705';
+const APP_BUILD = '2026111706';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -7669,7 +7669,8 @@ function vlRenderConfig(){
   document.getElementById('vlCfgVendedores').innerHTML=vs.length?vs.map(([id,v])=>`<div class="vl-item"${v.activo===false?' style="opacity:.5;"':''}>
     <div style="flex:1;font-weight:700;">${escHtml(v.nombre)}${v.activo===false?' <span style="font-size:.7rem;color:var(--muted);">(desactivado)</span>':''}</div>
     <button class="btn btn-ghost btn-sm" onclick="vlRenombrar('${id}')">✏️</button>
-    <button class="btn btn-ghost btn-sm" onclick="vlToggleVendedor('${id}')">${v.activo===false?'Activar':'Desactivar'}</button></div>`).join('')
+    <button class="btn btn-ghost btn-sm" onclick="vlToggleVendedor('${id}')">${v.activo===false?'Activar':'Desactivar'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="vlEliminarVendedor('${id}')" title="Eliminar (cargado por error o de prueba)">🗑️</button></div>`).join('')
     :'<div style="font-size:.8rem;color:var(--muted);">Sin vendedores.</div>';
   const adm=document.getElementById('vlCfgAdmin');adm.style.display=isAdmin?'flex':'none';
   if(isAdmin){
@@ -7693,6 +7694,12 @@ window.vlRenombrar=function(id){
     const n=String(val||'').trim().replace(/\s+/g,' ');if(!n)return;
     v.nombre=n;vlRenderConfig();await fbSaveVentasConfig(); // las ventas ya registradas conservan el nombre que tenían
   });
+};
+window.vlEliminarVendedor=async function(id){
+  const v=vlConfig.vendedores[id];if(!v)return;
+  if(!confirm(`¿Eliminar a "${v.nombre}" de la lista?\n\nSus ventas ya registradas no se borran. Si dejó de trabajar, mejor usá "Desactivar".`))return;
+  delete vlConfig.vendedores[id];if(vlVenta.vendedorId===id)vlVenta.vendedorId=null;
+  vlRenderConfig();await fbSaveVentasConfig();showToast('Vendedor eliminado','ok');
 };
 window.vlToggleVendedor=async function(id){
   const v=vlConfig.vendedores[id];if(!v)return;
