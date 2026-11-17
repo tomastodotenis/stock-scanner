@@ -60,3 +60,28 @@ test('Ventas Local: vendedor obligatorio, descuenta solo del Local, manda al She
     assert.deepEqual(errores, []);
   } finally { await cerrar(); }
 });
+
+test('PIN de caja: el ojito muestra la clave solo mientras se mantiene apretado', async () => {
+  const { page, errores, cerrar } = await abrirApp();
+  try {
+    await page.evaluate(() => {
+      document.getElementById('appLoader').style.display = 'none';
+      vlConfig = { vendedores: {}, pinCajaHash: 'x' };
+      vlPedirPin('Prueba', true, () => {});
+      document.getElementById('vlPinInput').value = '5678';
+    });
+    const ojo = page.locator('#vlPinModal .ojo-clave');
+    const tipo = () => page.$eval('#vlPinInput', i => i.type);
+    assert.equal(await tipo(), 'password');
+    const b = await ojo.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    assert.equal(await tipo(), 'text', 'apretado: se ve');
+    await page.mouse.up();
+    assert.equal(await tipo(), 'password', 'al soltar: se oculta');
+    await page.mouse.down(); await page.mouse.move(b.x - 60, b.y - 60);
+    assert.equal(await tipo(), 'password', 'si se corre el dedo afuera también se oculta');
+    await page.mouse.up();
+    assert.deepEqual(errores, []);
+  } finally { await cerrar(); }
+});

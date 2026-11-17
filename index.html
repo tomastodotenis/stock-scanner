@@ -115,6 +115,7 @@
     .vl-item{display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--border);}
     .vl-hoy{display:flex;align-items:center;gap:8px;padding:8px 13px;border-bottom:1px solid var(--border);}
     .vl-hoy.an{opacity:.55;}
+    .ojo-clave{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;font-size:1.05rem;padding:8px 11px;}
     .vl-hoy.an .vl-det{text-decoration:line-through;}
     .admin-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;}
     .admin-modal.show{display:flex;}
@@ -525,7 +526,10 @@
           <div class="tst-label">Solo administrador</div>
           <label style="font-size:.78rem;">Depósito del que descuentan las ventas<select id="vlCfgDep" class="inp" style="margin-top:4px;"></select></label>
           <div style="font-size:.78rem;"><span id="vlCfgPinEstado"></span></div>
-          <input type="password" id="vlCfgPin" class="inp" inputmode="numeric" placeholder="Nuevo PIN de caja (4 a 8 números)" autocomplete="new-password" />
+          <div style="display:flex;gap:7px;align-items:center;">
+            <input type="password" id="vlCfgPin" class="inp" inputmode="numeric" placeholder="Nuevo PIN de caja (4 a 8 números)" autocomplete="new-password" style="flex:1;" />
+            <button type="button" class="btn btn-ghost btn-sm ojo-clave" title="Mantené apretado para ver" onpointerdown="verClave('vlCfgPin',true,event)" onpointerup="verClave('vlCfgPin',false)" onpointerleave="verClave('vlCfgPin',false)" onpointercancel="verClave('vlCfgPin',false)" oncontextmenu="return false;">👁️</button>
+          </div>
           <label style="font-size:.78rem;">URL del Apps Script (Google Sheet)<input type="text" id="vlCfgUrl" class="inp" placeholder="https://script.google.com/macros/s/.../exec" style="margin-top:4px;" autocomplete="off" /></label>
           <label style="font-size:.78rem;">Clave del script (TOKEN)<input type="text" id="vlCfgToken" class="inp" style="margin-top:4px;" autocomplete="off" /></label>
           <div style="display:flex;gap:7px;">
@@ -645,6 +649,10 @@
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;font-size:.74rem;color:var(--muted);border-bottom:1px solid var(--border);">
           <span>Lo que se vendió en MeLi y se descontó de la app (últimos 3 días), con el sector donde estaba.</span>
           <label style="display:flex;align-items:center;gap:5px;white-space:nowrap;"><input type="checkbox" id="vmVerPrep" onchange="vmRender()"> Ver preparados</label>
+        </div>
+        <div style="display:flex;gap:7px;padding:8px 12px;border-bottom:1px solid var(--border);">
+          <input type="search" id="vmBuscar" class="inp" placeholder="Buscar producto, SKU, código, sector o Nº de venta..." autocomplete="off" oninput="vmRender()" />
+          <button class="btn btn-ghost btn-sm" onclick="abrirScanRapido(vmBuscarCodigo)" title="Escanear">📷</button>
         </div>
         <div id="vmList"><div class="empty"><div class="icon">🛒</div><p>Sin ventas recientes.</p></div></div>
       </div>
@@ -1288,7 +1296,10 @@
   <div class="admin-card">
     <h2>🔐 PIN de caja</h2>
     <div id="vlPinTitulo" style="text-align:center;font-size:.82rem;color:var(--muted);"></div>
-    <input type="password" id="vlPinInput" class="inp" inputmode="numeric" autocomplete="off" style="text-align:center;font-size:1.3rem;letter-spacing:.3em;" />
+    <div style="display:flex;gap:7px;align-items:center;">
+      <input type="password" id="vlPinInput" class="inp" inputmode="numeric" autocomplete="off" style="text-align:center;font-size:1.3rem;letter-spacing:.3em;flex:1;" />
+      <button type="button" class="btn btn-ghost btn-sm ojo-clave" title="Mantené apretado para ver" onpointerdown="verClave('vlPinInput',true,event)" onpointerup="verClave('vlPinInput',false)" onpointerleave="verClave('vlPinInput',false)" onpointercancel="verClave('vlPinInput',false)" oncontextmenu="return false;">👁️</button>
+    </div>
     <div id="vlPinError" style="text-align:center;font-size:.78rem;color:var(--danger);display:none;">PIN incorrecto</div>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-ghost" style="flex:1;" onclick="vlPinCerrar()">Cancelar</button>
@@ -1390,7 +1401,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111702';
+const APP_BUILD = '2026111703';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -6842,9 +6853,23 @@ window.vmRender=function(){
   const box=document.getElementById('vmList');
   if(!box||document.getElementById('sub-ventas')?.style.display==='none')return;
   const ver=!!document.getElementById('vmVerPrep')?.checked;
-  const filas=vmFilas().filter(f=>ver||!f.prep);
-  box.innerHTML=filas.length?filas.map(vmFilaHtml).join(''):'<div class="empty"><div class="icon">🛒</div><p>No hay ventas de MeLi para preparar.</p></div>';
+  const q=vmNorm(document.getElementById('vmBuscar')?.value||'');
+  // Con algo escrito en el buscador también se buscan los ya preparados
+  const filas=vmFilas().filter(f=>q?vmCoincide(f,q):(ver||!f.prep));
+  box.innerHTML=filas.length?filas.map(vmFilaHtml).join(''):(q?'<div class="empty"><div class="icon">🔍</div><p>Ninguna venta coincide con la búsqueda.</p></div>':'<div class="empty"><div class="icon">🛒</div><p>No hay ventas de MeLi para preparar.</p></div>');
 };
+function vmNorm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();}
+function vmCoincide(f,q){
+  const it=f.it||{}, key=it.key||it.sku||'', e=catalog[key]||catalog[it.sku]||null;
+  const qc=String(document.getElementById('vmBuscar')?.value||'').trim();
+  const ec=qc&&catalog[qc]; // si es un código de barras escaneado, se compara por producto exacto
+  if(ec&&!f.sinSku&&(ec.canonical===key||(ec.sku&&ec.sku===it.sku)))return true;
+  const secId=it.sector||((sectorMapDB[f.depId]||{})[key]||'');
+  const sec=secId&&(sectoresDB[f.depId]||{})[secId]?sectoresDB[f.depId][secId].nombre:'';
+  const texto=vmNorm([it.titulo,e&&e.name,e&&e.talle,e&&e.barcode,it.sku,key,sec,f.orderId].filter(Boolean).join(' '));
+  return q.split(/\s+/).every(p=>texto.includes(p));
+}
+window.vmBuscarCodigo=function(code){const i=document.getElementById('vmBuscar');if(i){i.value=String(code||'').trim();vmRender();}};
 window.vmMarcar=async function(vid,idx){
   const v=vmDB[vid];if(!v)return;
   const marca={por:getDisplayName(),en:new Date().toISOString()};
@@ -7602,10 +7627,16 @@ function vlPedirPin(titulo,aceptaAdmin,cb){
   _vlPinCb={cb,aceptaAdmin};
   document.getElementById('vlPinTitulo').textContent=titulo;
   document.getElementById('vlPinError').style.display='none';
-  const inp=document.getElementById('vlPinInput');inp.value='';
+  const inp=document.getElementById('vlPinInput');inp.value='';inp.type='password';
   document.getElementById('vlPinModal').classList.add('show');
   inp.focus();setTimeout(()=>{if(document.activeElement!==inp)inp.focus();},120);
 }
+// Ojito: muestra la clave solo mientras se mantiene apretado (mouse o dedo) y la vuelve a ocultar al soltar.
+window.verClave=function(id,mostrar,ev){
+  const inp=document.getElementById(id);if(!inp)return;
+  if(ev&&ev.preventDefault)ev.preventDefault(); // no le saca el foco al campo (en el celular no se cierra el teclado)
+  inp.type=mostrar?'text':'password';
+};
 window.vlPinCerrar=function(){document.getElementById('vlPinModal').classList.remove('show');_vlPinCb=null;vlFoco();};
 window.vlPinOk=async function(){
   const p=document.getElementById('vlPinInput').value.trim(), c=_vlPinCb;if(!c||!p)return;
