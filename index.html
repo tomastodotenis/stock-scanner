@@ -54,6 +54,8 @@
     .tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}  .tabs::-webkit-scrollbar{display:none;}
     .tab{flex:0 0 auto;min-width:70px;padding:10px 10px;text-align:center;font-size:.72rem;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
     .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+    /* En pantallas anchas (PC de la caja) las pestañas bajan a una segunda fila en vez de quedar cortadas a la derecha */
+    @media (min-width:900px){.tabs{flex-wrap:wrap;overflow-x:visible;}}
     /* PAGES */
     .page{display:none;flex:1;overflow-y:auto;}
     .page.active{display:flex;flex-direction:column;}
@@ -349,7 +351,6 @@
   </div>
   <div class="tabs">
     <div class="tab active" data-tab="scanner">📷 Escanear</div>
-    <div class="tab" data-tab="ventas">🛒 Ventas Local</div>
     <div class="tab" data-tab="stock">📋 Stock</div>
     <div class="tab" data-tab="mapa">🗺️ Mapa</div>
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
@@ -361,6 +362,7 @@
     <div class="tab" data-tab="ranking">🏆 Ranking</div>
     <div class="tab" data-tab="promos">🏷️ Promos MeLi</div>
     <div class="tab" data-tab="import">⬆️ Importar</div>
+    <div class="tab" data-tab="ventas">🛒 Ventas Local</div>
     <div class="tab" data-tab="empleados" id="tabEmpleados" style="display:none;">👤 Empleados</div>
     <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">⚙️ Config. Alertas</div>
     <div class="tab" data-tab="auditoria" id="tabAuditoria" style="display:none;">🧮 Auditoría</div>
@@ -1402,7 +1404,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111706';
+const APP_BUILD = '2026111707';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1993,11 +1995,18 @@ window.addEventListener('beforeunload',()=>{ navigator.sendBeacon; /* best-effor
 
 // ── TABS ──
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
+// Con la ruedita del mouse también se desplazan las pestañas cuando no entran (pantallas angostas)
+document.querySelector('.tabs')?.addEventListener('wheel',e=>{const el=e.currentTarget;if(el.scrollWidth>el.clientWidth&&Math.abs(e.deltaY)>Math.abs(e.deltaX)){el.scrollLeft+=e.deltaY;e.preventDefault();}},{passive:false});
 window.switchTab=function(name){
   if(name==='empleados'&&!isAdmin){showToast('Solo el administrador puede ver Empleados','err');return;}
   if(name==='auditoria'&&!isAdmin){showToast('Solo el administrador puede ver Auditoría','err');return;}
   if(name==='meli'&&!isAdmin){showToast('Solo el administrador puede ver esto','err');return;}
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  try{ // en celular, que la pestaña elegida quede a la vista dentro de la barra (sin mover la página)
+    const ta=document.querySelector('.tab.active'), bar=ta&&ta.parentElement;
+    if(bar&&bar.scrollWidth>bar.clientWidth){const l=ta.offsetLeft-bar.offsetLeft, r=l+ta.offsetWidth;
+      if(l<bar.scrollLeft)bar.scrollLeft=l-20;else if(r>bar.scrollLeft+bar.clientWidth)bar.scrollLeft=r-bar.clientWidth+20;}
+  }catch(e){}
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+name));
   if(name==='stock')renderStock();
   if(name==='historial')renderHG();
@@ -7496,7 +7505,7 @@ window.vlRender=function(){
   const box=document.getElementById('vlBotones');if(!box)return;
   const vs=vlVendedoresActivos();
   box.innerHTML=vs.length?vs.map(([id,v])=>`<button class="vl-vend${vlVenta.vendedorId===id?' sel':''}" onclick="vlElegirVendedor('${id}')">${escHtml(v.nombre)}</button>`).join('')
-    :`<div style="font-size:.8rem;color:var(--muted);">Todavía no hay vendedores cargados. Tocá ⚙️ para agregarlos.</div>`;
+    :`<div style="font-size:.8rem;color:var(--muted);grid-column:1/-1;">Todavía no hay vendedores cargados. Tocá ⚙️ para agregarlos.</div>`;
   const vn=document.getElementById('vlVendNombre');
   const vend=vlConfig.vendedores[vlVenta.vendedorId];
   if(vn)vn.innerHTML=vend?`Vendiendo: <b style="color:var(--accent);">${escHtml(vend.nombre)}</b>`:'<span style="color:var(--danger);">Elegí quién vendió ☝️</span>';
