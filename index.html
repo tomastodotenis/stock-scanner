@@ -109,6 +109,13 @@
     .modo-btn.active.consulta{background:rgba(124,58,237,.15);border-color:#7c3aed;color:#a78bfa;}
     .modo-btn.active.salida{background:rgba(239,68,68,.15);border-color:var(--danger);color:var(--danger);}
     /* ADMIN */
+    .vl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;}
+    .vl-vend{background:var(--surface);border:2px solid var(--border);border-radius:12px;color:var(--text);font-weight:800;font-size:1.05rem;padding:18px 8px;cursor:pointer;font-family:inherit;}
+    .vl-vend.sel{background:var(--accent);border-color:var(--accent);color:#0d1b2a;}
+    .vl-item{display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--border);}
+    .vl-hoy{display:flex;align-items:center;gap:8px;padding:8px 13px;border-bottom:1px solid var(--border);}
+    .vl-hoy.an{opacity:.55;}
+    .vl-hoy.an .vl-det{text-decoration:line-through;}
     .admin-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;}
     .admin-modal.show{display:flex;}
     .admin-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px 20px;width:100%;max-width:340px;display:flex;flex-direction:column;gap:13px;}
@@ -340,6 +347,7 @@
   </div>
   <div class="tabs">
     <div class="tab active" data-tab="scanner">📷 Escanear</div>
+    <div class="tab" data-tab="ventas">🛒 Ventas Local</div>
     <div class="tab" data-tab="stock">📋 Stock</div>
     <div class="tab" data-tab="mapa">🗺️ Mapa</div>
     <div class="tab" data-tab="traslados">🔄 Traslados</div>
@@ -476,6 +484,59 @@
 
   <!-- MENSAJES -->
   <!-- SOLICITUDES DE TRASLADO ENTRE DEPÓSITOS -->
+  <div class="page" id="page-ventas">
+    <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
+      <div id="vlCajaView" style="display:flex;flex-direction:column;gap:11px;">
+        <div class="card" style="padding:10px 13px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div style="font-size:.8rem;">Descuenta de: <b id="vlDepLabel" style="color:var(--accent);"></b></div>
+          <button class="btn btn-ghost btn-sm" onclick="vlAbrirConfig()" title="Vendedores y configuración">⚙️</button>
+        </div>
+        <div class="tst">
+          <div class="tst-label">1 — ¿Quién vendió?</div>
+          <div id="vlBotones" class="vl-grid"></div>
+        </div>
+        <div class="tst">
+          <div class="tst-label">2 — Productos</div>
+          <div id="vlVendNombre" style="font-size:.9rem;margin-bottom:7px;"></div>
+          <div style="display:flex;gap:7px;">
+            <input type="text" id="vlScanInput" class="inp" placeholder="Escaneá el producto o escribí el código + Enter" autocomplete="off" />
+            <button class="btn btn-ghost btn-sm" onclick="abrirScanRapido(vlScanCode)">📷</button>
+          </div>
+          <div id="vlItems" style="margin-top:8px;"></div>
+        </div>
+        <button class="btn btn-primary" id="vlBtnCerrar" onclick="vlCerrarVenta()" style="justify-content:center;padding:14px;font-size:1rem;" disabled>✅ Cerrar venta</button>
+        <button class="btn btn-ghost btn-sm" onclick="vlCancelar()" style="justify-content:center;">Descartar</button>
+        <div class="stbl">
+          <div style="padding:9px 13px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;"><span class="slabel">🧾 Ventas de hoy</span><span id="vlHoyRes" style="font-size:.75rem;color:var(--muted);"></span></div>
+          <div id="vlHoy"></div>
+        </div>
+      </div>
+      <div id="vlConfigView" style="display:none;flex-direction:column;gap:11px;">
+        <div class="tst">
+          <div class="tst-label">Vendedores</div>
+          <div id="vlCfgVendedores"></div>
+          <div style="display:flex;gap:7px;margin-top:8px;">
+            <input type="text" id="vlCfgNuevo" class="inp" placeholder="Nombre del vendedor" maxlength="40" autocomplete="off" />
+            <button class="btn btn-primary btn-sm" onclick="vlAgregarVendedor()">➕ Agregar</button>
+          </div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:6px;">Desactivar oculta el botón pero conserva sus ventas anteriores.</div>
+        </div>
+        <div class="tst" id="vlCfgAdmin" style="display:none;flex-direction:column;gap:8px;">
+          <div class="tst-label">Solo administrador</div>
+          <label style="font-size:.78rem;">Depósito del que descuentan las ventas<select id="vlCfgDep" class="inp" style="margin-top:4px;"></select></label>
+          <div style="font-size:.78rem;"><span id="vlCfgPinEstado"></span></div>
+          <input type="password" id="vlCfgPin" class="inp" inputmode="numeric" placeholder="Nuevo PIN de caja (4 a 8 números)" autocomplete="new-password" />
+          <label style="font-size:.78rem;">URL del Apps Script (Google Sheet)<input type="text" id="vlCfgUrl" class="inp" placeholder="https://script.google.com/macros/s/.../exec" style="margin-top:4px;" autocomplete="off" /></label>
+          <label style="font-size:.78rem;">Clave del script (TOKEN)<input type="text" id="vlCfgToken" class="inp" style="margin-top:4px;" autocomplete="off" /></label>
+          <div style="display:flex;gap:7px;">
+            <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;" onclick="vlProbarSheet()">🔌 Probar conexión</button>
+            <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center;" onclick="vlGuardarAdmin()">💾 Guardar</button>
+          </div>
+        </div>
+        <button class="btn btn-ghost" onclick="vlCerrarConfig()" style="justify-content:center;">← Volver a la caja</button>
+      </div>
+    </div>
+  </div>
   <div class="page" id="page-solicitudes">
     <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;">
       <!-- Lista -->
@@ -1222,6 +1283,20 @@
   </div>
 </div>
 
+<!-- PIN DE CAJA (Ventas Local) -->
+<div class="admin-modal" id="vlPinModal">
+  <div class="admin-card">
+    <h2>🔐 PIN de caja</h2>
+    <div id="vlPinTitulo" style="text-align:center;font-size:.82rem;color:var(--muted);"></div>
+    <input type="password" id="vlPinInput" class="inp" inputmode="numeric" autocomplete="off" style="text-align:center;font-size:1.3rem;letter-spacing:.3em;" />
+    <div id="vlPinError" style="text-align:center;font-size:.78rem;color:var(--danger);display:none;">PIN incorrecto</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" style="flex:1;" onclick="vlPinCerrar()">Cancelar</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="vlPinOk()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <!-- TEXT PROMPT MODAL (reemplaza prompt() nativo, que no abre teclado en iOS instalado como ícono de Inicio) -->
 <div class="admin-modal" id="textPromptModal">
   <div class="admin-card">
@@ -1315,7 +1390,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111701';
+const APP_BUILD = '2026111702';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1805,7 +1880,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         const sh=document.getElementById('appShell');sh.style.display='flex';
         updateDisplayName();
         await fbLoadProfile();
-        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();fbListenUltimoMov();fbListenNoEncontrados();fbListenPlanilla();fbListenSolicitudes();fbListenVentasMeli();fbListenMapas();
+        await fbLoad();fbListenMov();fbListenCatalog();fbListenAuditoria();fbListenStock();fbListenUltimoMov();fbListenNoEncontrados();fbListenPlanilla();fbListenSolicitudes();fbListenVentasMeli();fbListenMapas();fbListenVentasConfig();fbListenVentasLocal();
         // Auto-sync catalog every 30 minutes
         autoSyncCatalog();
         startPresence();
@@ -1817,6 +1892,7 @@ window.addEventListener('DOMContentLoaded',()=>{
         stopPresence();
         stopMensajeria();
         stopSolicitudes();
+        stopVentasLocal();
         stopVentasMeli();
         stopMapas();
       }
@@ -1846,6 +1922,7 @@ window.doLogout=async function(){
   stopSolicitudes();
   stopVentasMeli();
   stopMapas();
+  stopVentasLocal();
 };
 
 // ── PRESENCIA (usuarios en línea) ──
@@ -1925,6 +2002,7 @@ window.switchTab=function(name){
   if(name==='mapa')renderMapa();
   if(name==='mensajes')msgRender();
   if(name==='solicitudes')solRender();
+  if(name==='ventas'){vlCerrarConfig();}
 };
 function switchSub(name){
   document.querySelectorAll('.stab[data-sub]').forEach(t=>t.classList.toggle('active',t.dataset.sub===name));
@@ -2052,6 +2130,7 @@ async function processCode(rawCode,fromCam){
   // Si estás en Traslados (incluso escaneando desde la cámara de Escanear sin cambiar de pestaña),
   // los códigos se enrutan según el paso: sin origen todavía -> intenta tomarlo como el cartel
   // del sector origen; con origen ya elegido -> sigue el flujo normal (destino o productos).
+  if(document.getElementById('page-ventas')?.classList.contains('active')){vlScanCode(code);return;}
   if(document.getElementById('page-traslados').classList.contains('active')){
     if(!traslado.origenSec)tScanOrigen(code);
     else processTScan(code);
@@ -7309,6 +7388,295 @@ async function msgNotificarPush(chatId){
     await fetch(MELI_WORKER_URL+'/push/mensaje',{method:'POST',headers:{'content-type':'application/json','authorization':'Bearer '+idToken},body:JSON.stringify({chatId})});
   }catch(e){console.error('push aviso',e);}
 }
+// ── VENTAS LOCAL (salón) ──
+// Caja: el cajero toca el vendedor, escanea los productos y cierra la venta.
+// Descuenta del depósito de ventas (por defecto el "Local"), queda en Firestore (ventasLocal) y se manda al Google Sheet
+// (un archivo por mes, una hoja por día) a través de un Apps Script publicado como aplicación web.
+let vlConfig={depId:null,sheetUrl:'',sheetToken:'',pinCajaHash:'',vendedores:{}};
+let vlVenta={vendedorId:null,items:[]};
+let vlHoyDB={}, unsubVentasLocal=null, vlDiaEscuchado='', _vlEnviando={};
+function vlDia(d){return (d||new Date()).toLocaleDateString('en-CA');} // AAAA-MM-DD en hora local
+function vlDepId(){
+  if(vlConfig.depId&&depositos[vlConfig.depId])return vlConfig.depId;
+  const l=Object.entries(depositos).find(([,d])=>/local/i.test(d.nombre||''));
+  return l?l[0]:null;
+}
+function vlDepNombre(){const d=vlDepId();return d&&depositos[d]?depositos[d].nombre:'—';}
+function vlVendedoresActivos(){return Object.entries(vlConfig.vendedores||{}).filter(([,v])=>v.activo!==false).sort((a,b)=>a[1].nombre.localeCompare(b[1].nombre,'es'));}
+async function vlHashPin(pin){
+  const txt='tt-caja:'+pin;
+  try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(txt));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+  catch(e){let h=0;for(const c of txt)h=(h*31+c.charCodeAt(0))|0;return 'h'+h;}
+}
+let unsubVentasCfg=null, _vlAtrasadasHecho=false;
+function fbListenVentasConfig(){
+  if(unsubVentasCfg)unsubVentasCfg();
+  try{
+    const{db,doc,onSnapshot}=fb();
+    unsubVentasCfg=onSnapshot(doc(db,'config','ventas'),s=>{
+      if(s.exists())vlConfig={depId:null,sheetUrl:'',sheetToken:'',pinCajaHash:'',...s.data(),vendedores:s.data().vendedores||{}};
+      if(document.getElementById('page-ventas')?.classList.contains('active')){
+        if(document.getElementById('vlConfigView').style.display!=='none')vlRenderConfig();else vlRender();
+      }
+      vlReintentarSheet();
+      if(!_vlAtrasadasHecho&&vlConfig.sheetUrl){_vlAtrasadasHecho=true;vlReintentarAtrasadas();}
+    });
+  }catch(e){console.error(e);}
+}
+async function fbSaveVentasConfig(){
+  if(!currentUser)return;
+  try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'config','ventas'),{...vlConfig,upd:new Date().toISOString()});}
+  catch(e){console.error(e);showToast('⚠️ No se pudo guardar la configuración de ventas','err');}
+}
+function fbListenVentasLocal(){
+  if(unsubVentasLocal){unsubVentasLocal();unsubVentasLocal=null;}
+  vlDiaEscuchado=vlDia();vlHoyDB={};
+  try{
+    const{db,collection,query,where,onSnapshot}=fb();
+    unsubVentasLocal=onSnapshot(query(collection(db,'ventasLocal'),where('dia','==',vlDiaEscuchado)),snap=>{
+      snap.docChanges().forEach(ch=>{if(ch.type==='removed')delete vlHoyDB[ch.doc.id];else vlHoyDB[ch.doc.id]={id:ch.doc.id,...ch.doc.data()};});
+      vlRenderHoy();vlReintentarSheet();
+    });
+  }catch(e){console.error(e);}
+}
+function stopVentasLocal(){if(unsubVentasLocal){unsubVentasLocal();unsubVentasLocal=null;}if(unsubVentasCfg){unsubVentasCfg();unsubVentasCfg=null;}}
+// Ventas de días anteriores que no llegaron al Sheet (ej. se cortó internet): se reintentan al entrar
+async function vlReintentarAtrasadas(){
+  try{
+    const{db,collection,query,where,limit,getDocs}=fb();
+    const snap=await getDocs(query(collection(db,'ventasLocal'),where('sheet','==','pendiente'),limit(50)));
+    snap.forEach(d=>{const v={id:d.id,...d.data()};if(v.dia!==vlDia())vlEnviarSheet(v);});
+  }catch(e){console.error(e);}
+}
+// Pasada la medianoche con la app abierta, se pasa a escuchar el día nuevo
+setInterval(()=>{if(currentUser&&unsubVentasLocal&&vlDiaEscuchado!==vlDia())fbListenVentasLocal();},60000);
+setInterval(()=>{if(currentUser)vlReintentarSheet();},90000);
+
+window.vlRender=function(){
+  const lbl=document.getElementById('vlDepLabel');if(lbl)lbl.textContent=vlDepNombre();
+  const box=document.getElementById('vlBotones');if(!box)return;
+  const vs=vlVendedoresActivos();
+  box.innerHTML=vs.length?vs.map(([id,v])=>`<button class="vl-vend${vlVenta.vendedorId===id?' sel':''}" onclick="vlElegirVendedor('${id}')">${escHtml(v.nombre)}</button>`).join('')
+    :`<div style="font-size:.8rem;color:var(--muted);">Todavía no hay vendedores cargados. Tocá ⚙️ para agregarlos.</div>`;
+  const vn=document.getElementById('vlVendNombre');
+  const vend=vlConfig.vendedores[vlVenta.vendedorId];
+  if(vn)vn.innerHTML=vend?`Vendiendo: <b style="color:var(--accent);">${escHtml(vend.nombre)}</b>`:'<span style="color:var(--danger);">Elegí quién vendió ☝️</span>';
+  const dep=vlDepId();
+  const it=document.getElementById('vlItems');
+  if(it)it.innerHTML=vlVenta.items.length?vlVenta.items.map((x,i)=>{
+    const hay=getStockInDep(dep,x.key);
+    return `<div class="vl-item"><div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:.85rem;">${escHtml(x.nombre)}</div>
+      <div style="font-size:.72rem;color:var(--muted);">${x.talle?'Talle <b>'+escHtml(x.talle)+'</b> · ':''}SKU ${escHtml(x.sku||'—')} · Stock: ${hay}${hay<x.qty?' <b style="color:var(--danger);">⚠️ sin stock suficiente</b>':''}</div></div>
+      <button class="btn btn-ghost btn-sm" onclick="vlCambiarQty(${i},-1)">−</button><b style="min-width:22px;text-align:center;">${x.qty}</b><button class="btn btn-ghost btn-sm" onclick="vlCambiarQty(${i},1)">+</button></div>`;
+  }).join(''):'<div style="font-size:.8rem;color:var(--muted);padding:6px 0;">Escaneá los productos con la pistola.</div>';
+  const u=vlVenta.items.reduce((s,x)=>s+x.qty,0);
+  const bc=document.getElementById('vlBtnCerrar');
+  if(bc){bc.disabled=!vend||!u;bc.textContent=u?`✅ Cerrar venta (${u} u.)`:'✅ Cerrar venta';}
+  vlRenderHoy();
+  vlFoco();
+};
+function vlFoco(){
+  if(!window.matchMedia||!window.matchMedia('(pointer:fine)').matches)return; // en celular no se fuerza el teclado
+  const inp=document.getElementById('vlScanInput');
+  if(inp&&document.getElementById('page-ventas')?.classList.contains('active')&&!document.querySelector('.admin-modal.show'))inp.focus();
+}
+window.vlElegirVendedor=function(id){vlVenta.vendedorId=vlVenta.vendedorId===id?null:id;vlRender();};
+window.vlCambiarQty=function(i,d){
+  const x=vlVenta.items[i];if(!x)return;
+  x.qty+=d;if(x.qty<=0)vlVenta.items.splice(i,1);
+  vlRender();
+};
+window.vlCancelar=function(){
+  if(vlVenta.items.length&&!confirm('¿Descartar la venta que estás cargando?'))return;
+  vlVenta={vendedorId:null,items:[]};vlRender();
+};
+window.vlManScan=function(){const inp=document.getElementById('vlScanInput');const v=inp.value.trim();inp.value='';if(v)vlScanCode(v);};
+window.vlScanCode=async function(raw){
+  const code=String(raw||'').trim();if(!code)return;
+  if(!vlDepId()){showToast('No hay depósito de ventas configurado (⚙️)','err');return;}
+  let entry=catalog[code];
+  if(!entry)entry=await lookupOdoo(code);
+  if(!entry){playBeep(false);vibrateDevice(false);showToast('Código no encontrado: '+code,'err');return;}
+  const key=entry.canonical||code;
+  const ex=vlVenta.items.find(x=>x.key===key);
+  if(ex)ex.qty++;else vlVenta.items.push({key,sku:entry.sku||entry.barcode||'',barcode:entry.barcode||'',nombre:entry.name||'',talle:entry.talle||'',qty:1});
+  const hay=getStockInDep(vlDepId(),key), lleva=(ex||vlVenta.items[vlVenta.items.length-1]).qty;
+  playBeep(hay>=lleva);vibrateDevice(hay>=lleva);
+  if(hay<lleva)showToast(`⚠️ ${entry.name}: el sistema tiene ${hay} en ${vlDepNombre()}. Se vende igual y queda marcado.`,'err');
+  if(!vlVenta.vendedorId)showToast('Falta elegir el vendedor','err');
+  vlRender();
+};
+window.vlCerrarVenta=async function(){
+  const vend=vlConfig.vendedores[vlVenta.vendedorId];
+  if(!vend){showToast('Elegí quién vendió','err');return;}
+  if(!vlVenta.items.length){showToast('No hay productos cargados','err');return;}
+  const dep=vlDepId();if(!dep){showToast('No hay depósito de ventas configurado','err');return;}
+  const now=new Date(), id='V'+now.getTime().toString(36).toUpperCase()+Math.random().toString(36).slice(2,5).toUpperCase();
+  if(!stockDB[dep])stockDB[dep]={};
+  const items=vlVenta.items.map(x=>{
+    const hay=stockDB[dep][x.key]||0, desc=Math.min(hay,x.qty);
+    if(hay-desc>0)stockDB[dep][x.key]=hay-desc;else delete stockDB[dep][x.key];
+    return {...x,descontado:desc,sinStock:desc<x.qty};
+  });
+  const venta={id,dia:vlDia(now),fecha:now.toLocaleDateString('es-AR'),hora:now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
+    vendedorId:vlVenta.vendedorId,vendedorNombre:vend.nombre,cajero:getDisplayName(),depId:dep,depNombre:depositos[dep]?.nombre||'',
+    items,unidades:items.reduce((s,x)=>s+x.qty,0),estado:'ok',sheet:'pendiente'};
+  fbSaveStock(dep);
+  const secs=sectoresDB[dep]||{}, sm=sectorMapDB[dep]||{};
+  items.forEach(x=>{
+    fbAddMov({fecha:venta.fecha,hora:venta.hora,canonicalKey:x.key,nombre:x.nombre,talle:x.talle,sku:x.sku,tipo:'salida',qty:x.qty,
+      motivo:`Venta salón · ${vend.nombre}${x.sinStock?' (sin stock en sistema)':''}`,usuario:venta.cajero,sectorId:sm[x.key]||null,
+      sectorNombre:sm[x.key]&&secs[sm[x.key]]?secs[sm[x.key]].nombre:'—',depositoId:dep,depositoNombre:venta.depNombre,ventaId:id});
+    pushStockToMeli(x.key,{sku:x.sku,barcode:x.barcode,name:x.nombre,talle:x.talle},dep);
+  });
+  vlHoyDB[id]=venta;
+  vlVenta={vendedorId:null,items:[]};
+  updateHeader();vlRender();
+  showToast(`✅ Venta registrada a nombre de ${vend.nombre}`,'ok');playBeep(true);
+  try{const{db,doc,setDoc,serverTimestamp}=fb();await setDoc(doc(db,'ventasLocal',id),{...venta,creadoEn:serverTimestamp()});}
+  catch(e){console.error(e);logError('venta-local',e&&e.message||String(e));showToast('⚠️ La venta no se pudo guardar en la nube. No cierres la app.','err');return;}
+  vlEnviarSheet(venta);
+};
+function vlRenderHoy(){
+  const box=document.getElementById('vlHoy');if(!box)return;
+  const vs=Object.values(vlHoyDB).sort((a,b)=>(b.id>a.id?1:-1));
+  const ok=vs.filter(v=>v.estado!=='anulada');
+  const res=document.getElementById('vlHoyRes');
+  if(res)res.textContent=`${ok.length} venta${ok.length===1?'':'s'} · ${ok.reduce((s,v)=>s+(v.unidades||0),0)} u.`;
+  box.innerHTML=vs.length?vs.map(v=>{
+    const an=v.estado==='anulada';
+    const det=(v.items||[]).map(x=>`${x.qty}× ${escHtml(x.nombre)}${x.talle?' ('+escHtml(x.talle)+')':''}${x.sinStock?' ⚠️':''}`).join('<br>');
+    return `<div class="vl-hoy${an?' an':''}"><div style="flex:1;min-width:0;"><div style="font-size:.8rem;"><b>${escHtml(v.hora||'')}</b> · ${escHtml(v.vendedorNombre||'')} <span style="color:var(--muted);">· caja: ${escHtml(v.cajero||'')}</span>
+      ${an?' <b style="color:var(--danger);">ANULADA</b>':''}${v.sheet==='ok'?'':' <span title="Todavía no llegó al Sheet" style="color:#f59e0b;">⏳</span>'}</div>
+      <div class="vl-det" style="font-size:.74rem;color:var(--muted);margin-top:2px;">${det}</div></div>
+      ${an?'':`<button class="btn btn-ghost btn-sm" onclick="vlAnular('${v.id}')">Anular</button>`}</div>`;
+  }).join(''):'<div style="padding:10px 13px;font-size:.8rem;color:var(--muted);">Todavía no hay ventas hoy.</div>';
+}
+window.vlAnular=function(id){
+  const v=vlHoyDB[id];if(!v||v.estado==='anulada')return;
+  vlPedirPin(`Anular venta de ${v.vendedorNombre} (${v.hora})`,true,async()=>{
+    const dep=v.depId;if(!stockDB[dep])stockDB[dep]={};
+    const secs=sectoresDB[dep]||{}, sm=sectorMapDB[dep]||{};
+    const now=new Date(), hora=now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+    (v.items||[]).forEach(x=>{
+      const vuelve=x.descontado??x.qty;
+      if(vuelve>0)stockDB[dep][x.key]=(stockDB[dep][x.key]||0)+vuelve;
+      fbAddMov({fecha:now.toLocaleDateString('es-AR'),hora,canonicalKey:x.key,nombre:x.nombre,talle:x.talle,sku:x.sku,tipo:'entrada',qty:vuelve,
+        motivo:`Anulación venta salón · ${v.vendedorNombre}`,usuario:getDisplayName(),sectorId:sm[x.key]||null,
+        sectorNombre:sm[x.key]&&secs[sm[x.key]]?secs[sm[x.key]].nombre:'—',depositoId:dep,depositoNombre:v.depNombre,ventaId:v.id});
+      pushStockToMeli(x.key,{sku:x.sku,barcode:x.barcode,name:x.nombre,talle:x.talle},dep);
+    });
+    fbSaveStock(dep);updateHeader();
+    const cambio={estado:'anulada',anuladaPor:getDisplayName(),anuladaHora:hora,sheet:'pendiente'};
+    Object.assign(v,cambio);vlRenderHoy();
+    showToast('Venta anulada. El stock volvió a '+(v.depNombre||'el depósito'),'ok');
+    try{const{db,doc,setDoc}=fb();await setDoc(doc(db,'ventasLocal',id),cambio,{merge:true});}catch(e){console.error(e);showToast('⚠️ No se pudo guardar la anulación en la nube','err');return;}
+    vlEnviarSheet(v);
+  });
+};
+// ── Envío al Google Sheet (Apps Script). Es idempotente: el script reemplaza las filas de la misma venta. ──
+async function vlEnviarSheet(v){
+  if(!vlConfig.sheetUrl||!v||_vlEnviando[v.id])return false;
+  _vlEnviando[v.id]=true;
+  try{
+    const body={token:vlConfig.sheetToken||'',venta:{id:v.id,dia:v.dia,fecha:v.fecha,hora:v.hora,vendedor:v.vendedorNombre,cajero:v.cajero,deposito:v.depNombre,
+      estado:v.estado==='anulada'?`ANULADA (${v.anuladaHora||''} por ${v.anuladaPor||''})`:'OK',
+      items:(v.items||[]).map(x=>({sku:x.sku,producto:x.nombre,talle:x.talle,cantidad:x.qty,obs:x.sinStock?'Sin stock en sistema':''}))}};
+    const r=await fetch(vlConfig.sheetUrl,{method:'POST',headers:{'content-type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(!d.ok)throw new Error(d.error||'respuesta inválida');
+    v.sheet='ok';
+    const{db,doc,setDoc}=fb();await setDoc(doc(db,'ventasLocal',v.id),{sheet:'ok'},{merge:true});
+    vlRenderHoy();return true;
+  }catch(e){console.error('Sheet ventas',e);logError('venta-sheet',e&&e.message||String(e));return false;}
+  finally{delete _vlEnviando[v.id];}
+}
+function vlReintentarSheet(){
+  if(!vlConfig.sheetUrl)return;
+  Object.values(vlHoyDB).filter(v=>v.sheet!=='ok').forEach(v=>vlEnviarSheet(v));
+}
+// ── PIN de caja (lo maneja el cajero; el PIN de admin también sirve) ──
+let _vlPinCb=null;
+function vlPedirPin(titulo,aceptaAdmin,cb){
+  if(!vlConfig.pinCajaHash&&!aceptaAdmin){showToast('Primero el administrador tiene que crear el PIN de caja','err');return;}
+  _vlPinCb={cb,aceptaAdmin};
+  document.getElementById('vlPinTitulo').textContent=titulo;
+  document.getElementById('vlPinError').style.display='none';
+  const inp=document.getElementById('vlPinInput');inp.value='';
+  document.getElementById('vlPinModal').classList.add('show');
+  inp.focus();setTimeout(()=>{if(document.activeElement!==inp)inp.focus();},120);
+}
+window.vlPinCerrar=function(){document.getElementById('vlPinModal').classList.remove('show');_vlPinCb=null;vlFoco();};
+window.vlPinOk=async function(){
+  const p=document.getElementById('vlPinInput').value.trim(), c=_vlPinCb;if(!c||!p)return;
+  const okCaja=vlConfig.pinCajaHash&&(await vlHashPin(p))===vlConfig.pinCajaHash;
+  if(okCaja||(c.aceptaAdmin&&p===ADMIN_PIN)){document.getElementById('vlPinModal').classList.remove('show');_vlPinCb=null;c.cb();}
+  else{document.getElementById('vlPinError').style.display='block';document.getElementById('vlPinInput').value='';}
+};
+// ── Configuración: vendedores (PIN de caja) y, para el admin, PIN de caja / Sheet / depósito ──
+window.vlAbrirConfig=function(){
+  const abrir=()=>{document.getElementById('vlCajaView').style.display='none';document.getElementById('vlConfigView').style.display='flex';vlRenderConfig();};
+  if(isAdmin)abrir();else vlPedirPin('PIN de caja para editar vendedores',false,abrir);
+};
+window.vlCerrarConfig=function(){document.getElementById('vlConfigView').style.display='none';document.getElementById('vlCajaView').style.display='flex';vlRender();};
+function vlRenderConfig(){
+  const vs=Object.entries(vlConfig.vendedores||{}).sort((a,b)=>(a[1].activo===false)-(b[1].activo===false)||a[1].nombre.localeCompare(b[1].nombre,'es'));
+  document.getElementById('vlCfgVendedores').innerHTML=vs.length?vs.map(([id,v])=>`<div class="vl-item"${v.activo===false?' style="opacity:.5;"':''}>
+    <div style="flex:1;font-weight:700;">${escHtml(v.nombre)}${v.activo===false?' <span style="font-size:.7rem;color:var(--muted);">(desactivado)</span>':''}</div>
+    <button class="btn btn-ghost btn-sm" onclick="vlRenombrar('${id}')">✏️</button>
+    <button class="btn btn-ghost btn-sm" onclick="vlToggleVendedor('${id}')">${v.activo===false?'Activar':'Desactivar'}</button></div>`).join('')
+    :'<div style="font-size:.8rem;color:var(--muted);">Sin vendedores.</div>';
+  const adm=document.getElementById('vlCfgAdmin');adm.style.display=isAdmin?'flex':'none';
+  if(isAdmin){
+    const sel=document.getElementById('vlCfgDep');
+    sel.innerHTML=Object.entries(depositos).map(([id,d])=>`<option value="${id}"${id===vlDepId()?' selected':''}>${escHtml(d.nombre)}</option>`).join('');
+    document.getElementById('vlCfgUrl').value=vlConfig.sheetUrl||'';
+    document.getElementById('vlCfgToken').value=vlConfig.sheetToken||'';
+    document.getElementById('vlCfgPinEstado').textContent=vlConfig.pinCajaHash?'✅ PIN de caja creado':'⚠️ Todavía no hay PIN de caja';
+  }
+}
+window.vlAgregarVendedor=async function(){
+  const inp=document.getElementById('vlCfgNuevo'), n=inp.value.trim().replace(/\s+/g,' ');
+  if(!n){showToast('Escribí el nombre','err');return;}
+  if(Object.values(vlConfig.vendedores).some(v=>v.nombre.toLowerCase()===n.toLowerCase())){showToast('Ya existe un vendedor con ese nombre','err');return;}
+  vlConfig.vendedores['vd_'+Date.now().toString(36)]={nombre:n,activo:true};
+  inp.value='';vlRenderConfig();await fbSaveVentasConfig();showToast('Vendedor agregado','ok');
+};
+window.vlRenombrar=function(id){
+  const v=vlConfig.vendedores[id];if(!v)return;
+  showTextPrompt('Nuevo nombre',v.nombre,async val=>{
+    const n=String(val||'').trim().replace(/\s+/g,' ');if(!n)return;
+    v.nombre=n;vlRenderConfig();await fbSaveVentasConfig(); // las ventas ya registradas conservan el nombre que tenían
+  });
+};
+window.vlToggleVendedor=async function(id){
+  const v=vlConfig.vendedores[id];if(!v)return;
+  v.activo=v.activo===false;if(vlVenta.vendedorId===id)vlVenta.vendedorId=null;
+  vlRenderConfig();await fbSaveVentasConfig();
+};
+window.vlGuardarAdmin=async function(){
+  if(!isAdmin)return;
+  vlConfig.depId=document.getElementById('vlCfgDep').value||null;
+  vlConfig.sheetUrl=document.getElementById('vlCfgUrl').value.trim();
+  vlConfig.sheetToken=document.getElementById('vlCfgToken').value.trim();
+  const pin=document.getElementById('vlCfgPin').value.trim();
+  if(pin){
+    if(!/^\d{4,8}$/.test(pin)){showToast('El PIN de caja tiene que ser de 4 a 8 números','err');return;}
+    if(pin===ADMIN_PIN){showToast('El PIN de caja tiene que ser distinto del de admin','err');return;}
+    vlConfig.pinCajaHash=await vlHashPin(pin);document.getElementById('vlCfgPin').value='';
+  }
+  await fbSaveVentasConfig();vlRenderConfig();showToast('Configuración de ventas guardada','ok');
+  vlReintentarSheet();
+};
+window.vlProbarSheet=async function(){
+  const url=document.getElementById('vlCfgUrl').value.trim();if(!url){showToast('Pegá la URL del Apps Script','err');return;}
+  try{
+    const r=await fetch(url,{method:'POST',headers:{'content-type':'text/plain;charset=utf-8'},body:JSON.stringify({token:document.getElementById('vlCfgToken').value.trim(),prueba:true})});
+    const d=await r.json();showToast(d.ok?'✅ Conexión con el Sheet OK':'⚠️ '+(d.error||'Error'),d.ok?'ok':'err');
+  }catch(e){showToast('⚠️ No responde la URL del Sheet','err');}
+};
+document.getElementById('vlScanInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();vlManScan();}});
+document.getElementById('vlPinInput')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();vlPinOk();}else if(e.key==='Escape')vlPinCerrar();});
 if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.tipo==='abrir-mensajes'&&currentUser)switchTab('mensajes');});
 }
