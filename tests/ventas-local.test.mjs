@@ -85,3 +85,28 @@ test('PIN de caja: el ojito muestra la clave solo mientras se mantiene apretado'
     assert.deepEqual(errores, []);
   } finally { await cerrar(); }
 });
+
+test('Ventas Local: al guardar la configuración se copia al Sheet la lista de vendedores, sin PIN ni clave', async () => {
+  const { page, errores, cerrar } = await abrirApp();
+  try {
+    const r = await page.evaluate(async () => {
+      const envios = [];
+      window._fb = { auth: {}, onAuthStateChanged: () => () => {}, db: {}, doc: (...a) => a.slice(1).join('/'), collection: () => 'c', addDoc: async () => ({}), setDoc: async () => {} };
+      window.fetch = async (url, opt) => { envios.push(opt.body); return { json: async () => ({ ok: true }) }; };
+      currentUser = { email: 'admin@x', uid: 'u1' };
+      depositos = { dep_l: { nombre: 'Depósito Local' } };
+      vlConfig = { depId: 'dep_l', sheetUrl: 'https://script.google.com/x/exec', sheetToken: 'clave-secreta', pinCajaHash: 'hash-del-pin', vendedores: { a: { nombre: 'Juan', activo: true } } };
+      document.getElementById('vlCfgNuevo').value = 'Ana';
+      await vlAgregarVendedor();
+      await new Promise(r => setTimeout(r, 50));
+      const cuerpo = JSON.parse(envios[envios.length - 1]);
+      return { nombres: cuerpo.config.vendedores.map(v => v.nombre), alta: !!cuerpo.config.vendedores.find(v => v.nombre === 'Ana').alta,
+        deposito: cuerpo.config.deposito, sinPin: !JSON.stringify(cuerpo.config).includes('hash-del-pin') && !JSON.stringify(cuerpo.config).includes('clave-secreta') };
+    });
+    assert.deepEqual(r.nombres, ['Ana', 'Juan']);
+    assert.equal(r.alta, true);
+    assert.equal(r.deposito, 'Depósito Local');
+    assert.equal(r.sinPin, true);
+    assert.deepEqual(errores, []);
+  } finally { await cerrar(); }
+});
