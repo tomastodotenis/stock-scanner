@@ -115,6 +115,7 @@
     .vl-item{display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--border);}
     .vl-hoy{display:flex;align-items:center;gap:8px;padding:8px 13px;border-bottom:1px solid var(--border);}
     .vl-hoy.an{opacity:.55;}
+    #vlBtnCerrar:disabled{opacity:.35;cursor:not-allowed;}
     .ojo-clave{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;font-size:1.05rem;padding:8px 11px;}
     .vl-hoy.an .vl-det{text-decoration:line-through;}
     .admin-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;}
@@ -1401,7 +1402,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111704';
+const APP_BUILD = '2026111705';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -7556,7 +7557,7 @@ window.vlCerrarVenta=async function(){
     if(hay-desc>0)stockDB[dep][x.key]=hay-desc;else delete stockDB[dep][x.key];
     return {...x,descontado:desc,sinStock:desc<x.qty};
   });
-  const venta={id,dia:vlDia(now),fecha:now.toLocaleDateString('es-AR'),hora:now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
+  const venta={id,dia:vlDia(now),fecha:now.toLocaleDateString('es-AR'),hora:now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',hour12:false}),
     vendedorId:vlVenta.vendedorId,vendedorNombre:vend.nombre,cajero:getDisplayName(),depId:dep,depNombre:depositos[dep]?.nombre||'',
     items,unidades:items.reduce((s,x)=>s+x.qty,0),estado:'ok',sheet:'pendiente'};
   fbSaveStock(dep);
@@ -7584,7 +7585,7 @@ function vlRenderHoy(){
   box.innerHTML=vs.length?vs.map(v=>{
     const an=v.estado==='anulada';
     const det=(v.items||[]).map(x=>`${x.qty}× ${escHtml(x.nombre)}${x.talle?' ('+escHtml(x.talle)+')':''}${x.sinStock?' ⚠️':''}`).join('<br>');
-    return `<div class="vl-hoy${an?' an':''}"><div style="flex:1;min-width:0;"><div style="font-size:.8rem;"><b>${escHtml(v.hora||'')}</b> · ${escHtml(v.vendedorNombre||'')} <span style="color:var(--muted);">· caja: ${escHtml(v.cajero||'')}</span>
+    return `<div class="vl-hoy${an?' an':''}"><div style="flex:1;min-width:0;"><div style="font-size:.8rem;"><b>${escHtml(v.hora||'')}</b> · Vendedor: <b style="color:var(--accent);">${escHtml(v.vendedorNombre||'')}</b> <span style="color:var(--muted);">· Cajero: ${escHtml(v.cajero||'')}</span>
       ${an?' <b style="color:var(--danger);">ANULADA</b>':''}${v.sheet==='ok'?'':' <span title="Todavía no llegó al Sheet" style="color:#f59e0b;">⏳</span>'}</div>
       <div class="vl-det" style="font-size:.74rem;color:var(--muted);margin-top:2px;">${det}</div></div>
       ${an?'':`<button class="btn btn-ghost btn-sm" onclick="vlAnular('${v.id}')">Anular</button>`}</div>`;
@@ -7595,7 +7596,7 @@ window.vlAnular=function(id){
   vlPedirPin(`Anular venta de ${v.vendedorNombre} (${v.hora})`,true,async()=>{
     const dep=v.depId;if(!stockDB[dep])stockDB[dep]={};
     const secs=sectoresDB[dep]||{}, sm=sectorMapDB[dep]||{};
-    const now=new Date(), hora=now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+    const now=new Date(), hora=now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',hour12:false});
     (v.items||[]).forEach(x=>{
       const vuelve=x.descontado??x.qty;
       if(vuelve>0)stockDB[dep][x.key]=(stockDB[dep][x.key]||0)+vuelve;
