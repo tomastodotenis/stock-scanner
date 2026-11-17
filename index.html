@@ -1404,7 +1404,7 @@
 <script>
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
-const APP_BUILD = '2026111708';
+const APP_BUILD = '2026111709';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -4546,7 +4546,11 @@ window.adminMeliPanel = async function(){
     <button class="btn btn-ghost btn-sm" onclick="meliSyncExistentePreview()" style="justify-content:center;width:100%;margin-top:10px;border:1px solid var(--accent);" ${!conectado?'disabled title="Conectá primero"':''}>📤 3) Sincronizar stock existente con MeLi (vista previa)</button>
     <div id="syncExistenteResultado" style="font-size:.78rem;color:var(--muted);margin-top:8px;"></div>
     <div style="margin-top:14px;">
-      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">SKU sin coincidencia en MeLi</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <div style="flex:1;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);">SKU sin coincidencia en MeLi <span id="meliSinCoincidenciaCount"></span></div>
+        <button class="btn btn-ghost btn-sm" onclick="cargarMeliSinCoincidencia()" title="Solo vuelve a leer la lista, no modifica nada">🔄 Actualizar</button>
+      </div>
+      <input type="text" id="meliSinCoincidenciaBuscar" placeholder="Buscar por nombre, marca, talle o SKU..." oninput="meliSinCoincidenciaFiltrar()" style="width:100%;margin-bottom:6px;">
       <div id="meliSinCoincidenciaList" style="font-size:.75rem;color:var(--muted);">Cargando...</div>
     </div>
   `;
@@ -4625,22 +4629,33 @@ window.descargarComparacionMeli=function(){
   XLSX.writeFile(wb,`Comparacion_MeLi_Odoo_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
+let _meliSinCoinc=[];
+// Solo lee la lista de Firebase (colección meliSinCoincidencia): no modifica nada.
 async function cargarMeliSinCoincidencia(){
   const cont=document.getElementById('meliSinCoincidenciaList');
   if(!cont)return;
+  cont.textContent='Actualizando...';
   try{
     const{db,collection,getDocs}=fb();
     const snap=await getDocs(collection(db,'meliSinCoincidencia'));
-    if(snap.empty){cont.innerHTML='Ninguno por ahora ✅';return;}
-    cont.innerHTML=snap.docs.map(d=>{
-      const x=d.data();
-      return `<div style="padding:5px 0;border-bottom:1px solid var(--border);">
-        <b style="color:var(--text);">${x.nombre||'(sin nombre)'}</b> ${x.talle?'· Talle '+x.talle:''}<br>
-        SKU: <code>${x.sku}</code>
-      </div>`;
-    }).join('');
+    _meliSinCoinc=snap.docs.map(d=>d.data()).sort((x,y)=>String(x.nombre||'').localeCompare(String(y.nombre||''),'es',{numeric:true}));
+    meliSinCoincidenciaFiltrar();
   }catch(e){cont.innerHTML='No se pudo cargar.';}
 }
+window.meliSinCoincidenciaFiltrar=function(){
+  const cont=document.getElementById('meliSinCoincidenciaList');
+  if(!cont)return;
+  const cnt=document.getElementById('meliSinCoincidenciaCount');
+  const q=(document.getElementById('meliSinCoincidenciaBuscar')?.value||'').toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const lista=_meliSinCoinc.filter(x=>{const t=[x.nombre,x.talle,x.sku].join(' ').toLowerCase();return q.every(w=>t.includes(w));});
+  if(cnt)cnt.textContent=q.length?`(${lista.length} de ${_meliSinCoinc.length})`:`(${_meliSinCoinc.length})`;
+  if(!_meliSinCoinc.length){cont.innerHTML='Ninguno por ahora ✅';return;}
+  if(!lista.length){cont.textContent='Ninguno coincide con la búsqueda.';return;}
+  cont.innerHTML=lista.map(x=>`<div style="padding:5px 0;border-bottom:1px solid var(--border);">
+        <b style="color:var(--text);">${_esc(x.nombre||'(sin nombre)')}</b> ${x.talle?'· Talle '+_esc(x.talle):''}<br>
+        SKU: <code>${_esc(x.sku)}</code>
+      </div>`).join('');
+};
 
 function renderMeliTab(){
   adminMeliPanel();
