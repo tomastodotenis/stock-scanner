@@ -205,6 +205,36 @@
     .alert-bajo{background:rgba(239,68,68,.15);color:var(--danger);border:1px solid rgba(239,68,68,.3);}
     .alert-frenado{background:rgba(245,158,11,.15);color:var(--amber-text);border:1px solid rgba(245,158,11,.3);}
     .rcode{color:var(--muted);font-family:monospace;font-size:.68rem;}
+    /* ===== Rediseño etapa 2: Escanear y Stock ===== */
+    .modo-btn{min-height:46px;font-size:.84rem;border-radius:10px;border-width:2px;position:relative;}
+    .modo-btn.active::after{content:"✓";font-weight:800;margin-left:2px;}
+    #page-scanner .card,#page-scanner .cam-section{border-radius:14px;}
+    #manInput{min-height:46px;font-size:1rem;}
+    #scanQty{min-height:46px;width:96px !important;font-size:1.1rem;font-weight:700;}
+    #page-scanner .btn-primary{min-height:46px;padding:0 20px;}
+    .scan-result{border-width:2px;border-radius:14px;}
+    .srh{font-size:.8rem;padding:10px 14px;}
+    .scan-result.found .srh::before{content:"✓ ";font-weight:800;}
+    .scan-result.notfound .srh::before{content:"✕ ";font-weight:800;}
+    .pname{font-size:1.1rem;}
+    .qty-disp{font-size:1.5rem;padding:6px 18px;min-width:80px;}
+    .qty-row span:first-child{font-size:1.3rem !important;}
+    .rqty{min-width:44px;font-size:.95rem;}
+    .rqty::before{content:"✓ ";font-weight:800;}
+    .rqty.zero::before{content:"✕ ";}
+    .alert-badge::before{content:"▲";font-size:.6rem;}
+    .stbl-row{min-height:48px;}
+    @media (min-width:900px){
+      #page-scanner .sw{display:grid;grid-template-columns:minmax(320px,.9fr) 1.1fr;gap:14px 18px;align-items:start;max-width:1280px;margin:0 auto;}
+      #page-scanner .sw>:nth-child(1),#page-scanner .sw>:nth-child(2){grid-column:1;}
+      #page-scanner .sw>:nth-child(3){grid-column:2;grid-row:1 / span 3;}
+      #page-scanner .sw>:nth-child(4){grid-column:1;grid-row:3;}
+      #page-scanner .sw>:nth-child(5){grid-column:2;grid-row:4;}
+      #page-scanner .sw>:nth-child(6){grid-column:1;grid-row:4;}
+      #viewport{max-height:60vh;}
+      .stbl-row:hover{background:var(--surface2);}
+      .rname{font-size:.88rem;}.rsku{font-size:.74rem;}.rsec,.rtalle{font-size:.8rem;}.rcode{font-size:.76rem;}
+    }
     .empty{padding:36px 18px;text-align:center;color:var(--muted);}
     .empty .icon{font-size:1.9rem;margin-bottom:9px;}
     .empty p{font-size:.83rem;line-height:1.5;}
@@ -1435,7 +1465,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111713';
+const APP_BUILD = '2026111714';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
