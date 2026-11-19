@@ -227,6 +227,7 @@
     @media (min-width:900px){
       #page-scanner .sw{width:100%;max-width:760px;margin:0 auto;}
       #viewport{max-height:60vh;}
+      .page:not(#page-mapa):not(#page-scanner)>*{width:100%;max-width:1100px;margin-left:auto;margin-right:auto;box-sizing:border-box;}
       .stbl-row:hover{background:var(--surface2);}
       .rname{font-size:.88rem;}.rsku{font-size:.74rem;}.rsec,.rtalle{font-size:.8rem;}.rcode{font-size:.76rem;}
     }
@@ -1460,7 +1461,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111716';
+const APP_BUILD = '2026111717';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
