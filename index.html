@@ -214,6 +214,8 @@
     .modo-act{display:none;font-size:.68rem;font-weight:800;}
     .modo-btn.active .modo-act{display:block;}
     .modo-btn.active::after{content:none;}
+    .qbtn{width:46px;height:46px;border-radius:12px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:1.5rem;font-weight:700;cursor:pointer;line-height:1;padding:0;}
+    .qbtn:active{background:var(--accent);color:var(--on-accent);}
     .sw-right{display:contents;}
     .um-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
     .um-row:last-child{border-bottom:none;}
@@ -518,7 +520,7 @@
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-top:9px;">
           <label for="scanQty" style="font-size:.8rem;color:var(--muted);">Cantidad para el próximo código</label>
-          <input type="number" id="scanQty" class="inp" inputmode="numeric" min="1" max="9999" step="1" value="1" style="width:78px;text-align:center;" />
+          <button type="button" class="qbtn" onclick="ajustarScanQty(-1)" aria-label="Restar uno">−</button><input type="number" id="scanQty" class="inp" inputmode="numeric" min="1" max="9999" step="1" value="1" style="width:84px;text-align:center;" /><button type="button" class="qbtn" onclick="ajustarScanQty(1)" aria-label="Sumar uno">+</button>
         </div>
         <div style="font-size:.7rem;color:var(--muted);margin-top:5px;">Poné la cantidad, escaneá (cámara, pistola o manual) y se aplica a ese producto. Después vuelve a 1.</div>
       </div>
@@ -1487,7 +1489,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111721';
+const APP_BUILD = '2026111722';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2358,6 +2360,7 @@ window.setModo=function(modo){
   });
 };
 
+window.ajustarScanQty=function(d){const i=document.getElementById('scanQty');const v=Math.max(1,Math.min(9999,(parseInt(i.value,10)||1)+d));i.value=v;i.dispatchEvent(new window.Event('input',{bubbles:true}));};
 window.manScan=function(){const v=document.getElementById('manInput').value.trim();if(v){processCode(v,false);document.getElementById('manInput').value='';}};
 document.getElementById('manInput').addEventListener('keydown',e=>{if(e.key==='Enter')manScan();});
 // Pistola lectora en el buscador del Mapa: al tipear+Enter (como hace cualquier lector físico),
