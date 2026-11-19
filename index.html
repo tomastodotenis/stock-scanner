@@ -232,6 +232,8 @@
       #page-scanner .sw>:nth-child(5){grid-column:2;grid-row:4;}
       #page-scanner .sw>:nth-child(6){grid-column:1;grid-row:4;}
       #viewport{max-height:60vh;}
+      .cam-section::after{content:"📷  Cámara apagada\A Tocá «Activar cámara» para escanear con la cámara";white-space:pre-line;display:flex;align-items:center;justify-content:center;text-align:center;min-height:340px;padding:20px;color:var(--muted);font-size:.9rem;line-height:1.8;background:repeating-linear-gradient(45deg,transparent 0 14px,rgba(128,128,128,.06) 14px 28px);}
+      .cam-section:has(#viewport[style*="block"])::after{display:none;}
       .stbl-row:hover{background:var(--surface2);}
       .rname{font-size:.88rem;}.rsku{font-size:.74rem;}.rsec,.rtalle{font-size:.8rem;}.rcode{font-size:.76rem;}
     }
@@ -1465,7 +1467,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111714';
+const APP_BUILD = '2026111715';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
