@@ -48,8 +48,12 @@
     .login-err{color:var(--danger);font-size:.82rem;text-align:center;display:none;}
     /* HEADER */
     header{background:var(--header-bg);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
-    .logo{background:var(--logo-bg);border-radius:10px;padding:3px 8px;display:flex;align-items:center;}
-    .logo img{height:44px;width:auto;display:block;}
+    /* El logo es también el acceso oculto a admin: sin cursor de mano, sin resaltado al tocar ni al pasar el mouse. */
+    .logo{display:flex;align-items:center;cursor:default;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+    .logo img{height:44px;width:auto;-webkit-user-drag:none;pointer-events:none;}
+    .logo-oscuro{display:none;}
+    :root[data-theme="oscuro"] .logo-claro{display:none;}
+    :root[data-theme="oscuro"] .logo-oscuro{display:inline-block;}
     .hright{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}
     .hstats{display:flex;gap:10px;font-size:.72rem;color:var(--muted);}
     .hstats b{color:var(--accent-text);}
@@ -323,7 +327,7 @@
 
 <div id="loginScreen">
   <div class="login-card">
-    <div style="text-align:center"><img src="img/logo.png" style="height:50px;width:auto;filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 2px #fff);" /></div>
+    <div style="text-align:center"><img class="logo-claro" src="img/logo.png" style="height:50px;width:auto;" alt="" /><img class="logo-oscuro" src="img/logo-oscuro.png" style="height:50px;width:auto;" alt="" /></div>
     <h2>Iniciar sesión</h2>
     <input type="email" id="liEmail" class="inp" placeholder="Email" />
     <input type="password" id="liPass" class="inp" placeholder="Contraseña" />
@@ -334,7 +338,7 @@
 
 <div id="appShell" style="display:none;flex-direction:column;flex:1;">
   <header>
-    <div class="logo" id="logoTap" onclick="handleLogoTap()" style="cursor:pointer;"><img src="img/logo.png" /></div>
+    <div class="logo" id="logoTap" onclick="handleLogoTap()"><img class="logo-claro" src="img/logo.png" alt="" draggable="false" /><img class="logo-oscuro" src="img/logo-oscuro.png" alt="" draggable="false" /></div>
     <div id="adminBadge" class="admin-badge" onclick="salirAdmin()" style="cursor:pointer;" title="Tocar para salir de modo admin">🔴 ADMIN</div>
     <div class="hright">
       <div class="hstats">
@@ -1420,7 +1424,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111710';
+const APP_BUILD = '2026111711';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
