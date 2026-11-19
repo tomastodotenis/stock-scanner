@@ -206,8 +206,24 @@
     .alert-frenado{background:rgba(245,158,11,.15);color:var(--amber-text);border:1px solid rgba(245,158,11,.3);}
     .rcode{color:var(--muted);font-family:monospace;font-size:.68rem;}
     /* ===== Rediseño etapa 2: Escanear y Stock ===== */
+    .tabs{gap:6px;padding:10px 12px;}
+    .tab{border:1px solid var(--border);border-radius:999px;padding:8px 14px;background:var(--surface);color:var(--text);font-size:.78rem;border-bottom-width:1px;min-width:0;}
+    .tab.active{background:var(--accent);color:var(--on-accent);border-color:var(--accent);border-bottom-color:var(--accent);}
+    .modo-btn{flex-direction:column;gap:2px;padding:10px 6px;}
+    .modo-ic{font-size:1.4rem;line-height:1.2;}
+    .modo-act{display:none;font-size:.68rem;font-weight:800;}
+    .modo-btn.active .modo-act{display:block;}
+    .modo-btn.active::after{content:none;}
+    .sw-right{display:contents;}
+    .um-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
+    .um-row:last-child{border-bottom:none;}
+    .um-n{font-weight:600;font-size:.86rem;}
+    .um-m{color:var(--muted);font-size:.74rem;}
+    .um-chip{border-radius:999px;padding:3px 10px;font-weight:800;font-size:.82rem;white-space:nowrap;}
+    .um-in{background:rgba(34,197,94,.16);color:var(--ok-text);}
+    .um-out{background:rgba(239,68,68,.16);color:var(--danger);}
+    @media (min-width:900px){.hstats span{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:4px 11px;}.hstats b{font-size:.95rem;}.hstats{gap:8px;}}
     .modo-btn{min-height:46px;font-size:.84rem;border-radius:10px;border-width:2px;position:relative;}
-    .modo-btn.active::after{content:"✓";font-weight:800;margin-left:2px;}
     #page-scanner .card,#page-scanner .cam-section{border-radius:14px;}
     #manInput{min-height:46px;font-size:1rem;}
     #scanQty{min-height:46px;width:96px !important;font-size:1.1rem;font-weight:700;}
@@ -225,7 +241,10 @@
     .alert-badge::before{content:"▲";font-size:.6rem;}
     .stbl-row{min-height:48px;}
     @media (min-width:900px){
-      #page-scanner .sw{width:100%;max-width:760px;margin:0 auto;}
+      #page-scanner .sw{display:grid;grid-template-columns:minmax(340px,1fr) minmax(340px,1fr);grid-auto-flow:row dense;gap:14px 18px;align-items:start;width:100%;max-width:1180px;margin:0 auto;}
+      #page-scanner .sw>:nth-child(-n+4){grid-column:1;}
+      #page-scanner .sw>.sw-right{display:flex;flex-direction:column;gap:14px;grid-column:2;grid-row:1 / span 4;}
+      #page-scanner .sw>:nth-child(6){grid-column:1 / -1;grid-row:5;}
       #viewport{max-height:60vh;}
       .page:not(#page-mapa):not(#page-scanner)>*{width:100%;max-width:1100px;margin-left:auto;margin-right:auto;box-sizing:border-box;}
       .stbl-row:hover{background:var(--surface2);}
@@ -459,9 +478,9 @@
       <div class="card" style="padding:11px 13px;">
         <div class="slabel" style="margin-bottom:8px;">Modo de operación</div>
         <div style="display:flex;gap:6px;">
-          <button class="modo-btn active" id="btnModoEntrada" onclick="setModo('entrada')" style="flex:1;justify-content:center;">📥 Entrada</button>
-          <button class="modo-btn" id="btnModoConsulta" onclick="setModo('consulta')" style="flex:1;justify-content:center;">🔍 Consulta</button>
-          <button class="modo-btn" id="btnModoSalida" onclick="setModo('salida')" style="flex:1;justify-content:center;">📤 Salida</button>
+          <button class="modo-btn active" id="btnModoEntrada" onclick="setModo('entrada')" style="flex:1;justify-content:center;"><span class="modo-ic">📥</span><span>Entrada</span><span class="modo-act">Activo</span></button>
+          <button class="modo-btn" id="btnModoConsulta" onclick="setModo('consulta')" style="flex:1;justify-content:center;"><span class="modo-ic">🔍</span><span>Consulta</span><span class="modo-act">Activo</span></button>
+          <button class="modo-btn" id="btnModoSalida" onclick="setModo('salida')" style="flex:1;justify-content:center;"><span class="modo-ic">📤</span><span>Salida</span><span class="modo-act">Activo</span></button>
         </div>
         <div style="font-size:.72rem;color:var(--muted);margin-top:7px;" id="modoDesc">Cada scan suma al stock (1, o la cantidad que pongas)</div>
       </div>
@@ -503,10 +522,17 @@
         </div>
         <div style="font-size:.7rem;color:var(--muted);margin-top:5px;">Poné la cantidad, escaneá (cámara, pistola o manual) y se aplica a ese producto. Después vuelve a 1.</div>
       </div>
+      <div class="sw-right">
       <!-- Result -->
       <div class="scan-result" id="scanResult">
         <div class="srh" id="srh"></div>
         <div class="srb" id="srb"></div>
+      </div>
+      <!-- Últimos movimientos -->
+      <div class="card" id="ultMovsCard">
+        <div class="slabel" style="margin-bottom:6px;">Últimos movimientos</div>
+        <div id="ultMovs"><div class="nfe" style="padding:14px 0;text-align:center;color:var(--muted);font-size:.8rem;">Sin movimientos todavía</div></div>
+      </div>
       </div>
       <!-- Not found list -->
       <div class="nfl">
@@ -1461,7 +1487,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111717';
+const APP_BUILD = '2026111720';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1842,6 +1868,7 @@ function fbListenMov(){
       movimientos=snap.docs.map(d=>({id:d.id,...d.data()}));
       updateAlertTab();
       renderHG();
+      renderUltMovs();
       document.getElementById('hSync').textContent='🟢 En vivo';
     });
   }catch(e){console.error(e);}
@@ -2710,6 +2737,13 @@ function renderStock(){
     </div>`;
   }).join('');
   if(colaSinCatalogo.length)resolverSinCatalogo();
+}
+function renderUltMovs(){
+  const el=document.getElementById('ultMovs');if(!el)return;
+  const l=(movimientos||[]).filter(m=>m.tipo==='entrada'||m.tipo==='salida').slice(0,6);
+  if(!l.length){el.innerHTML='<div style="padding:14px 0;text-align:center;color:var(--muted);font-size:.8rem;">Sin movimientos todavía</div>';return;}
+  const esc=x=>String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  el.innerHTML=l.map(m=>{const ent=m.tipo==='entrada';return`<div class="um-row"><div class="um-t"><div class="um-n">${esc(m.nombre)}${m.talle?' · '+esc(m.talle):''}</div><div class="um-m">${ent?'Entrada':'Salida'} · ${esc(m.fecha||'')} ${esc(m.hora||'')}</div></div><span class="um-chip ${ent?'um-in':'um-out'}">${ent?'▲ +':'▼ −'}${esc(m.qty)}</span></div>`;}).join('');
 }
 function renderMovList(){
   const l=document.getElementById('movList');
