@@ -49,11 +49,9 @@
     /* HEADER */
     header{background:var(--header-bg);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
     /* El logo es también el acceso oculto a admin: sin cursor de mano, sin resaltado al tocar ni al pasar el mouse. */
-    .logo{display:flex;align-items:center;cursor:default;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+    .logo{display:flex;align-items:center;min-width:110px;min-height:44px;cursor:default;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
     .logo img{height:44px;width:auto;-webkit-user-drag:none;pointer-events:none;}
-    .logo-oscuro{display:none;}
-    :root[data-theme="oscuro"] .logo-claro{display:none;}
-    :root[data-theme="oscuro"] .logo-oscuro{display:inline-block;}
+    .logo-recuadro{background:#fff;border-radius:8px;padding:3px 7px;}
     .hright{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}
     .hstats{display:flex;gap:10px;font-size:.72rem;color:var(--muted);}
     .hstats b{color:var(--accent-text);}
@@ -327,7 +325,7 @@
 
 <div id="loginScreen">
   <div class="login-card">
-    <div style="text-align:center"><img class="logo-claro" src="img/logo.png" style="height:50px;width:auto;" alt="" /><img class="logo-oscuro" src="img/logo-oscuro.png" style="height:50px;width:auto;" alt="" /></div>
+    <div style="text-align:center"><img class="logo-img" src="img/logo.png" style="height:50px;width:auto;" alt="" /></div>
     <h2>Iniciar sesión</h2>
     <input type="email" id="liEmail" class="inp" placeholder="Email" />
     <input type="password" id="liPass" class="inp" placeholder="Contraseña" />
@@ -338,7 +336,7 @@
 
 <div id="appShell" style="display:none;flex-direction:column;flex:1;">
   <header>
-    <div class="logo" id="logoTap" onclick="handleLogoTap()"><img class="logo-claro" src="img/logo.png" alt="" draggable="false" /><img class="logo-oscuro" src="img/logo-oscuro.png" alt="" draggable="false" /></div>
+    <div class="logo" id="logoTap" onclick="handleLogoTap()"><img class="logo-img" src="img/logo.png" alt="" draggable="false" /></div>
     <div id="adminBadge" class="admin-badge" onclick="salirAdmin()" style="cursor:pointer;" title="Tocar para salir de modo admin">🔴 ADMIN</div>
     <div class="hright">
       <div class="hstats">
@@ -1413,8 +1411,21 @@
 // ── STATE ──
 // ── VERSIÓN / AUTO-UPDATE (para que apps "agregadas al inicio" no queden con copias viejas) ──
 // ---- Modo claro / oscuro (cada dispositivo guarda el suyo) ----
+// Logo con letras blancas para el modo oscuro (img/logo-oscuro.png). Si el archivo todavía no está subido,
+// se usa el logo normal sobre un recuadro claro para que nunca desaparezca.
+function logoParaTema(t){
+  document.querySelectorAll('.logo-img').forEach(i=>{
+    i.classList.remove('logo-recuadro');
+    i.onerror=null;
+    if(t==='oscuro'){
+      i.onerror=function(){i.onerror=null;i.src='img/logo.png';i.classList.add('logo-recuadro');};
+      i.src='img/logo-oscuro.png?v=13';
+    }else{i.src='img/logo.png';}
+  });
+}
 function aplicarTema(t){
   document.documentElement.setAttribute('data-theme',t);
+  logoParaTema(t);
   const b=document.getElementById('btnTema');if(b)b.textContent=(t==='claro')?'🌙':'☀️';
   const m=document.getElementById('metaTema');if(m)m.setAttribute('content',t==='claro'?'#ffffff':'#0c1622');
 }
@@ -1424,7 +1435,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111711';
+const APP_BUILD = '2026111713';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
