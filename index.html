@@ -1487,7 +1487,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111720';
+const APP_BUILD = '2026111721';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2743,7 +2743,7 @@ function renderUltMovs(){
   const l=(movimientos||[]).filter(m=>m.tipo==='entrada'||m.tipo==='salida').slice(0,6);
   if(!l.length){el.innerHTML='<div style="padding:14px 0;text-align:center;color:var(--muted);font-size:.8rem;">Sin movimientos todavía</div>';return;}
   const esc=x=>String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  el.innerHTML=l.map(m=>{const ent=m.tipo==='entrada';return`<div class="um-row"><div class="um-t"><div class="um-n">${esc(m.nombre)}${m.talle?' · '+esc(m.talle):''}</div><div class="um-m">${ent?'Entrada':'Salida'} · ${esc(m.fecha||'')} ${esc(m.hora||'')}</div></div><span class="um-chip ${ent?'um-in':'um-out'}">${ent?'▲ +':'▼ −'}${esc(m.qty)}</span></div>`;}).join('');
+  el.innerHTML=l.map(m=>{const ent=m.tipo==='entrada';return`<div class="um-row"><div class="um-t"><div class="um-n">${esc(m.nombre)}${m.talle?' · '+esc(m.talle):''}</div><div class="um-m">${ent?'Entrada':'Salida'}${m.motivo?' · '+esc(m.motivo):''} · 👤 ${esc(m.usuario||'—')}${m.depositoNombre&&m.depositoNombre!=='—'?' · '+esc(m.depositoNombre):''} · ${esc(m.fecha||'')} ${esc(m.hora||'')}</div></div><span class="um-chip ${ent?'um-in':'um-out'}">${ent?'▲ +':'▼ −'}${esc(m.qty)}</span></div>`;}).join('');
 }
 function renderMovList(){
   const l=document.getElementById('movList');
