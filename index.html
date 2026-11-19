@@ -968,6 +968,7 @@
   <!-- ALERTAS PAGE -->
   <div class="page" id="page-alertas">
     <div style="padding:13px 15px;display:flex;flex-direction:column;gap:12px;">
+      <div style="display:flex;align-items:center;gap:8px;"><label for="alertDepSel" class="slabel" style="margin:0;">Depósito</label><select id="alertDepSel" class="inp" style="max-width:220px;" onchange="alertasDeposito(this.value)"><option value="">Todos</option></select></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <button type="button" class="card alert-filtro active" id="alertFiltroBajo" onclick="alertasFiltro('bajo')" style="padding:12px;text-align:center;cursor:pointer;font:inherit;color:inherit;">
           <div style="font-size:1.6rem;font-weight:700;color:var(--danger);" id="alertStockBajoCnt">0</div>
@@ -1491,7 +1492,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111723';
+const APP_BUILD = '2026111724';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -5158,7 +5159,8 @@ const _origGetUmbral=window.getUmbralForProduct||null;
 function getUmbralForProduct(can){
   return alertasConfig.excepciones?.[can]??alertasConfig.umbralGlobal;
 }
-let _alertasSel='bajo',_alertasUltimo={bajo:[],frenado:[]};
+let _alertasSel='bajo',_alertasDep='',_alertasUltimo={bajo:[],frenado:[]};
+window.alertasDeposito=function(v){_alertasDep=v||'';renderAlertas();};
 window.alertasFiltro=function(f){
   _alertasSel=f==='frenado'?'frenado':'bajo';
   const a=document.getElementById('alertBoxBajo'),b=document.getElementById('alertBoxFrenado');
@@ -5178,7 +5180,8 @@ window.imprimirAlertas=function(f){
   const bajo=f!=='frenado';
   const l=_alertasUltimo[bajo?'bajo':'frenado']||[];
   const titulo=bajo?'⚠️ Stock bajo':'🧊 Productos frenados';
-  const sub=bajo?`Umbral: menos de ${alertasConfig.umbralGlobal} unidades`:`Sin movimiento hace ${alertasConfig.diasFrenado} días o más`;
+  const depTxt=_alertasDep?(depositos[_alertasDep]?.nombre||_alertasDep):'Todos los depósitos';
+  const sub=depTxt+' · '+(bajo?`Umbral: menos de ${alertasConfig.umbralGlobal} unidades`:`Sin movimiento hace ${alertasConfig.diasFrenado} días o más`);
   const now=new Date().toLocaleString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   const filas=l.map((r,i)=>`<tr><td class="n">${i+1}</td><td>${esc(r.entry.name)}</td><td>${esc(r.entry.talle||'—')}</td><td>${esc(r.depN)}</td><td>${esc(r.secN)}</td><td class="q">${r.qty}</td><td class="q">${bajo?'&lt;'+r.umbral:(r.dias>=999?'Sin reg.':r.dias+' d')}</td></tr>`).join('');
   const win=window.open('','_blank');
@@ -5200,9 +5203,16 @@ function renderAlertas(){
   if(u)u.value=alertasConfig.umbralGlobal;if(d)d.value=alertasConfig.diasFrenado;
   document.getElementById('alertUmbralLabel').textContent=`Umbral: <${alertasConfig.umbralGlobal} unidades`;
   document.getElementById('alertDiasLabel').textContent=`Sin movimiento +${alertasConfig.diasFrenado} días`;
+  const sel=document.getElementById('alertDepSel');
+  if(sel){
+    if(!depositos[_alertasDep])_alertasDep='';
+    sel.innerHTML='<option value="">Todos</option>'+Object.keys(depositos).map(id=>`<option value="${id}">${(depositos[id]&&depositos[id].nombre||id).replace(/[<>&"]/g,'')}</option>`).join('');
+    sel.value=_alertasDep;
+  }
   const now=new Date();const seen=new Set();const stockBajo=[],frenados=[];
   // Check all depots
   Object.keys(depositos).forEach(depId=>{
+    if(_alertasDep&&depId!==_alertasDep)return;
     const depStock=stockDB[depId]||{};
     const depSecs=sectoresDB[depId]||{};
     const depSM=sectorMapDB[depId]||{};
