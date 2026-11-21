@@ -244,6 +244,19 @@
     .rqty.zero::before{content:"✕ ";}
     .alert-badge::before{content:"▲";font-size:.6rem;}
     .stbl-row{min-height:48px;}
+    .stk{grid-template-columns:minmax(0,1fr) 128px 56px 84px 124px;column-gap:8px;}
+    .stk>*{min-width:0;}
+    .stk .rsec{white-space:nowrap;}
+    .stk .rcode{overflow:hidden;text-overflow:ellipsis;}
+    .stk>:nth-child(n+2){text-align:center;}
+    .stk .rqty,.stk .rtalle{justify-self:center;}
+    @media (max-width:640px){
+      .stbl-hdr.stk{display:none;}
+      .stbl-row.stk{grid-template-columns:auto auto auto minmax(0,1fr);row-gap:6px;align-items:center;}
+      .stbl-row.stk>:nth-child(1){grid-column:1 / -1;}
+      .stbl-row.stk>:nth-child(n+2){text-align:left;justify-self:start;}
+      .stbl-row.stk>:nth-child(5){justify-self:end;text-align:right;}
+    }
     @media (min-width:900px){
       #page-scanner .sw{display:grid;grid-template-columns:minmax(340px,1fr) minmax(340px,1fr);grid-auto-flow:row dense;gap:14px 18px;align-items:start;width:100%;max-width:1180px;margin:0 auto;}
       #page-scanner .sw>:nth-child(-n+4){grid-column:1;}
@@ -708,7 +721,7 @@
         <div class="stab" data-sub="ventas" id="stabVentas" onclick="switchSub('ventas')">🛒 Ventas MeLi</div>
       </div>
       <div id="sub-saldo" class="stbl">
-        <div class="stbl-hdr"><span>Producto</span><span>Sector</span><span>Talle</span><span>Cant.</span><span>Código</span></div>
+        <div class="stbl-hdr stk"><span>Producto</span><span>Sector</span><span>Talle</span><span>Cant.</span><span>Código</span></div>
         <div id="stockList"><div class="empty"><div class="icon">📭</div><p>Sin datos.</p></div></div>
       </div>
       <div id="sub-ventas" style="display:none;" class="stbl">
@@ -1492,7 +1505,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111724';
+const APP_BUILD = '2026111725';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2729,7 +2742,7 @@ function renderStock(){
     }).filter(Boolean).join(' · '):'';
     const promoBadge=getPromoBadge(entry.name);
     const alertBadges=getAlertBadges(key,entry.name,qty);
-    return`<div class="stbl-row" style="grid-template-columns:1fr 50px 50px auto auto;">
+    return`<div class="stbl-row stk">
       <div>
         <div class="rname">${entry.name}</div>
         <div class="rsku">${entry.sku||''}${depDetail?' · '+depDetail:''}</div>
