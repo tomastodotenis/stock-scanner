@@ -1205,6 +1205,7 @@
         </select>
       </div>
       <div style="display:none;gap:8px;" id="planillaActions">
+        <button class="btn btn-primary btn-sm" onclick="imprimirPlanilla()" style="flex:1;justify-content:center;">🖨️ Imprimir</button>
         <button class="btn btn-ghost btn-sm" onclick="exportPlanillaXLSX()" style="flex:1;justify-content:center;">⬇️ Excel</button>
         <button class="btn btn-ghost btn-sm" onclick="exportPlanillaCSV()" style="flex:1;justify-content:center;">⬇️ CSV (Google Sheets)</button>
         <button class="btn btn-danger btn-sm" onclick="clearPlanilla()" style="flex:1;justify-content:center;">🗑 Limpiar</button>
@@ -1505,7 +1506,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111725';
+const APP_BUILD = '2026111727';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -6489,6 +6490,30 @@ function renderPlanilla(){
     </div>`).join('');
 }
 
+window.imprimirPlanilla=function(){
+  const data=planillaFiltradas();
+  if(!data.length){showToast('No hay filas para imprimir','err');return;}
+  const esc=x=>String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const now=new Date().toLocaleString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const dep=document.getElementById('planillaDepFilter');
+  const depTxt=dep&&dep.value?dep.options[dep.selectedIndex].text:'Todos los depósitos';
+  const q=(document.getElementById('planillaSearch')?.value||'').trim();
+  const uni=data.reduce((a,r)=>a+(Number(r.unidades)||0),0);
+  const filas=data.map(r=>`<tr class="${r.checked?'ok':''}"><td class="c">${r.checked?'☑':'☐'}</td><td class="q">${esc(r.unidades)}</td><td class="m">${esc(r.sku)}</td><td>${esc(r.titulo||'—')}${r.variante?`<div class="v">${esc(typeof r.variante==='string'?r.variante:JSON.stringify(r.variante))}</div>`:''}</td><td>${esc(r.deposito)}</td><td class="s">${esc(r.sector)}</td></tr>`).join('');
+  const win=window.open('','_blank');
+  if(!win){showToast('El navegador bloqueó la ventana de impresión','err');return;}
+  win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Planilla de búsqueda — Todo Tenis & Running</title><style>
+  body{font-family:Arial,sans-serif;margin:20px;color:#111;}h1{font-size:19px;margin:0 0 3px;}.sub{font-size:12px;color:#555;margin-bottom:12px;}
+  table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#111;color:#fff;padding:6px 7px;text-align:left;}td{padding:6px 7px;border-bottom:1px solid #ccc;vertical-align:top;}
+  .c{width:24px;text-align:center;font-size:16px;}.q{width:40px;text-align:center;font-weight:700;font-size:14px;}.m{font-family:monospace;font-size:11px;width:110px;}.s{font-weight:700;width:120px;}.v{font-size:11px;color:#555;}
+  tr.ok td{color:#999;text-decoration:line-through;}.footer{margin-top:12px;font-size:11px;color:#888;}
+  @media print{body{margin:8px;}thead{display:table-header-group;}tr{page-break-inside:avoid;}}</style></head><body>
+  <h1>Planilla de búsqueda — Todo Tenis & Running</h1>
+  <div class="sub">${esc(depTxt)}${q?' · Búsqueda: «'+esc(q)+'»':''} · ${data.length} filas · ${uni} unidades · ${now}</div>
+  <table><thead><tr><th></th><th>Un.</th><th>SKU</th><th>Producto</th><th>Depósito</th><th>Sector</th></tr></thead><tbody>${filas}</tbody></table>
+  <div class="footer">Stock Scanner</div></body></html>`);
+  win.document.close();win.focus();setTimeout(()=>win.print(),500);
+};
 function exportPlanillaXLSX(){
   const data=planillaFiltradas();
   if(!data.length)return;
