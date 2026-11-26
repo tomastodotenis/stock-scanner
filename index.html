@@ -1506,7 +1506,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111728';
+const APP_BUILD = '2026111729';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -7191,16 +7191,22 @@ function solIndice(){
   solIdx={ref:catalog,lista};
   return lista;
 }
+// El catálogo trae entradas viejas sin SKU ni código de barras (y con talle mal leído, ej. "8" del modelo "Bondi 8").
+// En Solicitudes solo se ofrecen variantes reales: con SKU o código, o que tengan stock en algún depósito.
+function solVarsValidas(vars){
+  return vars.filter(v=>v.sku||v.barcode||Object.keys(depositos).some(d=>((stockDB[d]||{})[v.canonical]||0)>0));
+}
 window.solBuscarModelos=function(){
   const q=solNorm(document.getElementById('solBuscar').value).split(/\s+/).filter(Boolean);
   const box=document.getElementById('solResultados');
   if(!q.length||q.join('').length<3){box.innerHTML='';return;}
-  const res=solIndice().filter(m=>q.every(w=>m.txt.includes(w))).slice(0,20);
+  const res=solIndice().filter(m=>q.every(w=>m.txt.includes(w))).map(m=>({...m,vars:solVarsValidas(m.vars)})).filter(m=>m.vars.length).slice(0,20);
   box.innerHTML=res.length?res.map(m=>`<div class="tprod-item" style="cursor:pointer;" onclick="solElegirModelo(${JSON.stringify(m.name).replace(/"/g,'&quot;')})"><div style="font-weight:600;">${_esc(m.name)}</div><div style="font-size:.7rem;color:var(--muted);">${m.vars.length} talle(s)</div></div>`).join(''):'<div style="padding:8px;color:var(--muted);font-size:.8rem;">Sin resultados.</div>';
 };
 window.solElegirModelo=function(name,resaltarKey){
   const m=solIndice().find(x=>x.name===name);if(!m)return;
-  const vars=m.vars.slice().sort((a,b)=>String(a.talle||'').localeCompare(String(b.talle||''),undefined,{numeric:true}));
+  const vars=solVarsValidas(m.vars).sort((a,b)=>String(a.talle||'').localeCompare(String(b.talle||''),undefined,{numeric:true}));
+  if(!vars.length){showToast('Ese modelo no tiene variantes cargadas con SKU','err');return;}
   solModeloActual={name,vars,resaltar:resaltarKey||null};
   document.getElementById('solResultados').innerHTML='';
   solRenderTabla();
@@ -7214,10 +7220,19 @@ function solRenderTabla(){
     const hay=(stockDB[prov]||{})[v.canonical]||0;
     const ya=(solDraft.items.find(x=>x.key===v.canonical)||{}).pedido||0;
     return `<div class="tprod-item"><div><div style="font-weight:600;">Talle ${_esc(v.talle||'—')}${m.resaltar===v.canonical?' ⬅️':''}</div><div style="font-size:.7rem;color:var(--muted);">Hay en ${_esc(solNombreDep(prov))}: ${hay}${ya?' · ya pedido: '+ya:''}</div></div>
-      <input type="number" class="inp solQty" data-i="${i}" min="0" max="9999" inputmode="numeric" placeholder="0" value="${m.resaltar===v.canonical?1:''}" style="width:72px;text-align:center;" /></div>`;
+      <div style="display:flex;align-items:center;gap:6px;"><button type="button" class="qbtn" style="width:40px;height:40px;" onclick="solQtyAdj(${i},-1)" aria-label="Restar uno">−</button><input type="number" class="inp solQty" data-i="${i}" min="0" max="9999" inputmode="numeric" placeholder="0" value="${m.resaltar===v.canonical?1:''}" style="width:64px;text-align:center;" /><button type="button" class="qbtn" style="width:40px;height:40px;" onclick="solQtyAdj(${i},1)" aria-label="Sumar uno">+</button></div></div>`;
   }).join('')+`</div>
   <button class="btn btn-primary btn-sm" style="margin-top:7px;width:100%;justify-content:center;" onclick="solAgregarTabla()">➕ Agregar al pedido</button>`;
 }
+window.solQtyAdj=function(i,d){
+  const inp=document.querySelector('#solTabla .solQty[data-i="'+i+'"]');if(!inp)return;
+  inp.value=Math.max(0,Math.min(9999,(parseInt(inp.value,10)||0)+d));
+};
+window.solItemAdj=function(i,d){
+  const it=solDraft.items[i];if(!it)return;
+  it.pedido=Math.max(1,Math.min(9999,(it.pedido||1)+d));
+  solRenderItems();
+};
 window.solAgregarTabla=function(){
   const m=solModeloActual;if(!m)return;
   let n=0;
@@ -7249,7 +7264,7 @@ function solRenderItems(){
   if(!solDraft.items.length){box.innerHTML='<div style="padding:9px;text-align:center;color:var(--muted);font-size:.8rem;">Todavía no agregaste nada.</div>';return;}
   const total=solUnidades(solDraft.items,'pedido');
   box.innerHTML='<div class="tprod">'+solDraft.items.map((it,i)=>`<div class="tprod-item"><div><div style="font-weight:600;">${_esc(it.nombre)} · ${_esc(it.talle||'—')}</div><div style="font-size:.7rem;color:var(--muted);">${_esc(it.sku)}</div></div>
-    <div style="display:flex;align-items:center;gap:8px;"><div style="font-weight:700;color:var(--accent-text);">×${it.pedido}</div><button class="btn btn-ghost btn-sm" style="padding:2px 8px;" onclick="solQuitar(${i})">✕</button></div></div>`).join('')+`</div><div style="font-size:.76rem;color:var(--muted);margin-top:6px;">Total: <b style="color:var(--text);">${total} unidades</b></div>`;
+    <div style="display:flex;align-items:center;gap:8px;"><button type="button" class="qbtn" style="width:36px;height:36px;font-size:1.3rem;" onclick="solItemAdj(${i},-1)" aria-label="Restar uno">−</button><div style="font-weight:700;color:var(--accent-text);min-width:34px;text-align:center;">×${it.pedido}</div><button type="button" class="qbtn" style="width:36px;height:36px;font-size:1.3rem;" onclick="solItemAdj(${i},1)" aria-label="Sumar uno">+</button><button class="btn btn-ghost btn-sm" style="padding:2px 8px;" onclick="solQuitar(${i})">✕</button></div></div>`).join('')+`</div><div style="font-size:.76rem;color:var(--muted);margin-top:6px;">Total: <b style="color:var(--text);">${total} unidades</b></div>`;
 }
 window.solQuitar=function(i){solDraft.items.splice(i,1);solRenderItems();if(solModeloActual)solRenderTabla();};
 window.solEnviarSolicitud=async function(){
