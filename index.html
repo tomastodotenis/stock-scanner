@@ -1506,7 +1506,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111727';
+const APP_BUILD = '2026111728';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -1565,8 +1565,9 @@ let auditoria={activa:false,id:null,iniciadoPor:'',fechaInicio:'',snapshot:{},co
 let unsubAuditoria=null, auditFilterEstado='';
 let filterSec='', filterDep='', searchQuery='', cameraActive=false;
 let filterPas=''; // pasillo escaneado (ej. "1H-PA"): muestra los sectores cuyo nombre empieza con ese código
-let lastScan=null, lastScanTime=0;
+let lastScan=null, lastScanTime=0, lastScanSeen=0;
 const CAM_DB=400;
+const CAM_SOLTAR=1500; // el mismo código solo vuelve a contar si la cámara dejó de verlo por 1,5 s
 let currentUser=null, unsubMov=null;
 let traslado={responsable:null,origenDep:null,origenSec:null,destinoDep:null,destinoSec:null,productos:[]};
 let alertasConfig={umbralGlobal:3,diasFrenado:30,excepciones:{}};
@@ -2234,8 +2235,8 @@ async function processCode(rawCode,fromCam){
   const code=normCodigoEscaneado(rawCode);if(!code)return;
   if(fromCam){
     const now=Date.now();
-    if(code===lastScan&&now-lastScanTime<CAM_DB)return;
-    lastScan=code;lastScanTime=now;
+    if(code===lastScan&&now-lastScanSeen<CAM_SOLTAR){lastScanSeen=now;return;} // sigue enfocando el mismo código: no se cuenta de nuevo
+    lastScan=code;lastScanTime=now;lastScanSeen=now;
   }
   // Sector code?
   const sec=Object.values(getSectores()).find(s=>s.codigo===code);
