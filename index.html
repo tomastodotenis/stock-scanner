@@ -215,6 +215,8 @@
     .modo-btn.active .modo-act{display:block;}
     .modo-btn.active::after{content:none;}
     .qbtn{width:46px;height:46px;border-radius:12px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:1.5rem;font-weight:700;cursor:pointer;line-height:1;padding:0;}
+    input[type=number]{-moz-appearance:textfield;appearance:textfield;}
+    input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;display:none;}
     .qbtn:active{background:var(--accent);color:var(--on-accent);}
     .alert-filtro{border:2px solid var(--border);background:var(--surface);}
     .alert-filtro.active{border-color:var(--accent-line);background:var(--surface2);box-shadow:0 0 0 2px var(--accent-line) inset;}
@@ -1506,7 +1508,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111729';
+const APP_BUILD = '2026111730';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
