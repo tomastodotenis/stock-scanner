@@ -8,7 +8,7 @@ const html = readFileSync(resolve(raiz, 'index.html'), 'utf8');
 
 test('index.html se mantiene liviano (sin imágenes incrustadas)', () => {
   const kb = statSync(resolve(raiz, 'index.html')).size / 1024;
-  assert.ok(kb < 450, `index.html pesa ${kb.toFixed(0)} KB (límite 450 KB). ¿Se incrustó una imagen en base64?`);
+  assert.ok(kb < 490, `index.html pesa ${kb.toFixed(0)} KB (límite 490 KB). ¿Se incrustó una imagen en base64?`);
   assert.equal(/data:image\/[a-z]+;base64,[A-Za-z0-9+/=]{2000,}/.test(html), false, 'hay una imagen grande en base64 dentro del código');
 });
 

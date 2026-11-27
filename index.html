@@ -438,6 +438,7 @@
     <div class="tab" data-tab="alertas" id="tabAlertas" style="display:none;">⚙️ Config. Alertas</div>
     <div class="tab" data-tab="auditoria" id="tabAuditoria" style="display:none;">🧮 Auditoría</div>
     <div class="tab" data-tab="meli" id="tabMeli" style="display:none;">🔗 MeLi Sync</div>
+    <div class="tab" data-tab="deposito" id="tabDeposito" style="display:none;">📦 Depósito</div>
   </div>
 
   <!-- IMPORT -->
@@ -1327,6 +1328,10 @@
     </div>
   </div>
 
+  <div class="page" id="page-deposito">
+    <div style="padding:13px 15px;display:flex;flex-direction:column;gap:11px;" id="depContent"></div>
+  </div>
+
 <!-- DEPOSITOS MODAL -->
 <div class="admin-modal" id="depModal">
   <div class="admin-card" style="max-width:380px;">
@@ -1508,7 +1513,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111731';
+const APP_BUILD = '2026111732';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2099,6 +2104,257 @@ function stopPresence(){
 }
 window.addEventListener('beforeunload',()=>{ navigator.sendBeacon; /* best-effort, ver nota abajo */ });
 
+// ── DEPÓSITO (modo prueba): alta de productos + ingreso de mercadería, solo admin ──
+// Todo lo que se carga acá queda en config/depositoPrueba. NO toca stock, catálogo, movimientos ni MeLi.
+const DEP_BARCODE_BASE=59425; // último correlativo interno usado (se guarda con 13 dígitos y ceros a la izquierda)
+let depDatos=null, depDatosCargando=false, depPruebaCargada=false;
+let depPrueba={ingresos:[],proxBarcode:DEP_BARCODE_BASE};
+let depForm={};
+function depFormNuevo(){return {cat:'',tipoNom:'',marca:'',codMarca:'',genero:'',modelo:'',colorNom:'',color:'',cod:'',matp:'',suela:'',inter:'',origen:'',disc:'',talles:{},depId:'',sector:''};}
+depForm=depFormNuevo();
+function depLimpiar(s){return String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,'');}
+function depCodigoMarca(m){
+  if(!m)return '';
+  const d=depDatos&&depDatos.marcas;
+  if(d&&d[m])return d[m];
+  if(d){const k=Object.keys(d).find(x=>x.toLowerCase()===String(m).toLowerCase());if(k)return d[k];}
+  return depLimpiar(m).slice(0,3);
+}
+function depSkuDe(codMarca,cod,talle){return depLimpiar(codMarca)+depLimpiar(cod)+depLimpiar(talle);}
+function depBarcodeInterno(n){return String(n).padStart(13,'0');}
+function depTipoDeCat(cat){
+  const ult=String(cat||'').split(' / ').pop().trim();
+  if(!ult)return '';
+  const p=ult.split(/ y | - /)[0].trim();
+  return /ss$/i.test(p)||!/s$/i.test(p)?p:p.slice(0,-1);
+}
+function depNombreDe(f){return [f.tipoNom,f.marca,f.genero,f.modelo,f.colorNom].map(x=>String(x||'').trim()).filter(Boolean).join(' ').replace(/\s+/g,' ');}
+function depTodosLosCodigos(){
+  const s=new Set();
+  (depPrueba.ingresos||[]).forEach(i=>(i.variantes||[]).forEach(v=>{if(v.sku)s.add(v.sku);if(v.barcode)s.add(v.barcode);}));
+  return s;
+}
+function depDuplicado(sku,barcode){
+  const prueba=depTodosLosCodigos();
+  return {
+    sku:!!(sku&&(catalog[sku]||prueba.has(sku))),
+    barcode:!!(barcode&&(catalog[barcode]||prueba.has(barcode)))
+  };
+}
+// Arma las variantes (una por talle) con SKU y código de barras. Los códigos internos son correlativos desde proxBarcode.
+function depArmarVariantes(f,proxBarcode){
+  let prox=proxBarcode;
+  const talles=Object.keys(f.talles);
+  const orden=(depDatos&&depDatos.talle)||[];
+  talles.sort((a,b)=>{const ia=orden.indexOf(a),ib=orden.indexOf(b);return (ia<0?9999:ia)-(ib<0?9999:ib)||a.localeCompare(b);});
+  const out=talles.map(t=>{
+    const x=f.talles[t]||{};
+    const manual=String(x.barcode||'').trim();
+    let bc=manual,interno=false;
+    if(!bc){prox++;bc=depBarcodeInterno(prox);interno=true;}
+    return {talle:t,qty:Math.max(0,parseInt(x.qty,10)||0),sku:depSkuDe(f.codMarca,f.cod,t),barcode:bc,interno};
+  });
+  return {variantes:out,proxBarcode:prox};
+}
+function depProblemas(f,vars){
+  const p=[];
+  if(!f.cat)p.push('Falta la categoría');
+  if(!f.marca)p.push('Falta la marca');
+  if(!f.codMarca)p.push('Falta el código de marca (3 letras)');
+  if(!f.cod)p.push('Falta el código de fábrica');
+  if(!String(f.modelo||'').trim())p.push('Falta el modelo');
+  if(!vars.length)p.push('Elegí al menos un talle');
+  const vistos=new Set();
+  vars.forEach(v=>{
+    const d=depDuplicado(v.sku,v.interno?'':v.barcode);
+    if(d.sku)p.push('El SKU '+v.sku+' ya existe');
+    if(d.barcode)p.push('El código de barras '+v.barcode+' ya existe');
+    if(vistos.has(v.sku))p.push('SKU repetido: '+v.sku);
+    if(!v.interno&&vistos.has(v.barcode))p.push('Código de barras repetido: '+v.barcode);
+    vistos.add(v.sku);if(!v.interno)vistos.add(v.barcode);
+  });
+  return [...new Set(p)];
+}
+async function depCargarDatos(){
+  if(depDatos||depDatosCargando)return;
+  depDatosCargando=true;
+  try{
+    const r=await fetch('deposito-datos.json?v='+APP_BUILD);
+    depDatos=await r.json();
+  }catch(e){console.error(e);showToast('No se pudieron cargar las listas de Odoo','err');}
+  depDatosCargando=false;
+  renderDeposito();
+}
+async function depCargarPrueba(){
+  if(depPruebaCargada)return;
+  try{
+    const{db,doc,getDoc}=fb();
+    const s=await getDoc(doc(db,'config','depositoPrueba'));
+    if(s.exists()){const d=s.data();depPrueba={ingresos:Array.isArray(d.ingresos)?d.ingresos:[],proxBarcode:Math.max(DEP_BARCODE_BASE,parseInt(d.proxBarcode,10)||DEP_BARCODE_BASE)};}
+    depPruebaCargada=true;
+  }catch(e){console.error(e);}
+  renderDeposito();
+}
+async function depGuardarPrueba(){
+  const{db,doc,setDoc}=fb();
+  await setDoc(doc(db,'config','depositoPrueba'),{ingresos:depPrueba.ingresos,proxBarcode:depPrueba.proxBarcode,upd:new Date().toISOString(),por:getDisplayName()});
+}
+function depOpts(lista,sel,vacio){
+  return '<option value="">'+vacio+'</option>'+(lista||[]).map(x=>`<option value="${escHtml(x)}"${x===sel?' selected':''}>${escHtml(x)}</option>`).join('');
+}
+// Partes que cambian mientras se escribe: se actualizan sin redibujar todo (así no se pierde el foco ni se cierra el teclado).
+function depTq(t){return String(t).replace(/['"\\<>&]/g,'');}
+function depHtmlFilas(prev){
+  return prev.variantes.map(v=>{
+    const d=depDuplicado(v.sku,v.interno?'':v.barcode), tq=depTq(v.talle);
+    return `<div style="display:grid;grid-template-columns:54px minmax(0,1fr) 112px;gap:6px;align-items:center;padding:7px 0;border-top:1px solid var(--border);">
+      <b>${escHtml(v.talle)}</b>
+      <span style="font-size:.76rem;word-break:break-all;color:${d.sku?'var(--danger)':'var(--text)'};">${escHtml(v.sku)}${d.sku?' ⚠️ ya existe':''}</span>
+      
+      <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;"><button class="qbtn" onclick="depQty('${tq}',-1)">−</button><b style="min-width:24px;text-align:center;">${v.qty}</b><button class="qbtn" onclick="depQty('${tq}',1)">+</button></div>
+      <input class="inp" style="grid-column:1/-1;padding:6px 8px;font-size:.78rem;" placeholder="${escHtml(v.interno?'Código de barras (vacío = interno '+v.barcode+')':'Código de barras')}" value="${escHtml((depForm.talles[v.talle]&&depForm.talles[v.talle].barcode)||'')}" onchange="depTalleCampo('${tq}','barcode',this.value)" />
+    </div>`;}).join('')||'<div style="color:var(--muted);font-size:.8rem;">Todavía no elegiste talles.</div>';
+}
+function depHtmlAccion(probs){
+  const f=depForm, off=probs.length||!f.depId;
+  return (probs.length?`<div style="font-size:.8rem;color:var(--danger);">${probs.map(x=>'• '+escHtml(x)).join('<br>')}</div>`:'')+
+    (!f.depId&&!probs.length?'<div style="font-size:.78rem;color:var(--muted);">Elegí el depósito para poder guardar.</div>':'')+
+    `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-primary" ${off?'disabled style="opacity:.5;"':''} onclick="depGuardar()">💾 Guardar ingreso (prueba)</button><button class="btn btn-ghost" onclick="depReset()">Limpiar formulario</button></div>`;
+}
+function depActualizarLive(){
+  const prev=depArmarVariantes(depForm,depPrueba.proxBarcode), probs=depProblemas(depForm,prev.variantes);
+  const set=(id,h)=>{const e=document.getElementById(id);if(e)e.innerHTML=h;};
+  set('depNombre',escHtml(depNombreDe(depForm))||'—');
+  set('depFilas',depHtmlFilas(prev));
+  set('depAccion',depHtmlAccion(probs));
+}
+function renderDeposito(){
+  const cont=document.getElementById('depContent');if(!cont)return;
+  if(!isAdmin){cont.innerHTML='';return;}
+  if(!depDatos){cont.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);">Cargando listas de Odoo...</div>';depCargarDatos();return;}
+  if(!depPruebaCargada)depCargarPrueba();
+  const f=depForm, D=depDatos, F=(l,inner)=>`<div style="flex:1;min-width:150px;"><div class="slabel" style="margin-bottom:4px;">${l}</div>${inner}</div>`;
+  const sel=(k,lista,vacio)=>`<select class="inp" onchange="depSet('${k}',this.value)">${depOpts(lista,f[k],vacio)}</select>`;
+  const txt=(k,ph,extra)=>`<input class="inp" ${extra||''} value="${escHtml(f[k])}" oninput="depSet('${k}',this.value,true)" placeholder="${ph}" />`;
+  const marcas=Object.keys(D.marcas);
+  const depOptions='<option value="">— Elegí depósito —</option>'+Object.values(depositos).map(d=>`<option value="${d.id}"${f.depId===d.id?' selected':''}>${escHtml(d.nombre)}</option>`).join('');
+  const secs=f.depId?Object.values(sectoresDB[f.depId]||{}).sort((a,b)=>a.nombre.localeCompare(b.nombre)):[];
+  const secOptions='<option value="">— Sin sector —</option>'+secs.map(s=>`<option value="${s.id}"${f.sector===s.id?' selected':''}>${escHtml(s.nombre)}</option>`).join('');
+  const chips=D.talle.map(t=>{const on=!!f.talles[t], tq=depTq(t);return `<span onclick="depTalle('${tq}')" style="cursor:pointer;padding:5px 10px;border-radius:999px;font-size:.78rem;border:1px solid ${on?'var(--accent-line)':'var(--border)'};background:${on?'var(--accent)':'var(--surface2)'};color:${on?'var(--on-accent)':'var(--text)'};font-weight:${on?700:500};">${escHtml(t)}</span>`;}).join('');
+  const ult=(depPrueba.ingresos||[]).slice().reverse().slice(0,15).map(i=>`<div style="padding:8px 0;border-top:1px solid var(--border);font-size:.8rem;">
+      <b>${escHtml(i.nombre)}</b><div style="color:var(--muted);">${i.variantes.length} talle(s) · ${i.variantes.reduce((a,v)=>a+v.qty,0)} u. · ${escHtml(i.depNombre||'')}${i.sectorNombre?' / '+escHtml(i.sectorNombre):''} · 👤 ${escHtml(i.usuario||'')} · ${escHtml((i.fecha||'').slice(0,16).replace('T',' '))}</div></div>`).join('');
+  cont.innerHTML=`
+    <div style="background:rgba(251,191,36,.15);border:1px solid var(--amber-text);color:var(--amber-text);border-radius:10px;padding:10px 12px;font-size:.82rem;font-weight:700;">
+      🧪 MODO PRUEBA — lo que cargues acá NO modifica el stock, el catálogo, el historial ni MeLi.
+      <div style="font-weight:500;margin-top:2px;">Pasar a modo activo todavía no está habilitado: se hace en una próxima versión, cuando lo decidas.</div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;gap:10px;">
+      <div style="font-weight:700;">1 · Datos del producto</div>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;">
+        ${F('Categoría',sel('cat',D.cats,'— Elegí —'))}
+        ${F('Tipo (va en el nombre)',txt('tipoNom','Zapatilla'))}
+        ${F('Marca',txt('marca','Hoka','list="depMarcas"')+`<datalist id="depMarcas">${marcas.map(m=>`<option value="${escHtml(m)}">`).join('')}</datalist>`)}
+        ${F('Código de marca',txt('codMarca','HKA','id="depCodMarca" maxlength="4"'))}
+        ${F('Género',sel('genero',D.genero,'— Elegí —'))}
+        ${F('Modelo',txt('modelo','Bondi 9'))}
+        ${F('Color (va en el nombre)',txt('colorNom','Negra Blanca'))}
+        ${F('Código de fábrica',txt('cod','1162011BWHT'))}
+      </div>
+      <div style="font-size:.8rem;color:var(--muted);">Nombre: <b id="depNombre" style="color:var(--text);">${escHtml(depNombreDe(f))||'—'}</b></div>
+      <details><summary class="slabel" style="cursor:pointer;">Características (opcionales)</summary>
+        <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:8px;">
+          ${F('Color principal',sel('color',D.color,'—'))}
+          ${F('Material principal',sel('matp',D.matp,'—'))}
+          ${F('Material de la suela',sel('suela',D.suela,'—'))}
+          ${F('Material interior',sel('inter',D.inter,'—'))}
+          ${F('Origen',sel('origen',D.origen,'—'))}
+          ${F('Disciplina',sel('disc',D.disc,'—'))}
+        </div>
+      </details>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;gap:8px;">
+      <div style="font-weight:700;">2 · Talles <span style="font-weight:400;color:var(--muted);font-size:.8rem;">(tocá los que llegaron)</span></div>
+      <div id="depChips" style="display:flex;flex-wrap:wrap;gap:6px;max-height:150px;overflow:auto;">${chips}</div>
+      <div style="display:flex;gap:7px;"><input class="inp" id="depTalleExtra" placeholder="Otro talle..." /><button class="btn btn-ghost btn-sm" onclick="depTalleExtra()">Agregar</button></div>
+      <div id="depFilas"></div>
+      <div style="font-size:.75rem;color:var(--muted);">SKU = código de marca + código de fábrica + talle. Si dejás vacío el código de barras, se asigna uno interno correlativo (13 dígitos).</div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;gap:8px;">
+      <div style="font-weight:700;">3 · Dónde queda</div>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;">
+        ${F('Depósito',`<select class="inp" onchange="depSet('depId',this.value);depSet('sector','')">${depOptions}</select>`)}
+        ${F('Sector',`<select class="inp" onchange="depSet('sector',this.value)">${secOptions}</select>`)}
+      </div>
+      <div id="depAccion" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+        <div style="font-weight:700;">Ingresos de prueba (${(depPrueba.ingresos||[]).length})</div>
+        <div style="display:flex;gap:6px;"><button class="btn btn-ghost btn-sm" onclick="depExportar()">⬇️ Descargar CSV</button><button class="btn btn-ghost btn-sm" onclick="depBorrarPrueba()">🗑️ Borrar datos de prueba</button></div>
+      </div>
+      ${ult||'<div style="color:var(--muted);font-size:.8rem;margin-top:6px;">Todavía no hay ingresos de prueba.</div>'}
+    </div>`;
+  depActualizarLive();
+}
+window.depSet=function(k,v,live){
+  depForm[k]=v;
+  if(k==='cat'&&!depForm.tipoNom)depForm.tipoNom=depTipoDeCat(v);
+  if(k==='marca'){const c=depCodigoMarca(v);if(c)depForm.codMarca=c;}
+  if(k==='color'&&!depForm.colorNom)depForm.colorNom=v;
+  if(live){ // al escribir solo se actualizan las partes que dependen del texto
+    if(k==='marca'){const e=document.getElementById('depCodMarca');if(e)e.value=depForm.codMarca;}
+    depActualizarLive();return;
+  }
+  renderDeposito();
+};
+window.depTalle=function(t){if(depForm.talles[t])delete depForm.talles[t];else depForm.talles[t]={qty:1,barcode:''};renderDeposito();};
+window.depTalleExtra=function(){
+  const el=document.getElementById('depTalleExtra');const t=depTq((el&&el.value||'').trim().toUpperCase());
+  if(!t)return;
+  if(!depDatos.talle.includes(t))depDatos.talle.push(t);
+  depForm.talles[t]=depForm.talles[t]||{qty:1,barcode:''};renderDeposito();
+};
+window.depQty=function(t,d){const x=depForm.talles[t];if(!x)return;x.qty=Math.max(0,(parseInt(x.qty,10)||0)+d);depActualizarLive();};
+window.depTalleCampo=function(t,c,v){const x=depForm.talles[t];if(!x)return;x[c]=v.trim();depActualizarLive();};
+window.depReset=function(){depForm=depFormNuevo();renderDeposito();};
+window.depGuardar=async function(){
+  if(!isAdmin){showToast('Solo el administrador puede hacer esto','err');return;}
+  const f=depForm;
+  const prev=depArmarVariantes(f,depPrueba.proxBarcode);
+  if(depProblemas(f,prev.variantes).length||!f.depId){showToast('Revisá los datos antes de guardar','err');return;}
+  const sec=f.sector&&sectoresDB[f.depId]&&sectoresDB[f.depId][f.sector];
+  const ing={
+    id:'p'+Date.now(),fecha:new Date().toISOString(),usuario:getDisplayName(),modo:'prueba',
+    nombre:depNombreDe(f),categoria:f.cat,marca:f.marca,codMarca:f.codMarca,genero:f.genero,modelo:f.modelo,colorNombre:f.colorNom,codFabrica:f.cod,
+    atributos:{color:f.color,materialPrincipal:f.matp,materialSuela:f.suela,materialInterior:f.inter,origen:f.origen,disciplina:f.disc},
+    depId:f.depId,depNombre:(depositos[f.depId]&&depositos[f.depId].nombre)||'',sectorId:f.sector||'',sectorNombre:sec?sec.nombre:'',
+    variantes:prev.variantes.map(v=>({talle:v.talle,qty:v.qty,sku:v.sku,barcode:v.barcode,interno:!!v.interno}))
+  };
+  const copia={ingresos:depPrueba.ingresos.concat([ing]).slice(-150),proxBarcode:prev.proxBarcode};
+  const antes=depPrueba;depPrueba=copia;
+  try{await depGuardarPrueba();showToast('Ingreso de prueba guardado ✅','ok');depForm=depFormNuevo();}
+  catch(e){console.error(e);depPrueba=antes;showToast('No se pudo guardar: '+(e&&e.code||'error'),'err');}
+  renderDeposito();
+};
+window.depBorrarPrueba=async function(){
+  if(!isAdmin)return;
+  if(!confirm('¿Borrar TODOS los ingresos de prueba? No afecta el stock ni el catálogo reales.'))return;
+  const antes=depPrueba;depPrueba={ingresos:[],proxBarcode:DEP_BARCODE_BASE};
+  try{await depGuardarPrueba();showToast('Datos de prueba borrados','ok');}
+  catch(e){console.error(e);depPrueba=antes;showToast('No se pudo borrar','err');}
+  renderDeposito();
+};
+window.depExportar=function(){
+  const filas=[['Fecha','Usuario','Nombre','Categoría','Marca','Género','Talle','SKU','Código de barras','Cantidad','Depósito','Sector']];
+  depPrueba.ingresos.forEach(i=>i.variantes.forEach(v=>filas.push([(i.fecha||'').slice(0,10),i.usuario,i.nombre,i.categoria,i.marca,i.genero,v.talle,v.sku,v.barcode,v.qty,i.depNombre,i.sectorNombre])));
+  if(filas.length<2){showToast('No hay ingresos de prueba','err');return;}
+  const q=v=>`"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  const csv=filas.map((r,n)=>r.map((c,j)=>n&&(j===7||j===8)?'="'+c+'"':q(c)).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download='ingresos_prueba_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+};
+
 // ── TABS ──
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
 // Con la ruedita del mouse también se desplazan las pestañas cuando no entran (pantallas angostas)
@@ -2107,6 +2363,7 @@ window.switchTab=function(name){
   if(name==='empleados'&&!isAdmin){showToast('Solo el administrador puede ver Empleados','err');return;}
   if(name==='auditoria'&&!isAdmin){showToast('Solo el administrador puede ver Auditoría','err');return;}
   if(name==='meli'&&!isAdmin){showToast('Solo el administrador puede ver esto','err');return;}
+  if(name==='deposito'&&!isAdmin){showToast('Solo el administrador puede ver esto','err');return;}
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
   try{ // en celular, que la pestaña elegida quede a la vista dentro de la barra (sin mover la página)
     const ta=document.querySelector('.tab.active'), bar=ta&&ta.parentElement;
@@ -2126,6 +2383,7 @@ window.switchTab=function(name){
   if(name==='planilla')renderPlanilla();
   if(name==='auditoria')renderAuditoria();
   if(name==='meli')renderMeliTab();
+  if(name==='deposito')renderDeposito();
   if(name==='mapa')renderMapa();
   if(name==='mensajes')msgRender();
   if(name==='solicitudes')solRender();
@@ -4578,6 +4836,7 @@ window.pinPress = function(key){
         document.getElementById('tabAlertas').style.display='';
         document.getElementById('tabAuditoria').style.display='flex';
         document.getElementById('tabMeli').style.display='flex';
+        document.getElementById('tabDeposito').style.display='flex';
         const mbe=document.getElementById('mapaBtnEditar');
         if(mbe)mbe.style.display='flex';
         const cb=document.getElementById('cartelesBloque');if(cb)cb.style.display='block';const sbq=document.getElementById('serieBloque');if(sbq)sbq.style.display='block';
@@ -4999,7 +5258,7 @@ window.requireAdmin = function(fn){
 window.salirAdmin = function(){
   isAdmin=false;
   // Hide admin-only tabs immediately
-  ['tabAlertas','tabEmpleados','tabAuditoria','tabMeli'].forEach(id=>{
+  ['tabAlertas','tabEmpleados','tabAuditoria','tabMeli','tabDeposito'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.style.display='none';
   });
@@ -5013,7 +5272,7 @@ window.salirAdmin = function(){
   if(mapaModo==='editar')setMapaModo('ver');
   // If currently on an admin-only tab, redirect to stock
   const active=document.querySelector('.tab.active');
-  if(active&&(active.dataset.tab==='alertas'||active.dataset.tab==='empleados'||active.dataset.tab==='meli')){
+  if(active&&(active.dataset.tab==='alertas'||active.dataset.tab==='empleados'||active.dataset.tab==='meli'||active.dataset.tab==='deposito')){
     switchTab('stock');
   }
   closeAdminPanel();
