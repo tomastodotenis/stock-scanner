@@ -1513,7 +1513,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111732';
+const APP_BUILD = '2026111733';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2491,6 +2491,30 @@ function normCodigoEscaneado(c){
   c=String(c==null?'':c).trim();
   return c.replace(/^(SEC|\d+[HV])\s*['´`‘’¿?]\s*/i,(m,p)=>p.toUpperCase()+'-').replace(/^(\d+[HV]-P[AB])$/i,x=>x.toUpperCase());
 }
+// Si se busca un SKU "base" (sin el talle al final), muestra los talles que existen en vez de decir que no está.
+async function mostrarTallesDeBase(base,re,rh,rb){
+  if(base.length<6)return false;
+  let lista=[];const vistos=new Set();
+  Object.entries(catalog).forEach(([k,e])=>{
+    const sku=String(e.sku||'').toUpperCase();
+    if(sku.length>base.length&&sku.startsWith(base)&&!vistos.has(sku)){vistos.add(sku);lista.push({sku:e.sku,name:e.name,talle:e.talle,canonical:e.canonical});}
+  });
+  if(!lista.length){
+    try{
+      const r=await fetch(`${ODOO_WORKER_URL}/search?q=${encodeURIComponent(base)}`);
+      const d=await r.json();
+      (d.results||[]).forEach(p=>{const sku=String(p.sku||'').toUpperCase();if(sku.length>base.length&&sku.startsWith(base)&&!vistos.has(sku)){vistos.add(sku);lista.push({sku:p.sku,name:p.name,talle:p.talle,canonical:p.barcode||p.sku});}});
+    }catch(e){}
+  }
+  if(!lista.length)return false;
+  const num=t=>{const n=parseFloat(String(t).replace(',','.'));return isNaN(n)?1e9:n;};
+  lista.sort((x,y)=>num(x.talle)-num(y.talle)||String(x.talle).localeCompare(String(y.talle)));
+  re.style.display='block';re.className='scan-result found';
+  rh.textContent='🔎 Ese es un SKU base: elegí el talle';
+  rb.innerHTML=`<div class="pname">${escHtml(lista[0].name)}</div><div class="pmeta" style="margin-bottom:6px;">Escribiste <code>${escHtml(base)}</code>, que no tiene talle. Tocá uno:</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">${lista.map(x=>`<button class="btn btn-ghost btn-sm" onclick="processCode('${String(x.sku).replace(/['"<>&\\]/g,'')}',false)">${escHtml(x.talle||x.sku)} · stock ${getStockVal(x.canonical||x.sku)}</button>`).join('')}</div>`;
+  return true;
+}
 async function processCode(rawCode,fromCam){
   const code=normCodigoEscaneado(rawCode);if(!code)return;
   if(fromCam){
@@ -2522,7 +2546,8 @@ async function processCode(rawCode,fromCam){
     return;
   }
   const re=document.getElementById('scanResult'),rh=document.getElementById('srh'),rb=document.getElementById('srb');
-  let entry=catalog[code];
+  const codeMay=code.toUpperCase(); // los SKU están en mayúsculas: escribir 'ske129202wht5' tiene que encontrar 'SKE129202WHT5'
+  let entry=catalog[code]||catalog[codeMay];
 
   // If not in local catalog, try Odoo
   if(!entry){
@@ -2530,6 +2555,7 @@ async function processCode(rawCode,fromCam){
     re.style.display='block';re.className='scan-result found';
     rb.innerHTML='<div class="pmeta" style="color:var(--muted);">Consultando catálogo...</div>';
     entry=await lookupOdoo(code);
+    if(!entry&&codeMay!==code)entry=await lookupOdoo(codeMay);
   }
 
   if(entry){
@@ -2616,10 +2642,12 @@ async function processCode(rawCode,fromCam){
       </div>`;
     flashBorder(re,col);playBeep(true);vibrateDevice(true);flashScr(!esSalida);
     showToast(`${sig} → ${entry.name}${entry.talle?' ('+entry.talle+')':''}`,esSalida?'err':'ok');
+  }else if((await mostrarTallesDeBase(codeMay,re,rh,rb))){
+    playBeep(true);vibrateDevice(true);
   }else{
     re.style.display='block';re.className='scan-result notfound';
     rh.textContent='⚠️ Código no encontrado';
-    rb.innerHTML=`<div class="pmeta">Código: <code style="color:var(--text)">${code}</code><br>No está en el catálogo.</div>`;
+    rb.innerHTML=`<div class="pmeta">Código: <code style="color:var(--text)">${escHtml(code)}</code><br>No está en el catálogo.</div>`;
     if(!notFoundLog.find(x=>x.code===code)){
       fbAddNoEncontrado(code);
     }

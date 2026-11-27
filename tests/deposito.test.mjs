@@ -63,3 +63,36 @@ test('Depósito: el apartado es solo para admin y no toca stock ni catálogo', a
     assert.deepEqual(errores, []);
   } finally { await cerrar(); }
 });
+
+test('Escanear/Consulta: el SKU escrito en minúsculas encuentra el producto', async () => {
+  const { page, errores, cerrar } = await abrirApp({});
+  try {
+    const r = await page.evaluate(async () => {
+      catalog = { 'SKE129202WHT5': { name: 'Zapatilla Skechers', sku: 'SKE129202WHT5', barcode: '199025534642', talle: '5', canonical: '199025534642' } };
+      depositos = { dep_a: { nombre: 'Soler' } }; stockDB = { dep_a: {} }; depActivo = 'dep_a'; sectorMapDB = {};
+      setModo('consulta');
+      await processCode('ske129202wht5', false);
+      return document.getElementById('srh').textContent;
+    });
+    assert.ok(!/no encontrado/i.test(r), 'encontró el producto: ' + r);
+    assert.deepEqual(errores, []);
+  } finally { await cerrar(); }
+});
+
+test('Escanear/Consulta: un SKU base sin talle muestra los talles disponibles', async () => {
+  const { page, errores, cerrar } = await abrirApp({});
+  try {
+    const r = await page.evaluate(async () => {
+      const mk = (t) => ({ name: 'Zapatilla Skechers', sku: 'SKE129202WHT' + t, barcode: '1990' + t, talle: t, canonical: '1990' + t });
+      catalog = {}; for (const t of ['10', '5', '6']) { const e = mk(t); catalog[e.canonical] = e; catalog[e.sku] = e; }
+      depositos = { dep_a: { nombre: 'Soler' } }; stockDB = { dep_a: { '19905': 3 } }; depActivo = 'dep_a'; sectorMapDB = {};
+      setModo('consulta');
+      await processCode('ske129202wht', false);
+      const botones = [...document.querySelectorAll('#srb button')].map(b => b.textContent.trim());
+      return { head: document.getElementById('srh').textContent, botones };
+    });
+    assert.match(r.head, /SKU base/);
+    assert.deepEqual(r.botones, ['5 · stock 3', '6 · stock 0', '10 · stock 0']);
+    assert.deepEqual(errores, []);
+  } finally { await cerrar(); }
+});
