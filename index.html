@@ -1508,7 +1508,7 @@ window.toggleTema=function(){
   aplicarTema(t);
 };
 aplicarTema(document.documentElement.getAttribute('data-theme')||'oscuro');
-const APP_BUILD = '2026111730';
+const APP_BUILD = '2026111731';
 async function checkForUpdate(){
   try{
     const res = await fetch(location.pathname + '?_v=' + Date.now(), { cache: 'no-store' });
@@ -2665,6 +2665,25 @@ document.getElementById('searchInput').addEventListener('input',e=>{searchQuery=
 const stockSinCatalogoTried=new Set();
 const colaSinCatalogo=[];
 let resolviendoSinCatalogo=false;
+window.descargarSinCatalogo=function(){
+  const rows=[['Depósito','Código','Unidades','Sector']];
+  Object.keys(stockDB).forEach(d=>{
+    const sm=sectorMapDB[d]||{},sc=sectoresDB[d]||{};
+    Object.entries(stockDB[d]||{}).forEach(([k,v])=>{
+      if(catalog[k])return;
+      const sid=sm[k];
+      rows.push([(depositos[d]&&depositos[d].nombre)||d,k,v,sid&&sc[sid]?sc[sid].nombre:'']);
+    });
+  });
+  if(rows.length<2){showToast('No hay productos fuera del catálogo','ok');return;}
+  const q=v=>`"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  // los códigos van como texto (="…") para que Excel no los pase a notación científica ni les saque ceros
+  const csv=rows.map((r,i)=>i?[q(r[0]),'="'+r[1]+'"',r[2],q(r[3])].join(','):r.map(q).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download='productos_fuera_del_catalogo_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+  showToast('Lista descargada ('+(rows.length-1)+' productos)','ok');
+};
 // Busca en Odoo (de a 5) los códigos con stock que no están en el catálogo guardado; al terminar redibuja.
 async function resolverSinCatalogo(){
   if(resolviendoSinCatalogo)return;
@@ -2735,7 +2754,7 @@ function renderStock(){
   controlCuentas(rendered);
   if(!rendered.length){list.innerHTML='<div class="empty"><div class="icon">📭</div><p>Sin productos.</p></div>';return;}
   const sinCatalogoCount=rendered.filter(r=>r.entry._fallback).length;
-  const aviso=sinCatalogoCount?`<div style="margin:8px 0;padding:8px 11px;border-radius:8px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.5);color:var(--amber-text);font-size:.78rem;">${resolviendoSinCatalogo||colaSinCatalogo.length?'🔎 Buscando en Odoo '+sinCatalogoCount+' producto(s) con stock que no están en el catálogo…':'⚠️ '+sinCatalogoCount+' producto(s) con stock no están en el catálogo ni en Odoo (aparecen como “fuera del catálogo”). El stock está registrado y se cuenta igual.'}</div>`:'';
+  const aviso=sinCatalogoCount?`<div style="margin:8px 0;padding:8px 11px;border-radius:8px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.5);color:var(--amber-text);font-size:.78rem;">${resolviendoSinCatalogo||colaSinCatalogo.length?'🔎 Buscando en Odoo '+sinCatalogoCount+' producto(s) con stock que no están en el catálogo…':'⚠️ '+sinCatalogoCount+' producto(s) con stock no están en el catálogo ni en Odoo (aparecen como “fuera del catálogo”). El stock está registrado y se cuenta igual. <button class="btn btn-ghost btn-sm" style="margin-left:6px;" onclick="descargarSinCatalogo()">⬇️ Descargar lista</button>'}</div>`:'';
   list.innerHTML=aviso+rendered.map(({entry,qty,key,secId})=>{
     const depToShow=filterDep||null;
     const secs=depToShow?(sectoresDB[depToShow]||{}):getSectores();
@@ -5704,7 +5723,8 @@ window.syncCatalogFromOdoo = async function(silent=false){
       const products = data.results || [];
 
       products.forEach(p => {
-        const canonical = p.barcode || p.sku || String(p.id);
+        // Sin código de barras ni SKU no sirve para escanear ni para vincular con MeLi: se ignora (igual que en la importación por Excel).
+        const canonical = p.barcode || p.sku;
         if(!canonical) return;
         const entry = { name: p.name, sku: p.sku||'', barcode: p.barcode||'', talle: p.talle||'', canonical };
         newCatalog[canonical] = entry;
